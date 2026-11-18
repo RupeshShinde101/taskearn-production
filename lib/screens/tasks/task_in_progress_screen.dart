@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import '../../models/grocery_item.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
@@ -329,6 +330,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           '&destination=${Uri.encodeComponent(query.trim())}'
           '&travelmode=driving');
     } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location coordinates/address not available yet')),
+        );
+      }
       return;
     }
     if (await canLaunchUrl(uri)) {
@@ -685,159 +691,194 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
               // ── Navigate to Location (only while actively working) ───
               if (!_isVerifyPending && !_isDone)
-                _SectionCard(
-                  title: task.isDeliveryCategory ? 'Pickup & Drop Locations' : 'Task Location',
-                  icon: task.isDeliveryCategory ? Icons.alt_route_rounded : Icons.location_on_outlined,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      if (task.isDeliveryCategory) ...[
-                        // Pickup
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.radio_button_checked,
-                                color: AppColors.primary, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Pickup Location',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                          color: AppColors.primary)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    task.effectivePickupAddress.isNotEmpty
-                                        ? task.effectivePickupAddress
-                                        : (task.address ?? 'Pickup location'),
-                                    style: const TextStyle(
-                                        color: AppColors.gray,
-                                        fontSize: 13,
-                                        height: 1.3),
-                                  ),
-                                ],
+                Builder(builder: (context) {
+                  final isGrocery = Task.isGroceryCategory(task.category);
+                  final pickupAddr = GroceryCatalog.unescapeHtml(
+                    task.effectivePickupAddress.isNotEmpty
+                        ? task.effectivePickupAddress
+                        : (task.address ?? (isGrocery ? 'Store location' : 'Pickup location')),
+                  );
+                  final dropAddr = GroceryCatalog.unescapeHtml(
+                    task.effectiveDropAddress ??
+                        (isGrocery ? 'Delivery location specified by poster' : 'Drop location specified by poster'),
+                  );
+                  return _SectionCard(
+                    title: isGrocery
+                        ? 'Store & Delivery Locations'
+                        : (task.isDeliveryCategory ? 'Pickup & Drop Locations' : 'Task Location'),
+                    icon: task.isDeliveryCategory ? Icons.alt_route_rounded : Icons.location_on_outlined,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (task.isDeliveryCategory) ...[
+                          // Store / Pickup Location
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                isGrocery ? Icons.storefront_rounded : Icons.radio_button_checked,
+                                color: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
+                                size: 18,
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => _openNavigationTo(
-                            task.latitude,
-                            task.longitude,
-                            task.effectivePickupAddress,
-                          ),
-                          icon: const Icon(Icons.navigation_rounded, size: 16),
-                          label: const Text('Navigate to Pickup'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: const BorderSide(color: AppColors.primary),
-                            minimumSize: const Size(double.infinity, 38),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Divider(height: 1),
-                        ),
-                        // Drop
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.location_on,
-                                color: AppColors.danger, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Drop / Destination Location',
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      isGrocery ? 'Store Location' : 'Pickup Location',
                                       style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                          color: AppColors.danger)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    task.effectiveDropAddress ?? 'Drop location specified by poster',
-                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 13.5,
+                                        color: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      pickupAddr,
+                                      style: const TextStyle(
                                         color: AppColors.dark,
-                                        fontSize: 13,
+                                        fontSize: 13.5,
                                         fontWeight: FontWeight.w600,
-                                        height: 1.3),
-                                  ),
-                                ],
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => _openNavigationTo(
+                              task.latitude,
+                              task.longitude,
+                              pickupAddr,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () => _openNavigationTo(
-                            task.dropLatitude ?? (task.dropAddress != null ? 0 : task.latitude),
-                            task.dropLongitude ?? (task.dropAddress != null ? 0 : task.longitude),
-                            task.effectiveDropAddress,
+                            icon: const Icon(Icons.navigation_rounded, size: 17),
+                            label: Text(
+                              isGrocery ? 'Navigate to Store Location' : 'Navigate to Pickup Location',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: isGrocery ? const Color(0xFF15803D) : AppColors.primary,
+                              side: BorderSide(color: isGrocery ? const Color(0xFF15803D) : AppColors.primary),
+                              minimumSize: const Size(double.infinity, 40),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
                           ),
-                          icon: const Icon(Icons.navigation_rounded, size: 16),
-                          label: const Text('Navigate to Drop Location'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.danger,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 42),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Divider(height: 1),
                           ),
-                        ),
-                      ] else if (Task.isFreelancerCategory(task.category) ||
-                          (task.latitude == 0 && task.longitude == 0)) ...[
-                        const Row(
-                          children: [
-                            Icon(Icons.public_rounded,
-                                color: AppColors.primary, size: 18),
-                            SizedBox(width: 8),
-                            Expanded(
+                          // Delivery / Drop Location
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                isGrocery ? Icons.home_rounded : Icons.location_on,
+                                color: AppColors.danger,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      isGrocery ? 'Delivery Location' : 'Drop / Destination Location',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 13.5,
+                                        color: AppColors.danger,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      dropAddr,
+                                      style: const TextStyle(
+                                        color: AppColors.dark,
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          ElevatedButton.icon(
+                            onPressed: () => _openNavigationTo(
+                              task.dropLatitude,
+                              task.dropLongitude,
+                              task.effectiveDropAddress != null
+                                  ? GroceryCatalog.unescapeHtml(task.effectiveDropAddress!)
+                                  : null,
+                            ),
+                            icon: const Icon(Icons.navigation_rounded, size: 17),
+                            label: Text(
+                              isGrocery ? 'Navigate to Delivery Location' : 'Navigate to Drop Location',
+                              style: const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.danger,
+                              foregroundColor: Colors.white,
+                              minimumSize: const Size(double.infinity, 42),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                          ),
+                        ] else if (Task.isFreelancerCategory(task.category) ||
+                            (task.latitude == 0 && task.longitude == 0)) ...[
+                          const Row(
+                            children: [
+                              Icon(Icons.public_rounded,
+                                  color: AppColors.primary, size: 18),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Remote / Online Service — No physical location needed',
+                                  style: TextStyle(
+                                      color: AppColors.gray,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      height: 1.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          if (task.address != null && task.address!.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
                               child: Text(
-                                'Remote / Online Service — No physical location needed',
-                                style: TextStyle(
+                                GroceryCatalog.unescapeHtml(task.address!),
+                                style: const TextStyle(
                                     color: AppColors.gray,
                                     fontSize: 13,
-                                    fontWeight: FontWeight.w600,
                                     height: 1.4),
                               ),
                             ),
-                          ],
-                        ),
-                      ] else ...[
-                        if (task.address != null && task.address!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Text(
-                              task.address!,
-                              style: const TextStyle(
-                                  color: AppColors.gray,
-                                  fontSize: 13,
-                                  height: 1.4),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: _openNavigation,
+                              icon: const Icon(Icons.navigation_rounded, size: 18),
+                              label: const Text('Navigate to Task Location'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10)),
+                              ),
                             ),
                           ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _openNavigation,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: const Text('Navigate to Task Location'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                          ),
-                        ),
+                        ],
                       ],
-                    ],
-                  ),
-                ),
+                    ),
+                  );
+                }),
 
               if (!_isVerifyPending && !_isDone) const SizedBox(height: 12),
 
@@ -1003,34 +1044,92 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
               const SizedBox(height: 12),
 
-              // ── Task Details ─────────────────────────────────────────
-              _SectionCard(
-                title: 'Task Details',
-                icon: Icons.description_outlined,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _DetailRow('Category', task.category),
-                    const Divider(height: 14),
-                    _DetailRow(
-                        'Earning', '₹${task.budget.toStringAsFixed(0)}'),
-                    const Divider(height: 14),
-                    _DetailRow('Status', task.statusLabel),
-                    const Divider(height: 14),
-                    const Text('Description',
-                        style: TextStyle(
-                            color: AppColors.gray, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text(
-                      task.description,
-                      style: const TextStyle(
-                          color: AppColors.dark,
-                          fontSize: 13,
-                          height: 1.5),
-                    ),
-                  ],
+              // ── Grocery Items List (replaces Task Details for grocery tasks) ─
+              if (Task.isGroceryCategory(task.category))
+                Builder(builder: (context) {
+                  final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
+                      ? task.groceryItems!
+                      : GroceryCatalog.parseGroceryItems(null, task.description);
+                  if (groceryItems.isEmpty) return const SizedBox.shrink();
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 34,
+                            height: 34,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(Icons.shopping_basket_rounded,
+                                size: 19, color: Color(0xFF15803D)),
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Grocery Items',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 19,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFF86EFAC)),
+                            ),
+                            child: Text(
+                              '${groceryItems.length} ${groceryItems.length == 1 ? 'Item' : 'Items'}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF166534),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _InProgressGroceryItemsList(items: groceryItems),
+                    ],
+                  );
+                })
+              else
+                // ── Task Details (non-grocery tasks) ─────────────────────
+                _SectionCard(
+                  title: 'Task Details',
+                  icon: Icons.description_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _DetailRow('Category', task.category),
+                      const Divider(height: 14),
+                      _DetailRow(
+                          'Earning', '₹${task.budget.toStringAsFixed(0)}'),
+                      const Divider(height: 14),
+                      _DetailRow('Status', task.statusLabel),
+                      const Divider(height: 14),
+                      const Text('Description',
+                          style: TextStyle(
+                              color: AppColors.gray, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text(
+                        task.description,
+                        style: const TextStyle(
+                            color: AppColors.dark,
+                            fontSize: 13,
+                            height: 1.5),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
 
               const SizedBox(height: 20),
 
@@ -1444,21 +1543,154 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 15, color: AppColors.primary),
-                const SizedBox(width: 6),
-                Text(
-                  title,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AppColors.dark),
+                Icon(icon, size: 19, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17.5,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             child,
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InProgressGroceryItemsList extends StatelessWidget {
+  final List<SelectedGroceryItem> items;
+  const _InProgressGroceryItemsList({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: items.map((item) {
+        final pkg = item.package.trim();
+        final qty = item.qty.trim();
+        final kg = item.kg.trim();
+        final gram = item.gram.trim();
+        final litr = item.litr.trim();
+        final brand = item.brand.trim();
+        final rupee = item.rupee.trim();
+
+        final tags = <Widget>[
+          if (pkg.isNotEmpty) _tag(pkg, const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
+          if (qty.isNotEmpty) _tag('Qty: $qty', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+          if (kg.isNotEmpty) _tag('$kg kg', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
+          if (gram.isNotEmpty) _tag('$gram g', const Color(0xFFF0FDF4), const Color(0xFF15803D)),
+          if (litr.isNotEmpty) _tag('$litr L', const Color(0xFFE0F2FE), const Color(0xFF0284C7)),
+          if (brand.isNotEmpty) _tag('Brand: $brand', const Color(0xFFFAF5FF), const Color(0xFF9333EA)),
+          if (rupee.isNotEmpty) _tag('Est. ₹$rupee', const Color(0xFFFFFBEB), const Color(0xFFD97706)),
+        ];
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: item.imageUrl.isNotEmpty
+                      ? Image.network(
+                          item.imageUrl,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
+                          ),
+                        )
+                      : Center(
+                          child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF102A56),
+                        height: 1.25,
+                      ),
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.category.trim().isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.category.trim(),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    if (tags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(spacing: 6, runSpacing: 6, children: tags),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  static Widget _tag(String text, Color bg, Color textCol) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textCol.withValues(alpha: 0.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: textCol),
       ),
     );
   }

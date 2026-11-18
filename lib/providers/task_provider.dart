@@ -332,6 +332,65 @@ class TaskProvider extends ChangeNotifier {
             }
           }
 
+          // Preserve / fetch drop/delivery location for grocery, delivery & moving tasks
+          // in case /tasks/<id>/details omitted drop_location fields.
+          if (task.isDeliveryCategory &&
+              (task.dropLatitude == null ||
+                  task.dropLongitude == null ||
+                  task.dropAddress == null ||
+                  task.dropAddress!.trim().isEmpty)) {
+            Task? donor = cachedForType;
+            if (donor == null ||
+                (donor.dropLatitude == null && (donor.dropAddress == null || donor.dropAddress!.trim().isEmpty))) {
+              for (final list in [_myAcceptedTasks, _myPostedTasks, _browseTasks, _myCompletedTasks]) {
+                for (final t in list) {
+                  if (t.id == id &&
+                      (t.dropLatitude != null || (t.dropAddress != null && t.dropAddress!.trim().isNotEmpty))) {
+                    donor = t;
+                    break;
+                  }
+                }
+              }
+            }
+            if (donor != null &&
+                (donor.dropLatitude != null || (donor.dropAddress != null && donor.dropAddress!.trim().isNotEmpty))) {
+              if (task.dropLatitude == null && donor.dropLatitude != null) {
+                enriched['drop_location_lat'] = donor.dropLatitude;
+                needsReparse = true;
+              }
+              if (task.dropLongitude == null && donor.dropLongitude != null) {
+                enriched['drop_location_lng'] = donor.dropLongitude;
+                needsReparse = true;
+              }
+              if ((task.dropAddress == null || task.dropAddress!.trim().isEmpty) &&
+                  donor.dropAddress != null &&
+                  donor.dropAddress!.trim().isNotEmpty) {
+                enriched['drop_location_address'] = donor.dropAddress;
+                enriched['drop_address'] = donor.dropAddress;
+                needsReparse = true;
+              }
+            } else if (path.endsWith('/details')) {
+              // Secondary fetch from /tasks/$id which includes drop_location
+              try {
+                final altData = await ApiService.get('/tasks/$id');
+                final altJson = altData is Map<String, dynamic>
+                    ? (altData['task'] ?? altData['data'] ?? altData)
+                    : null;
+                if (altJson is Map<String, dynamic>) {
+                  if (altJson['drop_location'] != null) {
+                    enriched['drop_location'] = altJson['drop_location'];
+                    needsReparse = true;
+                  }
+                  if (altJson['drop_address'] != null && altJson['drop_address'].toString().trim().isNotEmpty) {
+                    enriched['drop_address'] = altJson['drop_address'];
+                    enriched['drop_location_address'] = altJson['drop_address'];
+                    needsReparse = true;
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
           if (needsReparse) {
             task = Task.fromJson(enriched);
           }

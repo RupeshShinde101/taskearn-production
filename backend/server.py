@@ -3827,7 +3827,28 @@ def update_task(task_id):
             # Flutter edit screen may send instead of the nested object.
             location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
             location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
-            location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
+            pickup_addr_val = (
+                data.get('pickup_address') or
+                data.get('pickupAddress') or
+                data.get('pickup_addr') or
+                data.get('from_address')
+            )
+            location_address = pickup_addr_val or location.get('address') or data.get('address') or data.get('location_address') or ''
+
+            drop_location = data.get('dropLocation') or data.get('drop_location') or {}
+            if not isinstance(drop_location, dict):
+                drop_location = {}
+            drop_lat = drop_location.get('lat') if drop_location.get('lat') is not None else task.get('drop_location_lat')
+            drop_lng = drop_location.get('lng') if drop_location.get('lng') is not None else task.get('drop_location_lng')
+            drop_addr_val = (
+                drop_location.get('address') or
+                data.get('drop_location_address') or
+                data.get('delivery_address') or
+                data.get('drop_address') or
+                data.get('dropAddress') or
+                task.get('drop_location_address')
+            )
+
             client_sc = data.get('serviceCharge', data.get('service_charge'))
             try:
                 client_sc_val = float(client_sc) if client_sc is not None else None
@@ -3843,10 +3864,12 @@ def update_task(task_id):
                 UPDATE tasks
                 SET title = {PH}, description = {PH}, category = {PH},
                     location_lat = {PH}, location_lng = {PH}, location_address = {PH},
+                    drop_location_lat = {PH}, drop_location_lng = {PH}, drop_location_address = {PH},
                     price = {PH}, service_charge = {PH}
                 WHERE id = {PH}
             ''', (data['title'], data['description'], data['category'],
                   location_lat, location_lng, location_address,
+                  drop_lat, drop_lng, drop_addr_val,
                   price, new_service_charge, task_id))
             conn.commit()
 
@@ -3975,6 +3998,16 @@ def get_task_details(task_id):
                     'lng': task['location_lng'],
                     'address': task['location_address']
                 },
+                'drop_location': {
+                    'lat': task.get('drop_location_lat'),
+                    'lng': task.get('drop_location_lng'),
+                    'address': task.get('drop_location_address') or ''
+                } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'drop_location_lat': task.get('drop_location_lat'),
+                'drop_location_lng': task.get('drop_location_lng'),
+                'drop_location_address': task.get('drop_location_address') or '',
+                'drop_address': task.get('drop_location_address') or '',
+                'pickup_address': task.get('location_address') or '',
                 'status': task['status'],
                 'completion_proof': task.get('completion_proof'),
                 'poster_phone': task.get('provider_phone') or '',

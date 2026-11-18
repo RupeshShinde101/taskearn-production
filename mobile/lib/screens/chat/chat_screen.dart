@@ -1,12 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/message.dart';
-import '../../models/task.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/chat_encryption_service.dart';
@@ -34,14 +32,24 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   bool _sending = false;
   Timer? _pollTimer;
 
-  // Task & participant info
-  String _otherName = 'User';
+  // Participant info
+  String _otherName = '';
   String _otherRole = 'Participant';
   String? _otherPhone;
-  String _taskTitle = 'Task Discussion';
-  String _taskCategory = '';
-  double _taskBudget = 0.0;
-  String _taskStatus = 'in_progress';
+
+  static bool _isPlaceholderName(String? name) {
+    final s = (name ?? '').trim().toLowerCase();
+    return s.isEmpty ||
+        s == 'user' ||
+        s == 'poster' ||
+        s == 'task poster' ||
+        s == 'helper' ||
+        s == 'anonymous' ||
+        s == 'participant';
+  }
+
+  String get _displayOtherName =>
+      _otherName.trim().isNotEmpty ? _otherName.trim() : _otherRole;
 
   @override
   void initState() {
@@ -83,22 +91,27 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _initParticipantData() {
     if (widget.extra != null) {
       final extra = widget.extra!;
-      _otherName = extra['otherName'] ??
-          extra['helper_name'] ??
-          extra['poster_name'] ??
-          'User';
-      _otherRole = extra['otherRole'] ??
-          (extra['isPoster'] == true ? 'Helper' : 'Task Poster');
-      _otherPhone = extra['otherPhone'] ??
-          extra['helper_phone'] ??
-          extra['poster_phone'];
-      _taskTitle = extra['taskTitle'] ?? extra['title'] ?? 'Task Discussion';
-      _taskCategory = extra['category'] ?? '';
-      _taskBudget = (extra['budget'] is num)
-          ? (extra['budget'] as num).toDouble()
-          : 0.0;
-      _taskStatus = extra['status'] ?? 'in_progress';
-    } else {
+      final rawName = (extra['otherName'] ??
+              extra['helper_name'] ??
+              extra['poster_name'] ??
+              '')
+          .toString()
+          .trim();
+      if (!_isPlaceholderName(rawName)) {
+        _otherName = rawName;
+      }
+      _otherRole = (extra['otherRole'] ??
+              (extra['isPoster'] == true ? 'Helper' : 'Task Poster'))
+          .toString();
+      _otherPhone = (extra['otherPhone'] ??
+              extra['helper_phone'] ??
+              extra['poster_phone'])
+          ?.toString();
+    }
+    // Always fetch authoritative participant name & phone when missing/generic
+    if (_isPlaceholderName(_otherName) ||
+        _otherPhone == null ||
+        _otherPhone!.trim().isEmpty) {
       _fetchTaskDetails();
     }
   }
@@ -106,32 +119,100 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _fetchTaskDetails() async {
     try {
       final res = await ApiService.get('/tasks/${widget.taskId}');
-      final taskData = res['task'] ?? res;
+      Map<String, dynamic>? taskData =
+          (res['task'] is Map<String, dynamic>) ? res['task'] : (res is Map<String, dynamic> ? res : null);
+
+      String? resolvedName;
+      String? resolvedRole;
+      String? resolvedPhone;
+
+      void extractFrom(Map<String, dynamic> data) {
+        final currentUserId = context.read<AuthProvider>().user?.id.toString();
+        final postedBy = data['postedBy'] is Map ? data['postedBy'] as Map : null;
+        final acceptedByMap =
+            data['acceptedBy'] is Map ? data['acceptedBy'] as Map : null;
+
+        final posterId =
+            (data['posted_by'] ?? postedBy?['id'] ?? data['poster_id'])
+                ?.toString();
+        final isPoster = currentUserId != null &&
+            posterId != null &&
+            currentUserId == posterId;
+
+        if (isPoster) {
+          resolvedRole = 'Helper';
+          final hName = (data['helper_name'] ??
+                  data['helperName'] ??
+                  acceptedByMap?['name'])
+              ?.toString()
+              .trim();
+          if (!_isPlaceholderName(hName)) resolvedName = hName;
+          final hPhone = (data['helper_phone'] ??
+                  data['helperPhone'] ??
+                  acceptedByMap?['phone'])
+              ?.toString()
+              .trim();
+          if (hPhone != null && hPhone.isNotEmpty) resolvedPhone = hPhone;
+        } else {
+          resolvedRole = 'Task Poster';
+          final pName = (postedBy?['name'] ??
+                  data['poster_name'] ??
+                  data['posterName'])
+              ?.toString()
+              .trim();
+          if (!_isPlaceholderName(pName)) resolvedName = pName;
+          final pPhone = (data['poster_phone'] ??
+                  data['posterPhone'] ??
+                  postedBy?['phone'])
+              ?.toString()
+              .trim();
+          if (pPhone != null && pPhone.isNotEmpty) resolvedPhone = pPhone;
+        }
+      }
+
       if (taskData != null && mounted) {
-        final currentUserId = context.read<AuthProvider>().user?.id;
-        final posterId = taskData['posted_by']?.toString();
-        final isPoster = currentUserId == posterId;
+        extractFrom(taskData);
+      }
 
+      // Fallback to /tasks/<id>/details (includes helper_name & poster_name)
+      if (_isPlaceholderName(resolvedName) && mounted) {
+        try {
+          final detailsRes =
+              await ApiService.get('/tasks/${widget.taskId}/details');
+          final detailsData = detailsRes['task'] is Map<String, dynamic>
+              ? detailsRes['task'] as Map<String, dynamic>
+              : (detailsRes is Map<String, dynamic> ? detailsRes : null);
+          if (detailsData != null && mounted) {
+            extractFrom(detailsData);
+          }
+        } catch (_) {}
+      }
+
+      if (mounted) {
         setState(() {
-          _taskTitle = taskData['title'] ?? 'Task Discussion';
-          _taskCategory = taskData['category'] ?? '';
-          _taskBudget = (taskData['budget'] is num)
-              ? (taskData['budget'] as num).toDouble()
-              : 0.0;
-          _taskStatus = taskData['status'] ?? 'in_progress';
-
-          if (isPoster) {
-            _otherName = taskData['helper_name'] ?? 'Helper';
-            _otherRole = 'Helper';
-            _otherPhone = taskData['helper_phone'];
-          } else {
-            _otherName = taskData['poster_name'] ?? 'Poster';
-            _otherRole = 'Task Poster';
-            _otherPhone = taskData['poster_phone'];
+          if (!_isPlaceholderName(resolvedName)) {
+            _otherName = resolvedName!;
+          }
+          if (resolvedRole != null && resolvedRole!.isNotEmpty) {
+            _otherRole = resolvedRole!;
+          }
+          if (resolvedPhone != null && resolvedPhone!.isNotEmpty) {
+            _otherPhone = resolvedPhone;
           }
         });
       }
     } catch (_) {}
+  }
+
+  void _syncOtherNameFromMessages(List<ChatMessage> msgs) {
+    if (!_isPlaceholderName(_otherName) || !mounted) return;
+    final currentUserId = context.read<AuthProvider>().user?.id ?? '';
+    for (final m in msgs.reversed) {
+      if (m.senderId != currentUserId && !_isPlaceholderName(m.senderName)) {
+        setState(() => _otherName = m.senderName.trim());
+        break;
+      }
+    }
   }
 
   String get _cacheKey => 'cached_chat_messages_${widget.taskId}';
@@ -180,6 +261,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _messages = msgs;
           _loading = false;
         });
+        _syncOtherNameFromMessages(msgs);
         _persistCachedMessages(msgs);
         _scrollToBottom();
       }
@@ -209,6 +291,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         setState(() {
           _messages = merged;
         });
+        _syncOtherNameFromMessages(msgs);
         _persistCachedMessages(merged);
         _scrollToBottom();
       }
@@ -325,7 +408,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _callOtherParty() async {
     if (_otherPhone == null || _otherPhone!.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Phone number not available for $_otherName.')),
+        SnackBar(content: Text('Phone number not available for $_displayOtherName.')),
       );
       return;
     }
@@ -383,7 +466,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                   radius: 20,
                   backgroundColor: AppColors.primary.withValues(alpha: 0.12),
                   child: Text(
-                    _otherName.isNotEmpty ? _otherName[0].toUpperCase() : 'U',
+                    _displayOtherName.isNotEmpty
+                        ? _displayOtherName[0].toUpperCase()
+                        : 'U',
                     style: const TextStyle(
                       color: AppColors.primary,
                       fontWeight: FontWeight.w700,
@@ -415,7 +500,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     children: [
                       Flexible(
                         child: Text(
-                          _otherName,
+                          _displayOtherName,
                           style: const TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
@@ -444,11 +529,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                     ],
                   ),
                   const SizedBox(height: 1),
-                  Row(
+                  const Row(
                     children: [
-                      const Icon(Icons.lock_rounded, size: 10, color: Color(0xFF059669)),
-                      const SizedBox(width: 3),
-                      const Text(
+                      Icon(Icons.lock_rounded, size: 10, color: Color(0xFF059669)),
+                      SizedBox(width: 3),
+                      Text(
                         'End-to-End Encrypted',
                         style: TextStyle(
                           fontSize: 10.5,
@@ -466,141 +551,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         actions: [
           if (_otherPhone != null && _otherPhone!.isNotEmpty)
             IconButton(
-              icon: const Icon(Icons.phone_outlined, color: AppColors.primary, size: 21),
-              tooltip: 'Call $_otherName',
+              icon: const Icon(Icons.phone_outlined, color: AppColors.primary, size: 22),
+              tooltip: 'Call $_displayOtherName',
               onPressed: _callOtherParty,
             ),
-          IconButton(
-            icon: const Icon(Icons.info_outline_rounded, color: AppColors.gray, size: 21),
-            tooltip: 'Task Details',
-            onPressed: () => context.push('/task/${widget.taskId}'),
-          ),
-          const SizedBox(width: 4),
+          const SizedBox(width: 6),
         ],
       ),
       body: Column(
         children: [
-          // ── Compact Task Header Banner ──
-          GestureDetector(
-            onTap: () => context.push('/task/${widget.taskId}'),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Center(
-                      child: Text(
-                        _taskCategory.isNotEmpty
-                            ? TaskCategory.iconFor(_taskCategory)
-                            : '📋',
-                        style: const TextStyle(fontSize: 18),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _taskTitle,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.dark,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(
-                              'Budget: ₹${_taskBudget.toStringAsFixed(0)}',
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.success,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Container(
-                              width: 3,
-                              height: 3,
-                              decoration: const BoxDecoration(
-                                color: AppColors.grayLight,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _taskStatus.replaceAll('_', ' ').toUpperCase(),
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF6366F1),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, color: AppColors.grayLight, size: 20),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Encryption Assurance Strip ──
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFECFDF5),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFA7F3D0)),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.shield_outlined, size: 13, color: Color(0xFF047857)),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: Text(
-                    'Encrypted 1-on-1: Only you & $_otherName can read messages',
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF047857),
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
           // ── Message Stream ──
           Expanded(
             child: _loading
@@ -628,7 +587,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                               ),
                               const SizedBox(height: 12),
                               Text(
-                                'Chat with $_otherName',
+                                'Chat with $_displayOtherName',
                                 style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w700,

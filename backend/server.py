@@ -3762,6 +3762,9 @@ def get_task(task_id):
                     'tasksPosted': int(task.get('tasks_posted') or 0),
                     'phone': task.get('poster_phone') or '' if show_poster_phone else ''
                 },
+                'posted_by': task.get('posted_by'),
+                'poster_name': task.get('poster_name', 'Anonymous'),
+                'helper_name': task.get('helper_name') or '',
                 'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
                 'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
                 'accepted_by': task.get('accepted_by'),

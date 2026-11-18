@@ -407,14 +407,42 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         !task.helperHasRatedPoster;
     Widget? bottomBar;
     if (canAccept) {
+      final requiresLiveGps = !Task.isFreelancerCategory(task.category);
       bottomBar = SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: GradientButton(
-            label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
-            loading: _accepting,
-            onPressed: _accepting ? () {} : _accept,
-            icon: Icons.check_circle_outline,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (requiresLiveGps) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.my_location_rounded,
+                        size: 13, color: Color(0xFF059669)),
+                    const SizedBox(width: 6),
+                    const Flexible(
+                      child: Text(
+                        'By accepting, you agree to share your live GPS location with the Task Poster while this task is active.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              GradientButton(
+                label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
+                loading: _accepting,
+                onPressed: _accepting ? () {} : _accept,
+                icon: Icons.check_circle_outline,
+              ),
+            ],
           ),
         ),
       );

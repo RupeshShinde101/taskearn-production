@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#0b1020" media="(prefers-color-scheme: dark)">
     <title>Privacy Policy - Workmate4u</title>
     <link rel="manifest" href="manifest.json">
-    <meta name="description" content="Workmate4u Privacy Policy (Version 2026-11-12) — 18+ only platform compliant with India's IT Act 2000 and DPDP Act 2023.">
+    <meta name="description" content="Workmate4u Privacy Policy (Version 2026-11-18) — 18+ only platform compliant with India's IT Act 2000 and DPDP Act 2023.">
     <meta name="keywords" content="Workmate4u privacy policy, Workmate4u data protection, Workmate4u DPDP Act, Workmate4u.com privacy">
     <meta name="robots" content="index, follow">
     <link rel="canonical" href="https://workmate4u.com/privacy.html">
@@ -247,7 +247,7 @@
             <h3>3.3 Tasks, Completion Proof, Wallet &amp; Bank Withdrawal Details</h3>
             <ul>
                 <li><strong>Task Details:</strong> Task titles, descriptions, category/vehicle selections, Freelancer package/hourly options, pickup/drop/task addresses, saved locations, budgets, and platform fee ledgers.</li>
-                <li><strong>Completion Proof Photos &amp; Reviews:</strong> Camera/gallery proof photos submitted upon finishing a task, ratings, reviews, rank badges, and task release/abandonment counts.</li>
+                <li><strong>Completion Proof Photos &amp; Reviews:</strong> Live in-app camera-captured proof photos (gallery uploads are disabled for proof to ensure authentic task completion), ratings, reviews, rank badges, and task release/abandonment counts.</li>
                 <li><strong>Wallet Top-Ups:</strong> Processed by Razorpay Software Pvt. Ltd. We receive payment confirmation status, transaction reference IDs, and masked instrument summaries — we do NOT store card numbers, CVV, or UPI PINs.</li>
                 <li><strong>Bank Withdrawal Details:</strong> Bank Name, Account Holder Name, 9–18 digit Bank Account Number, and 11-character IFSC Code collected over HTTPS to execute KYC-verified NEFT/IMPS/Razorpay payouts. Optional "Save payment details" stores details locally on your device only.</li>
             </ul>
@@ -260,10 +260,21 @@
 
             <h3>3.5 Location, Notifications, Device &amp; Technical Logs</h3>
             <ul>
-                <li><strong>GPS Location (Coarse, Fine &amp; Background where permitted):</strong> Used with your permission to find nearby tasks (~10 km matching), place map pins, estimate route distance, and enable live active-task tracking. Background location runs only when you grant OS permission for active Helper tracking and stops upon completion or revocation.</li>
+                <li><strong>GPS Location (Coarse &amp; Fine where permitted):</strong> Used with your permission to find nearby tasks (~10 km matching), place map pins, estimate route distance, and power live active-task tracking for physical, on-site, and delivery categories.</li>
                 <li><strong>Push Notifications:</strong> On mobile, Firebase Cloud Messaging (FCM) device token and notification status for task alerts, chats, completions, and wallet updates. On web browsers, Workmate4u delivers updates in-app and via transactional email.</li>
                 <li><strong>Device &amp; Security Telemetry:</strong> Device model/browser user-agent, OS/app version, IP address, API error logs, and rate-limiting logs to prevent spam, fraud, and DNS/network failures.</li>
                 <li><strong>Local Storage (localStorage, IndexedDB, Cache &amp; App Preferences):</strong> Caches your signed JWT token, session state, theme choice, mode state, saved addresses, and optional saved payout fields on your device — see our <a href="cookies.html">Cookie Policy</a>.</li>
+            </ul>
+
+            <h3>3.6 Live Helper Location Tracking &amp; Consent (Physical &amp; Delivery Tasks Only)</h3>
+            <p>In compliance with Section 6 (Informed Consent) of India's DPDP Act, 2023 and Google Play Location Policies:</p>
+            <ul>
+                <li><strong>Affirmative Consent on Acceptance:</strong> Before accepting any physical, on-site, grocery, delivery, moving, or errand task, Helpers are shown an explicit consent notice confirming that accepting the task shares live GPS coordinates with the Task Poster while the task is active.</li>
+                <li><strong>Strict Active-Task Window &amp; Zero Off-Duty Tracking:</strong> Live tracking begins ONLY when a Helper accepts an eligible task and stops automatically as soon as completion proof is submitted, the task is completed, released, or cancelled. Workmate4u never tracks Helpers when they have no active task.</li>
+                <li><strong>Professional / Freelancer Category Exemption:</strong> Remote / online Professional (Freelancer) tasks are completely exempt from live GPS tracking — no live location is collected, requested, or shown to the Task Poster for Professional category tasks.</li>
+                <li><strong>Strictly Scoped Visibility:</strong> Live GPS coordinates, distance, and ETA are visible exclusively to the authenticated Task Poster of that specific active task on the in-app tracking mini-map — never publicly or to other users.</li>
+                <li><strong>Initial Location Fallback:</strong> Until the first live GPS fix arrives upon task acceptance, the platform may briefly display the Helper's most recently recorded approximate app location solely to initiate tracking for that active physical task.</li>
+                <li><strong>Withdrawal of Consent:</strong> Helpers may revoke location permission anytime in device Settings or release an active task (noting that live location sharing is required to execute physical/delivery tasks).</li>
             </ul>
 
             <h2>4. How &amp; Why We Process Your Data</h2>
@@ -283,7 +294,7 @@
 
             <h2>5. How Information Is Shared</h2>
             <h3>5.1 With other verified users</h3>
-            <p>Your display name, avatar, rank, rating, and general area appear on tasks and offers. Once matched, necessary task address details, in-app encrypted chat, and (where enabled for active execution) phone coordination options are shared between the Poster and assigned Helper.</p>
+            <p>Before task acceptance, Task Poster identity and exact pickup, store, or delivery addresses are hidden on public Browse cards and pre-acceptance Task Details to safeguard user privacy. Once a Helper accepts a task, necessary task address details, in-app encrypted chat, call coordination, and (for non-Professional physical/delivery tasks only) the assigned Helper's live GPS location and ETA are shared strictly between the Poster and assigned Helper until task completion.</p>
             <h3>5.2 With service providers &amp; infrastructure partners (processors)</h3>
             <ul>
                 <li><strong>Razorpay Software Pvt. Ltd.</strong> — wallet top-ups, KYC/bank payouts, and payment fraud screening;</li>
@@ -291,7 +302,7 @@
                 <li><strong>Google Firebase (FCM)</strong> — real-time mobile push notifications;</li>
                 <li><strong>Twilio SendGrid</strong> — OTP verification and transactional email delivery;</li>
                 <li><strong>Railway &amp; Netlify</strong> — managed cloud servers, PostgreSQL database hosting, and web CDN;</li>
-                <li><strong>OpenStreetMap Nominatim, Komoot Photon &amp; OSRM</strong> — HTTPS address autocomplete, geocoding, and road-distance estimation (receives search coordinates/query text &amp; IP);</li>
+                <li><strong>OpenStreetMap Tile Servers (<code>tile.openstreetmap.org</code>), Nominatim, Komoot Photon &amp; OSRM</strong> — live tracking map tile rendering, HTTPS address autocomplete, geocoding, and road-distance estimation (receives map tile/search coordinates &amp; IP);</li>
                 <li><strong>Cloudflare DoH</strong> — encrypted DNS fallback to keep connectivity working when carrier DNS fails.</li>
             </ul>
             <p>Each provider processes data only as instructed by us and under contractual and security commitments.</p>
@@ -322,7 +333,7 @@
                 <tr><td>KYC (Aadhaar/PAN/Voter ID/DL) &amp; Physical Onboarding records</td><td>Active status + up to 8 years (PMLA / anti-fraud audit)</td></tr>
                 <tr><td>Wallet ledger, Razorpay &amp; bank withdrawal records</td><td>Up to 8 years (Income-tax / PMLA / RBI regulations)</td></tr>
                 <tr><td>Task records, completion proof photos, <code>enc:v1:</code> chat &amp; reviews</td><td>Up to 5 years (dispute, safety &amp; tax records)</td></tr>
-                <tr><td>Live task GPS tracking coordinates</td><td>Task lifecycle only (stops on completion)</td></tr>
+                <tr><td>Live task GPS tracking coordinates (physical/delivery tasks only)</td><td>Live sharing stops immediately on completion/cancellation; raw coordinate logs auto-deleted within 30 days</td></tr>
                 <tr><td>Server security &amp; API access logs</td><td>Up to 12 months</td></tr>
                 <tr><td>Grievance &amp; support tickets</td><td>Up to 3 years (or final legal resolution)</td></tr>
                 <tr><td>Cookies / localStorage</td><td>See <a href="cookies.html">Cookie Policy</a></td></tr>
@@ -361,8 +372,8 @@
             <p>We may update this Privacy Policy from time to time to reflect new features or Indian regulatory requirements. Material changes will be communicated by email or via an in-app notice at least 7 days before they take effect. The "Last Updated" date below indicates when this policy was last revised.</p>
 
             <div class="last-updated">
-                <p><strong>Last Updated:</strong> November 12, 2026</p>
-                <p>Effective Date: November 12, 2026 &bull; <strong>Policy Version:</strong> 2026-11-12</p>
+                <p><strong>Last Updated:</strong> November 18, 2026</p>
+                <p>Effective Date: November 18, 2026 &bull; <strong>Policy Version:</strong> 2026-11-18</p>
             </div>
         </div>
     </div>

@@ -8,8 +8,8 @@
 library;
 
 const int kMinimumLegalAge = 18;
-const String kTermsVersion = '2026-11-12';
-const String kLegalEffectiveDate = 'November 12, 2026';
+const String kTermsVersion = '2026-11-18';
+const String kLegalEffectiveDate = 'November 18, 2026';
 
 const String kMinAgeErrorMessage =
     'You must be at least 18 years old (legal adult age in India) to use Workmate4u.';

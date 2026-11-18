@@ -5629,6 +5629,16 @@ def update_location():
             )
         except Exception:
             pass
+
+        # Enforce 30-day DPDP retention limit on historical GPS tracking logs
+        try:
+            cutoff_30d = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+            cursor.execute(
+                f'DELETE FROM location_tracking WHERE recorded_at < {PH}',
+                (cutoff_30d,)
+            )
+        except Exception:
+            pass
     
     return jsonify({
         'success': True,

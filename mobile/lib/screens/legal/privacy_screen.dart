@@ -70,7 +70,7 @@ class PrivacyScreen extends StatelessWidget {
                 null,
                 bullets: [
                   'Task Details: Task titles, descriptions, category/vehicle selections, Freelancer package/hourly options, pickup/drop/task addresses, saved locations, budgets, and platform fee ledgers;',
-                  'Completion Proof Photos & Reviews: Camera/gallery proof photos submitted upon finishing a task, ratings, reviews, rank badges, and task release/abandonment counts;',
+                  'Completion Proof Photos & Reviews: Live in-app camera-captured proof photos (gallery uploads are disabled for proof to ensure authentic task completion), ratings, reviews, rank badges, and task release/abandonment counts;',
                   'Wallet Top-Ups: Processed by Razorpay Software Pvt. Ltd. We receive payment confirmation status, transaction reference IDs, and masked instrument summaries — we do NOT store card numbers, CVV, or UPI PINs;',
                   'Bank Withdrawal Details: Bank Name, Account Holder Name, 9–18 digit Bank Account Number, and 11-character IFSC Code collected over HTTPS to execute KYC-verified NEFT/IMPS/Razorpay payouts. If you opt to "Save payment details", those details are stored locally inside device app storage (SharedPreferences) solely for your convenience.',
                 ],
@@ -87,10 +87,22 @@ class PrivacyScreen extends StatelessWidget {
                 '3.5 Location, Notifications, Device & Technical Logs',
                 null,
                 bullets: [
-                  'GPS Location (Coarse, Fine & Background where permitted): Used with your permission to find nearby tasks (~10 km matching), place map pins, estimate route distance, and enable live active-task tracking. Background location is accessed only when you grant OS permission for active Helper tracking and stops upon task completion or revocation;',
+                  'GPS Location (Coarse & Fine where permitted): Used with your permission to find nearby tasks (~10 km matching), place map pins, estimate route distance, and power live active-task tracking for physical/on-site/delivery categories;',
                   'Push Notifications: Firebase Cloud Messaging (FCM) device token and notification status for task alerts, chats, completions, and wallet updates;',
                   'Device & Security Telemetry: Device model, OS version, app version, IP address, API error logs, and rate-limiting logs to prevent spam, fraud, and DNS/network failures;',
                   'Local Storage (SharedPreferences): Caches your JWT authentication token, active session timestamp, profile cache, Poster/Helper mode, saved task addresses, and optional saved bank payout fields on your device.',
+                ],
+              ),
+              const _SubSection(
+                '3.6 Live Helper Location Tracking & Consent (Physical & Delivery Tasks Only)',
+                'In compliance with Section 6 (Informed Consent) of India\'s DPDP Act, 2023 and Google Play Location Policies:',
+                bullets: [
+                  'Affirmative Consent on Acceptance: Before accepting any physical, on-site, grocery, delivery, moving, or errand task, Helpers are shown an explicit consent notice confirming that accepting the task shares live GPS coordinates with the Task Poster while the task is active;',
+                  'Strict Active-Task Window & Zero Off-Duty Tracking: Live tracking begins ONLY when a Helper accepts an eligible task and stops automatically as soon as completion proof is submitted, the task is completed, released, or cancelled. Workmate4u never tracks Helpers when they have no active task;',
+                  'Professional / Freelancer Category Exemption: Remote / online Professional (Freelancer) tasks are completely exempt from live GPS tracking — no live location is collected, requested, or shown to the Task Poster for Professional category tasks;',
+                  'Strictly Scoped Visibility: Live GPS coordinates, distance, and ETA are visible exclusively to the authenticated Task Poster of that specific active task on the in-app tracking mini-map — never publicly or to other users;',
+                  'Initial Location Fallback: Until the first live GPS fix arrives upon task acceptance, the platform may briefly display the Helper\'s most recently recorded approximate app location solely to initiate tracking for that active physical task;',
+                  'Withdrawal of Consent: Helpers may revoke location permission anytime in device Settings or release an active task (noting that live location sharing is required to execute physical/delivery tasks).',
                 ],
               ),
             ]),
@@ -111,7 +123,7 @@ class PrivacyScreen extends StatelessWidget {
             _section('5. How Information Is Shared', null, subsections: [
               const _SubSection(
                 '5.1 With Other Verified Users',
-                'Your display name, avatar, rank, rating, and general area appear on tasks and offers. Once matched, necessary task address details, in-app chat, and (where enabled for active execution) phone coordination options are shared between the Poster and assigned Helper.',
+                'Before task acceptance, Task Poster identity and exact pickup, store, or delivery addresses are hidden on public Browse cards and pre-acceptance Task Details to safeguard user privacy. Once a Helper accepts a task, necessary task address details, in-app encrypted chat, call coordination, and (for non-Professional physical/delivery tasks only) the assigned Helper\'s live GPS location and ETA are shared strictly between the Poster and assigned Helper until task completion.',
               ),
               const _SubSection('5.2 With Service Providers & Infrastructure Partners', null, bullets: [
                 'Razorpay Software Pvt. Ltd. — wallet top-ups, bank payouts, and payment fraud screening;',
@@ -119,7 +131,7 @@ class PrivacyScreen extends StatelessWidget {
                 'Google Firebase (FCM) — real-time push notifications;',
                 'Twilio SendGrid — email OTP verification and transactional email delivery;',
                 'Railway & Netlify — managed cloud servers, PostgreSQL database hosting, and web CDN;',
-                'OpenStreetMap Nominatim, Komoot Photon & OSRM — HTTPS address autocomplete, geocoding, and road-distance estimation (receives search coordinates/query text & device IP);',
+                'OpenStreetMap Tile Servers (tile.openstreetmap.org), Nominatim, Komoot Photon & OSRM — live tracking map tile rendering, HTTPS address autocomplete, geocoding, and road-distance estimation (receives map tile/search coordinates & device IP);',
                 'Cloudflare DoH (cloudflare-dns.com) — encrypted DNS fallback to keep connectivity working when carrier DNS fails.',
               ]),
               const _SubSection(
@@ -253,7 +265,7 @@ class PrivacyScreen extends StatelessWidget {
       ['KYC (Aadhaar/PAN/Voter ID) & Physical Onboarding records', 'Active status + up to 8 years (PMLA / anti-fraud audit)'],
       ['Wallet, Razorpay & bank withdrawal records', 'Up to 8 years (Income Tax / PMLA / RBI regulations)'],
       ['Task records, completion proof photos, chat & reviews', 'Up to 5 years (disputes, safety & tax)'],
-      ['Live task GPS tracking coordinates', 'Task lifecycle only (stops on completion)'],
+      ['Live task GPS tracking coordinates (physical/delivery tasks only)', 'Live sharing stops immediately on completion/cancellation; raw coordinate logs auto-deleted within 30 days'],
       ['Server security & API access logs', 'Up to 12 months'],
       ['Grievance & support tickets', 'Up to 3 years (or final legal resolution)'],
     ];

@@ -309,10 +309,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     double? speed,
   }) async {
     if (!mounted) return;
-    if (_task != null &&
-        (_verifyPendingStatuses.contains(_task!.status) ||
-            _paymentReleasedStatuses.contains(_task!.status) ||
-            _doneStatuses.contains(_task!.status))) {
+    // Professional / Freelancer tasks are remote work-from-home tasks and
+    // are strictly exempt from live GPS tracking.
+    if (_task == null || Task.isFreelancerCategory(_task!.category)) {
+      return;
+    }
+    if (_verifyPendingStatuses.contains(_task!.status) ||
+        _paymentReleasedStatuses.contains(_task!.status) ||
+        _doneStatuses.contains(_task!.status)) {
       return;
     }
     try {

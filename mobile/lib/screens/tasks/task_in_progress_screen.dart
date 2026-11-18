@@ -25,7 +25,8 @@ class TaskInProgressScreen extends StatefulWidget {
   State<TaskInProgressScreen> createState() => _TaskInProgressScreenState();
 }
 
-class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
+class _TaskInProgressScreenState extends State<TaskInProgressScreen>
+    with WidgetsBindingObserver {
   Task? _task;
   bool _loading = true;
   bool _initialLoad = true; // show spinner only on first load; polls are silent
@@ -68,17 +69,29 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   bool get _isDone =>
       _task != null && _doneStatuses.contains(_task!.status);
 
+  bool _locationUpdatesStarted = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
-    _startLocationUpdates();
-    // Poll for status changes every 30 s so the helper is redirected
+    // Poll for status changes every 15 s so the helper is redirected
     // automatically if the poster cancels or payment is released.
     _pollTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) { if (mounted) _load(); },
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Push an immediate fresh GPS fix whenever helper returns from Google Maps / background.
+    if (state == AppLifecycleState.resumed &&
+        _task != null &&
+        !Task.isFreelancerCategory(_task!.category)) {
+      _sendFreshGpsFix();
+    }
   }
 
   Future<void> _load() async {
@@ -116,6 +129,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       _pollTimer?.cancel();
       _showCancelledDialog();
       return;
+    }
+
+    // Start live GPS sharing once task is loaded (non-Professional categories only).
+    if (!_locationUpdatesStarted &&
+        _task != null &&
+        !Task.isFreelancerCategory(_task!.category)) {
+      _locationUpdatesStarted = true;
+      _startLocationUpdates();
     }
 
     // When status first transitions to payment_released, show earnings popup.
@@ -295,6 +316,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _gpsHeartbeatTimer?.cancel();
     _locationSub?.cancel();
@@ -333,28 +355,28 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     } catch (_) {}
   }
 
-  void _startLocationUpdates() {
-    Future<void> sendFreshFix() async {
-      final pos = await LocationService.getAccuratePosition();
-      if (pos != null) {
-        await _pushHelperLatLng(
-          pos.latitude,
-          pos.longitude,
-          accuracy: pos.accuracy,
-          heading: pos.heading,
-          speed: pos.speed,
-        );
-      }
+  Future<void> _sendFreshGpsFix() async {
+    final pos = await LocationService.getAccuratePosition();
+    if (pos != null) {
+      await _pushHelperLatLng(
+        pos.latitude,
+        pos.longitude,
+        accuracy: pos.accuracy,
+        heading: pos.heading,
+        speed: pos.speed,
+      );
     }
+  }
 
+  void _startLocationUpdates() {
     // Immediate fresh GPS fix + 10-second heartbeat so poster always gets accurate GPS
     // even when helper is stationary at store/doorstep.
-    sendFreshFix();
+    _sendFreshGpsFix();
     _gpsHeartbeatTimer?.cancel();
     _gpsHeartbeatTimer = Timer.periodic(
       const Duration(seconds: 10),
       (_) {
-        if (mounted) sendFreshFix();
+        if (mounted) _sendFreshGpsFix();
       },
     );
 

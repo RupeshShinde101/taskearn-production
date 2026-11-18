@@ -30,7 +30,8 @@ class PosterTaskInProgressScreen extends StatefulWidget {
 }
 
 class _PosterTaskInProgressScreenState
-    extends State<PosterTaskInProgressScreen> {
+    extends State<PosterTaskInProgressScreen>
+    with SingleTickerProviderStateMixin {
   Task? _task;
   bool _loading = true;
   bool _initialLoad = true;
@@ -51,7 +52,17 @@ class _PosterTaskInProgressScreenState
   bool _mapReady = false;
   bool _hasCenteredOnHelper = false;
 
-  Timer? _pollTimer;
+  // Zomato/Blinkit-style smooth marker glide (updates ONLY map + ETA, never whole screen)
+  late final AnimationController _markerAnimCtrl;
+  LatLng? _animFromLatLng;
+  LatLng? _animToLatLng;
+  final ValueNotifier<LatLng?> _animatedHelperNotifier =
+      ValueNotifier<LatLng?>(null);
+  final ValueNotifier<({String? eta, String? distance})> _liveMetaNotifier =
+      ValueNotifier((eta: null, distance: null));
+
+  Timer? _gpsPollTimer;
+  Timer? _statusPollTimer;
   final MapController _mapController = MapController();
 
   static bool _isPlaceholderName(String? name) {
@@ -116,19 +127,66 @@ class _PosterTaskInProgressScreenState
   @override
   void initState() {
     super.initState();
+    _markerAnimCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1600),
+    )..addListener(_onMarkerAnimTick);
+
     _loadAll();
-    _pollTimer = Timer.periodic(
-      const Duration(seconds: 6),
+
+    // Poll ONLY helper live GPS every 10 seconds — updates mini-map & ETA smoothly
+    // with ZERO full-screen setState / refresh.
+    _gpsPollTimer = Timer.periodic(
+      const Duration(seconds: 10),
       (_) {
-        if (mounted) _pollTrackingAndStatus();
+        if (mounted) _fetchLiveLocation();
+      },
+    );
+
+    // Lightweight background status poll every 20 seconds (only rebuilds if status/proof changed).
+    _statusPollTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) {
+        if (mounted) _pollTaskStatusOnly();
       },
     );
   }
 
   @override
   void dispose() {
-    _pollTimer?.cancel();
+    _gpsPollTimer?.cancel();
+    _statusPollTimer?.cancel();
+    _markerAnimCtrl.dispose();
+    _animatedHelperNotifier.dispose();
+    _liveMetaNotifier.dispose();
     super.dispose();
+  }
+
+  void _onMarkerAnimTick() {
+    final from = _animFromLatLng;
+    final to = _animToLatLng;
+    if (from == null || to == null) return;
+    final t = Curves.easeInOutCubic.transform(_markerAnimCtrl.value);
+    final lat = from.latitude + (to.latitude - from.latitude) * t;
+    final lng = from.longitude + (to.longitude - from.longitude) * t;
+    _animatedHelperNotifier.value = LatLng(lat, lng);
+  }
+
+  void _animateHelperTo(LatLng target) {
+    final current = _animatedHelperNotifier.value ?? _helperLatLng;
+    _helperLatLng = target;
+    if (current == null ||
+        (_haversineKm(current, target) < 0.0005)) {
+      _animFromLatLng = target;
+      _animToLatLng = target;
+      _animatedHelperNotifier.value = target;
+      return;
+    }
+    _animFromLatLng = current;
+    _animToLatLng = target;
+    _markerAnimCtrl
+      ..reset()
+      ..forward();
   }
 
   Future<void> _loadAll() async {
@@ -189,8 +247,8 @@ class _PosterTaskInProgressScreenState
     }
   }
 
-  Future<void> _pollTrackingAndStatus() async {
-    await _fetchLiveLocation();
+  /// Lightweight task-status poll (only calls setState if status or helper details changed).
+  Future<void> _pollTaskStatusOnly() async {
     if (!mounted) return;
     if (_isPlaceholderName(_helperName) || _resolvedHelperPhone == null) {
       await _fetchTrackingInfo();
@@ -199,23 +257,27 @@ class _PosterTaskInProgressScreenState
     final provider = context.read<TaskProvider>();
     final fresh = await provider.getTaskDetail(widget.taskId);
     if (!mounted || fresh == null) return;
-    final wasNeedsVerify = _needsVerify;
-    setState(() {
-      _task = fresh;
-      if (_isPlaceholderName(_helperName) &&
-          !_isPlaceholderName(fresh.helperName)) {
-        _helperName = fresh.helperName;
-      }
-      if ((_helperPhone == null || _helperPhone!.isEmpty) &&
-          fresh.helperPhone != null &&
-          fresh.helperPhone!.trim().isNotEmpty) {
-        _helperPhone = fresh.helperPhone!.trim();
-      }
-      if (!wasNeedsVerify && _verifyPendingStatuses.contains(fresh.status)) {
-        _selectedTab = 1;
-      }
-    });
-    _syncProof(fresh);
+
+    final statusChanged = _task?.status != fresh.status;
+    final proofChanged = _task?.completionProof != fresh.completionProof;
+    final nameChanged = _isPlaceholderName(_helperName) &&
+        !_isPlaceholderName(fresh.helperName);
+    final phoneChanged = (_helperPhone == null || _helperPhone!.isEmpty) &&
+        fresh.helperPhone != null &&
+        fresh.helperPhone!.trim().isNotEmpty;
+
+    if (statusChanged || proofChanged || nameChanged || phoneChanged) {
+      final wasNeedsVerify = _needsVerify;
+      setState(() {
+        _task = fresh;
+        if (nameChanged) _helperName = fresh.helperName;
+        if (phoneChanged) _helperPhone = fresh.helperPhone!.trim();
+        if (!wasNeedsVerify && _verifyPendingStatuses.contains(fresh.status)) {
+          _selectedTab = 1;
+        }
+      });
+      _syncProof(fresh);
+    }
   }
 
   /// Fetches authoritative helper name, phone, rating, and latest GPS from
@@ -242,25 +304,38 @@ class _PosterTaskInProgressScreenState
         }
       }
 
-      setState(() {
-        if (helper != null) {
-          final name = helper['name']?.toString().trim();
-          if (!_isPlaceholderName(name)) _helperName = name;
-          final phone = helper['phone']?.toString().trim();
-          if (phone != null && phone.isNotEmpty) _helperPhone = phone;
-          final rating = (helper['rating'] as num?)?.toDouble();
-          if (rating != null && rating > 0) _helperRating = rating;
+      String? newName;
+      String? newPhone;
+      double? newRating;
+      if (helper != null) {
+        final name = helper['name']?.toString().trim();
+        if (!_isPlaceholderName(name) && name != _helperName) newName = name;
+        final phone = helper['phone']?.toString().trim();
+        if (phone != null && phone.isNotEmpty && phone != _helperPhone) {
+          newPhone = phone;
         }
-        if (parsedLoc != null) {
-          _helperLatLng = parsedLoc;
+        final rating = (helper['rating'] as num?)?.toDouble();
+        if (rating != null && rating > 0 && rating != _helperRating) {
+          newRating = rating;
         }
-        final eta = tracking['eta']?.toString();
-        if (eta != null && eta.isNotEmpty) _etaText = eta;
-        final dist = tracking['distance']?.toString();
-        if (dist != null && dist.isNotEmpty) _distanceText = dist;
-      });
+      }
+
+      if (newName != null || newPhone != null || newRating != null) {
+        setState(() {
+          if (newName != null) _helperName = newName;
+          if (newPhone != null) _helperPhone = newPhone;
+          if (newRating != null) _helperRating = newRating;
+        });
+      }
+
+      final eta = tracking['eta']?.toString();
+      final dist = tracking['distance']?.toString();
+      if (eta != null && eta.isNotEmpty) _etaText = eta;
+      if (dist != null && dist.isNotEmpty) _distanceText = dist;
+      _liveMetaNotifier.value = (eta: _etaText, distance: _distanceText);
 
       if (parsedLoc != null) {
+        _animateHelperTo(parsedLoc);
         _centerMapOnHelper(force: !_hasCenteredOnHelper);
       }
     } catch (_) {}
@@ -301,8 +376,15 @@ class _PosterTaskInProgressScreenState
     }
   }
 
+  /// Polls ONLY helper's live GPS coordinates and smoothly animates the rider
+  /// marker on the mini-map (ZERO full-screen setState!).
   Future<void> _fetchLiveLocation() async {
-    if (_task == null || _isPaidOrDone || _isCancelled) return;
+    if (_task == null ||
+        _isPaidOrDone ||
+        _isCancelled ||
+        Task.isFreelancerCategory(_task!.category)) {
+      return;
+    }
     try {
       final res = await ApiService.get('/tracking/${widget.taskId}/location');
       if (!mounted) return;
@@ -312,14 +394,17 @@ class _PosterTaskInProgressScreenState
         final lng = (loc['lng'] as num?)?.toDouble();
         if (lat != null && lng != null && (lat != 0 || lng != 0)) {
           final updated = LatLng(lat, lng);
-          final moved = _helperLatLng == null ||
-              _haversineKm(_helperLatLng!, updated) > 0.01;
-          setState(() {
-            _helperLatLng = updated;
-            _etaText = res['eta']?.toString();
-            _distanceText = res['distance']?.toString();
-          });
-          if (moved || !_hasCenteredOnHelper) {
+          final prev = _helperLatLng;
+          final moved = prev == null || _haversineKm(prev, updated) > 0.005;
+
+          _etaText = res['eta']?.toString() ?? _etaText;
+          _distanceText = res['distance']?.toString() ?? _distanceText;
+          _liveMetaNotifier.value = (eta: _etaText, distance: _distanceText);
+
+          // Smoothly glide helper marker across the map without rebuilding screen
+          _animateHelperTo(updated);
+
+          if (!_hasCenteredOnHelper || moved) {
             _centerMapOnHelper(force: !_hasCenteredOnHelper);
           }
           return;
@@ -556,12 +641,16 @@ class _PosterTaskInProgressScreenState
                       color: const Color(0xFF0F172A).withValues(alpha: 0.85),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(
-                      _liveDistanceLabel,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
+                    child: ValueListenableBuilder<
+                        ({String? eta, String? distance})>(
+                      valueListenable: _liveMetaNotifier,
+                      builder: (_, __, ___) => Text(
+                        _liveDistanceLabel,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
                       ),
                     ),
                   ),
@@ -684,15 +773,8 @@ class _PosterTaskInProgressScreenState
   Widget _buildFlutterMap({bool interactive = false}) {
     final pickup = _pickupLatLng;
     final drop = _dropLatLng;
-    final helper = _helperLatLng;
 
-    final routePoints = <LatLng>[
-      if (helper != null) helper,
-      if (pickup != null) pickup,
-      if (drop != null) drop,
-    ];
-
-    final markers = <Marker>[
+    final staticMarkers = <Marker>[
       if (pickup != null)
         Marker(
           point: pickup,
@@ -743,16 +825,6 @@ class _PosterTaskInProgressScreenState
             ),
           ),
         ),
-      if (helper != null)
-        Marker(
-          point: helper,
-          width: 96,
-          height: 82,
-          alignment: Alignment.center,
-          child: _LiveHelperMapMarker(
-            label: _resolvedHelperName.split(' ').first,
-          ),
-        ),
     ];
 
     return FlutterMap(
@@ -777,17 +849,47 @@ class _PosterTaskInProgressScreenState
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.workmate4u.workmate4u',
         ),
-        if (routePoints.length >= 2)
-          PolylineLayer(
-            polylines: [
-              Polyline(
-                points: routePoints,
-                color: const Color(0xFF334155),
-                strokeWidth: 3.5,
-              ),
-            ],
-          ),
-        MarkerLayer(markers: markers),
+        // Only polyline + helper marker animate/rebuild on 10s GPS updates (60 FPS smooth glide)
+        ValueListenableBuilder<LatLng?>(
+          valueListenable: _animatedHelperNotifier,
+          builder: (_, liveHelper, __) {
+            final routePoints = <LatLng>[
+              if (liveHelper != null) liveHelper,
+              if (pickup != null) pickup,
+              if (drop != null) drop,
+            ];
+            if (routePoints.length < 2) return const SizedBox.shrink();
+            return PolylineLayer(
+              polylines: [
+                Polyline(
+                  points: routePoints,
+                  color: const Color(0xFF334155),
+                  strokeWidth: 3.5,
+                ),
+              ],
+            );
+          },
+        ),
+        MarkerLayer(markers: staticMarkers),
+        ValueListenableBuilder<LatLng?>(
+          valueListenable: _animatedHelperNotifier,
+          builder: (_, liveHelper, __) {
+            if (liveHelper == null) return const SizedBox.shrink();
+            return MarkerLayer(
+              markers: [
+                Marker(
+                  point: liveHelper,
+                  width: 96,
+                  height: 82,
+                  alignment: Alignment.center,
+                  child: _LiveHelperMapMarker(
+                    label: _resolvedHelperName.split(' ').first,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
       ],
     );
   }
@@ -1205,7 +1307,6 @@ class _PosterTaskInProgressScreenState
     final helperName = _resolvedHelperName;
     final hasPhone = _resolvedHelperPhone != null;
     final helperRating = _resolvedHelperRating;
-    final eta = _etaBox;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6FA),
@@ -1289,47 +1390,56 @@ class _PosterTaskInProgressScreenState
                                 ),
                               ),
                               const SizedBox(width: 10),
-                              // Compact white boxed ETA / LIVE GPS badge
-                              Container(
-                                constraints: const BoxConstraints(minWidth: 50),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 9, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(11),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.1),
-                                      blurRadius: 6,
-                                      offset: const Offset(0, 2),
+                              // Compact white boxed ETA / LIVE GPS badge (updates independently)
+                              ValueListenableBuilder<
+                                  ({String? eta, String? distance})>(
+                                valueListenable: _liveMetaNotifier,
+                                builder: (_, __, ___) {
+                                  final liveEta = _etaBox;
+                                  return Container(
+                                    constraints:
+                                        const BoxConstraints(minWidth: 50),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 9, vertical: 6),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(11),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black
+                                              .withValues(alpha: 0.1),
+                                          blurRadius: 6,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ],
                                     ),
-                                  ],
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      eta.top,
-                                      style: TextStyle(
-                                        color: const Color(0xFF0F172A),
-                                        fontWeight: FontWeight.w900,
-                                        fontSize:
-                                            eta.top.length > 2 ? 11.5 : 16,
-                                        height: 1.1,
-                                      ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          liveEta.top,
+                                          style: TextStyle(
+                                            color: const Color(0xFF0F172A),
+                                            fontWeight: FontWeight.w900,
+                                            fontSize: liveEta.top.length > 2
+                                                ? 11.5
+                                                : 16,
+                                            height: 1.1,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 1),
+                                        Text(
+                                          liveEta.bottom,
+                                          style: const TextStyle(
+                                            color: Color(0xFF475569),
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 9.5,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      eta.bottom,
-                                      style: const TextStyle(
-                                        color: Color(0xFF475569),
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 9.5,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+                                  );
+                                },
                               ),
                             ],
                           ),
@@ -1361,62 +1471,77 @@ class _PosterTaskInProgressScreenState
                     child: Stack(
                       children: [
                         _buildFlutterMap(interactive: false),
-                        // Compact Recenter + Small Live GPS & Expand overlay
+                        // Compact Recenter + Small Live GPS & Expand overlay (updates independently)
                         Positioned(
                           right: 8,
                           bottom: 8,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (_helperLatLng != null) ...[
-                                Material(
-                                  color: Colors.white.withValues(alpha: 0.92),
-                                  shape: const CircleBorder(),
-                                  elevation: 2,
-                                  child: InkWell(
-                                    onTap: () =>
-                                        _centerMapOnHelper(force: true),
-                                    customBorder: const CircleBorder(),
-                                    child: const SizedBox(
-                                      width: 26,
-                                      height: 26,
-                                      child: Icon(Icons.my_location_rounded,
-                                          size: 14, color: Color(0xFF059669)),
+                          child: ValueListenableBuilder<
+                              ({String? eta, String? distance})>(
+                            valueListenable: _liveMetaNotifier,
+                            builder: (_, __, ___) => Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ValueListenableBuilder<LatLng?>(
+                                  valueListenable: _animatedHelperNotifier,
+                                  builder: (_, liveHelper, __) {
+                                    if (liveHelper == null) {
+                                      return const SizedBox.shrink();
+                                    }
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: Material(
+                                        color:
+                                            Colors.white.withValues(alpha: 0.92),
+                                        shape: const CircleBorder(),
+                                        elevation: 2,
+                                        child: InkWell(
+                                          onTap: () =>
+                                              _centerMapOnHelper(force: true),
+                                          customBorder: const CircleBorder(),
+                                          child: const SizedBox(
+                                            width: 26,
+                                            height: 26,
+                                            child: Icon(
+                                                Icons.my_location_rounded,
+                                                size: 14,
+                                                color: Color(0xFF059669)),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                                InkWell(
+                                  onTap: _openFullscreenMap,
+                                  borderRadius: BorderRadius.circular(7),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 7, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF0F172A)
+                                          .withValues(alpha: 0.78),
+                                      borderRadius: BorderRadius.circular(7),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _liveDistanceLabel,
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 9.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 4),
+                                        const Icon(Icons.open_in_full_rounded,
+                                            color: Colors.white, size: 11),
+                                      ],
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 6),
                               ],
-                              InkWell(
-                                onTap: _openFullscreenMap,
-                                borderRadius: BorderRadius.circular(7),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 7, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF0F172A)
-                                        .withValues(alpha: 0.78),
-                                    borderRadius: BorderRadius.circular(7),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        _liveDistanceLabel,
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 9.5,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      const Icon(Icons.open_in_full_rounded,
-                                          color: Colors.white, size: 11),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
                         ),
                       ],

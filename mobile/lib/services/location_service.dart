@@ -62,7 +62,7 @@ class LocationService {
     }
   }
 
-  /// Fetches a fresh, high-accuracy GPS fix (never returns a stale cached location).
+  /// Fetches a fresh, accurate GPS fix fast (works both outdoors & indoors).
   static Future<Position?> getAccuratePosition() async {
     try {
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -77,15 +77,19 @@ class LocationService {
 
       try {
         return await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.bestForNavigation,
-          timeLimit: const Duration(seconds: 10),
+          desiredAccuracy: LocationAccuracy.high,
+          timeLimit: const Duration(seconds: 6),
         );
       } catch (_) {}
 
-      return await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 8),
-      );
+      try {
+        return await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 4),
+        );
+      } catch (_) {}
+
+      return await Geolocator.getLastKnownPosition();
     } catch (_) {
       return null;
     }
@@ -94,7 +98,7 @@ class LocationService {
   static Stream<Position> getLocationStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.bestForNavigation,
+        accuracy: LocationAccuracy.high,
         distanceFilter: 3, // metres — responsive live tracking
       ),
     );

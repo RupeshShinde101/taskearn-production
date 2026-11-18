@@ -152,6 +152,7 @@ class AppTheme {
           space: 0,
         ),
         fontFamily: 'Inter',
+        fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
       );
 
   static ThemeData get darkTheme => ThemeData(
@@ -206,6 +207,7 @@ class AppTheme {
           hintStyle: const TextStyle(color: AppColors.gray, fontSize: 14),
         ),
         fontFamily: 'Inter',
+        fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
       );
 }
 

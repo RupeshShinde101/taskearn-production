@@ -503,7 +503,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       : isVehicle
                                           ? const Color(0xFF1E40AF)
                                           : AppColors.primary,
-                                  fontWeight: FontWeight.w500),
+                                  fontWeight: FontWeight.w500,
+                                  fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif']),
                               side: BorderSide(
                                   color: isSensitive
                                       ? const Color(0xFFF59E0B)
@@ -1085,8 +1086,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       isScrollControlled: true,
       useRootNavigator: true,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetCtx) => _EditSkillsSheet(auth: auth),
     );
@@ -1810,6 +1812,40 @@ class _EditSkillsSheet extends StatefulWidget {
   State<_EditSkillsSheet> createState() => _EditSkillsSheetState();
 }
 
+const List<String> _kVehicleSkills = [
+  'Delivery',
+  'Driving',
+  'Moving & Packing',
+];
+
+const List<String> _kSensitiveSkillsList = [
+  'Cleaning',
+  'Cooking',
+  'Plumbing',
+  'Electrical',
+  'Carpentry',
+  'Pet Care',
+  'Babysitting',
+  'Elder Care',
+];
+
+const List<String> _kGeneralSkills = [
+  'Painting',
+  'Gardening',
+  'Shopping',
+  'Tutoring',
+  'Photography',
+  'Video Editing',
+  'Graphic Design',
+  'Web Development',
+  'Data Entry',
+  'Translation',
+  'Errands',
+  'Assembly',
+  'Event Help',
+  'Security',
+];
+
 class _EditSkillsSheetState extends State<_EditSkillsSheet> {
   late List<String> _selectedSkills;
   bool _saving = false;
@@ -1840,72 +1876,92 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
     if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.transparent,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (promptCtx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFDBEAFE),
-                      shape: BoxShape.circle,
+      builder: (promptCtx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFDBEAFE),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 24),
                     ),
-                    child: const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Vehical Verification Required',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E3A8A),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Vehicle Verification Required',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E3A8A),
+                          fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                        ),
                       ),
                     ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Skill "$skill" requires vehicle documentation (Driving License & Vehicle RC) before you can accept vehicle tasks.',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF475569),
+                    height: 1.45,
+                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                'Skill "$skill" requires vehicle documentation (Driving License & Vehical RC) before you can accept vehicle tasks.',
-                style: const TextStyle(fontSize: 13, color: Color(0xFF475569), height: 1.45),
-              ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.pop(promptCtx);
-                    final router = GoRouter.of(context);
-                    Navigator.pop(context);
-                    final vehicleSelected = _selectedSkills.where((s) => isVehicleSkill(s)).toList();
-                    router.push('/vehicle-verification', extra: {
-                      'skills': vehicleSelected.isNotEmpty ? vehicleSelected : [skill],
-                    });
-                  },
-                  icon: const Icon(Icons.drive_eta_rounded, size: 18, color: Colors.white),
-                  label: const Text(
-                    'Open Verification Form',
-                    style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w700),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF1E40AF),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
+                ),
+                const SizedBox(height: 18),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(promptCtx);
+                      final router = GoRouter.of(context);
+                      Navigator.pop(context);
+                      final vehicleSelected = _selectedSkills.where((s) => isVehicleSkill(s)).toList();
+                      router.push('/vehicle-verification', extra: {
+                        'skills': vehicleSelected.isNotEmpty ? vehicleSelected : [skill],
+                      });
+                    },
+                    icon: const Icon(Icons.drive_eta_rounded, size: 18, color: Colors.white),
+                    label: const Text(
+                      'Open Verification Form',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF1E40AF),
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      elevation: 0,
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1922,7 +1978,10 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
     if (sensitiveSelected.isNotEmpty && !isVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Sensitive skills (${sensitiveSelected.join(", ")}) require admin verification. Please request onboarding verification.'),
+          content: Text(
+            'Sensitive skills (${sensitiveSelected.join(", ")}) require admin verification. Please request onboarding verification.',
+            style: const TextStyle(fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif']),
+          ),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -1934,7 +1993,10 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
     if (vehicleSelected.isNotEmpty && !isVehicleVerified) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Vehicle skills (${vehicleSelected.join(", ")}) require vehicle verification (DL & RC). Please submit verification.'),
+          content: Text(
+            'Vehicle skills (${vehicleSelected.join(", ")}) require vehicle verification (DL & RC). Please submit verification.',
+            style: const TextStyle(fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif']),
+          ),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -1949,11 +2011,468 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(ok
-            ? 'Skills updated successfully!'
-            : (widget.auth.error ?? 'Failed to save skills. Please try again.')),
+        content: Text(
+          ok
+              ? 'Skills updated successfully!'
+              : (widget.auth.error ?? 'Failed to save skills. Please try again.'),
+          style: const TextStyle(fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif']),
+        ),
         backgroundColor: ok ? AppColors.success : AppColors.danger,
         duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Widget _buildSkillCard(
+    String skill, {
+    required bool isSelected,
+    required bool isVehicle,
+    required bool isSensitive,
+    required VoidCallback onTap,
+  }) {
+    final Color activeColor = isSensitive
+        ? const Color(0xFFD97706)
+        : isVehicle
+            ? const Color(0xFF1D4ED8)
+            : AppColors.primary;
+
+    final Color activeBg = isSensitive
+        ? const Color(0xFFFFFBEB)
+        : isVehicle
+            ? const Color(0xFFEFF6FF)
+            : const Color(0xFFEEF2FF);
+
+    final Color activeBorder = isSensitive
+        ? const Color(0xFFF59E0B)
+        : isVehicle
+            ? const Color(0xFF3B82F6)
+            : AppColors.primary;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 140),
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? activeBg : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? activeBorder : const Color(0xFFE2E8F0),
+              width: isSelected ? 1.5 : 1,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: activeColor.withValues(alpha: 0.10),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            children: [
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 140),
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isSelected ? activeColor : Colors.transparent,
+                  border: Border.all(
+                    color: isSelected ? activeColor : const Color(0xFFCBD5E1),
+                    width: 1.5,
+                  ),
+                ),
+                child: isSelected
+                    ? const Icon(Icons.check, size: 12, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  skill,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                    color: isSelected ? activeColor : const Color(0xFF1E293B),
+                    fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
+                  ),
+                ),
+              ),
+              if (isVehicle) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.directions_car_rounded,
+                  size: 15,
+                  color: isSelected ? activeColor : const Color(0xFF94A3B8),
+                ),
+              ] else if (isSensitive) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  Icons.shield_rounded,
+                  size: 15,
+                  color: isSelected ? activeColor : const Color(0xFF94A3B8),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTwoColumnGrid(List<String> skills, {bool spanLastIfOdd = false}) {
+    final List<Widget> rows = [];
+    for (int i = 0; i < skills.length; i += 2) {
+      if (i + 1 < skills.length) {
+        final s1 = skills[i];
+        final s2 = skills[i + 1];
+        rows.add(
+          Row(
+            children: [
+              Expanded(
+                child: _buildSkillCard(
+                  s1,
+                  isSelected: _selectedSkills.contains(s1),
+                  isVehicle: isVehicleSkill(s1),
+                  isSensitive: kSensitiveSkills.contains(s1),
+                  onTap: () => _toggleSkill(s1),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildSkillCard(
+                  s2,
+                  isSelected: _selectedSkills.contains(s2),
+                  isVehicle: isVehicleSkill(s2),
+                  isSensitive: kSensitiveSkills.contains(s2),
+                  onTap: () => _toggleSkill(s2),
+                ),
+              ),
+            ],
+          ),
+        );
+      } else {
+        final s1 = skills[i];
+        if (spanLastIfOdd) {
+          rows.add(
+            Row(
+              children: [
+                Expanded(
+                  child: _buildSkillCard(
+                    s1,
+                    isSelected: _selectedSkills.contains(s1),
+                    isVehicle: isVehicleSkill(s1),
+                    isSensitive: kSensitiveSkills.contains(s1),
+                    onTap: () => _toggleSkill(s1),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          rows.add(
+            Row(
+              children: [
+                Expanded(
+                  child: _buildSkillCard(
+                    s1,
+                    isSelected: _selectedSkills.contains(s1),
+                    isVehicle: isVehicleSkill(s1),
+                    isSensitive: kSensitiveSkills.contains(s1),
+                    onTap: () => _toggleSkill(s1),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(child: SizedBox.shrink()),
+              ],
+            ),
+          );
+        }
+      }
+      if (i + 2 < skills.length || (i + 1 < skills.length && spanLastIfOdd)) {
+        rows.add(const SizedBox(height: 8));
+      }
+    }
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: rows,
+    );
+  }
+
+  Widget _buildSectionHeader({
+    required IconData icon,
+    required String title,
+    required String badgeText,
+    required Color badgeBg,
+    required Color badgeTextColor,
+    required Color iconColor,
+    required Color iconBg,
+    required String subtitle,
+    required int selectedCount,
+    required int totalCount,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, size: 16, color: iconColor),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Row(
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                        fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: badgeBg,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        badgeText,
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: badgeTextColor,
+                          fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (selectedCount > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$selectedCount/$totalCount',
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF475569),
+                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 40),
+            child: Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: Color(0xFF64748B),
+                height: 1.3,
+                fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSensitiveWarningBanner(List<String> sensitiveSelected, bool isPending) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isPending
+                      ? 'Verification Under Admin Review'
+                      : 'Physical Onboarding Required',
+                  style: const TextStyle(
+                    color: Color(0xFF92400E),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isPending
+                ? 'You have submitted an onboarding request. Once Admin approves it, your sensitive skills (${sensitiveSelected.join(", ")}) will be activated on your profile.'
+                : 'Sensitive skills (${sensitiveSelected.join(", ")}) cannot be saved directly without physical verification. Submit an onboarding verification request below to enable them.',
+            style: const TextStyle(
+              color: Color(0xFF78350F),
+              fontSize: 12,
+              height: 1.45,
+              fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final router = GoRouter.of(context);
+                Navigator.pop(context);
+                router.push('/physical-onboarding', extra: {'skills': sensitiveSelected});
+              },
+              icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
+              label: Text(
+                isPending
+                    ? 'View Pending Request'
+                    : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFD97706),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVehicleWarningBanner(List<String> vehicleSelected, bool isVehiclePending) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDBEAFE),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  isVehiclePending
+                      ? 'Vehicle Verification Under Admin Review'
+                      : 'Vehicle Verification Required',
+                  style: const TextStyle(
+                    color: Color(0xFF1E40AF),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isVehiclePending
+                ? 'You have submitted a vehicle verification request. Once Admin approves your DL and RC, your vehicle skills (${vehicleSelected.join(", ")}) will be activated on your profile.'
+                : 'Vehicle skills (${vehicleSelected.join(", ")}) require vehicle and Driving License & RC verification. Direct save is disabled. Submit verification below to activate them.',
+            style: const TextStyle(
+              color: Color(0xFF1E3A8A),
+              fontSize: 12,
+              height: 1.45,
+              fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                final router = GoRouter.of(context);
+                Navigator.pop(context);
+                router.push('/vehicle-verification', extra: {'skills': vehicleSelected});
+              },
+              icon: const Icon(Icons.drive_eta_rounded, size: 16, color: Colors.white),
+              label: Text(
+                isVehiclePending
+                    ? 'View Pending Vehicle Verification'
+                    : 'Open Vehicle Verification Form (${vehicleSelected.length} skills)',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1D4ED8),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1976,263 +2495,231 @@ class _EditSkillsSheetState extends State<_EditSkillsSheet> {
 
     final bool disableSave = disableSaveForSensitive || disableSaveForVehicle;
 
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          20, 20, 20, MediaQuery.of(context).viewInsets.bottom + 20),
-      child: SingleChildScrollView(
+    final vehicleSelectedCount = _selectedSkills.where((s) => isVehicleSkill(s)).length;
+    final sensitiveSelectedCount = _selectedSkills.where((s) => kSensitiveSkills.contains(s)).length;
+    final generalSelectedCount = _selectedSkills.where((s) => !isVehicleSkill(s) && !kSensitiveSkills.contains(s)).length;
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.90,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Center(
-              child: Text('My Skills',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            ),
-            const SizedBox(height: 4),
-            const Center(
-              child: Text('Select skills so AI can match you with relevant tasks',
-                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: _kAllSkills
-                  .map((skill) {
-                    final isSensitive = kSensitiveSkills.contains(skill);
-                    final isVehicle = isVehicleSkill(skill);
-                    final isSelected = _selectedSkills.contains(skill);
-                    return FilterChip(
-                      label: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(skill),
-                          if (isSensitive) ...[
-                            const SizedBox(width: 4),
-                            Icon(Icons.shield_outlined,
-                                size: 12,
-                                color: isSelected ? const Color(0xFFD97706) : const Color(0xFFB45309)),
-                          ] else if (isVehicle) ...[
-                            const SizedBox(width: 4),
-                            Icon(Icons.directions_car_outlined,
-                                size: 12,
-                                color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF2563EB)),
-                          ],
-                        ],
-                      ),
-                      selected: isSelected,
-                      onSelected: (_) => _toggleSkill(skill),
-                      selectedColor: isSensitive
-                          ? const Color(0xFFFEF3C7)
-                          : isVehicle
-                              ? const Color(0xFFEFF6FF)
-                              : AppColors.primary.withValues(alpha: 0.15),
-                      checkmarkColor: isSensitive
-                          ? const Color(0xFFB45309)
-                          : isVehicle
-                              ? const Color(0xFF1D4ED8)
-                              : AppColors.primary,
-                      labelStyle: TextStyle(
-                          color: isSelected
-                              ? (isSensitive
-                                  ? const Color(0xFF78350F)
-                                  : isVehicle
-                                      ? const Color(0xFF1E3A8A)
-                                      : AppColors.primary)
-                              : AppColors.gray,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500),
-                      side: BorderSide(
-                          color: isSelected
-                              ? (isSensitive
-                                  ? const Color(0xFFF59E0B)
-                                  : isVehicle
-                                      ? const Color(0xFF3B82F6)
-                                      : AppColors.primary)
-                              : AppColors.border),
-                    );
-                  })
-                  .toList(),
-            ),
-            if (disableSaveForSensitive) ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFEF3C7),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.shield_rounded, color: Color(0xFFD97706), size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            isPending
-                                ? 'Verification Under Admin Review'
-                                : 'Onboarding Verification Required',
-                            style: const TextStyle(
-                              color: Color(0xFF92400E),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      isPending
-                          ? 'You have submitted an onboarding request. Once Admin approves it, your sensitive skills (${sensitiveSelected.join(", ")}) will be automatically added to your profile.'
-                          : 'Sensitive skills (${sensitiveSelected.join(", ")}) cannot be saved directly. Direct save is disabled. Submit an onboarding verification request below; once Admin approves, these skills will automatically be saved to your profile.',
-                      style: const TextStyle(color: Color(0xFF78350F), fontSize: 12, height: 1.4),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 42,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          final router = GoRouter.of(context);
-                          Navigator.pop(context);
-                          router.push('/physical-onboarding', extra: {'skills': sensitiveSelected});
-                        },
-                        icon: const Icon(Icons.send_rounded, size: 16, color: Colors.white),
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            isPending
-                                ? 'View Pending Request'
-                                : 'Send Onboarding Request (${sensitiveSelected.length} sensitive)',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFD97706),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          elevation: 0,
-                        ),
+            // Fixed Top Bar: Drag handle, Header with title, count badge, close button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 16, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFCBD5E1),
+                        borderRadius: BorderRadius.circular(2),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ],
-            if (disableSaveForVehicle) ...[
-              const SizedBox(height: 14),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.directions_car_rounded, color: Color(0xFF1D4ED8), size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            isVehiclePending
-                                ? 'Vehical Verification Under Admin Review'
-                                : 'Vehical Verification Required',
-                            style: const TextStyle(
-                              color: Color(0xFF1E40AF),
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      isVehiclePending
-                          ? 'You have submitted a vehicle verification request. Once Admin approves your DL and RC, your vehicle skills (${vehicleSelected.join(", ")}) will be automatically added to your profile.'
-                          : 'Vehicle skills (${vehicleSelected.join(", ")}) require vehicle and Driving License & RC verification. Direct save is disabled. Submit a vehicle verification request below; once Admin approves, these skills will automatically be saved to your profile.',
-                      style: const TextStyle(color: Color(0xFF1E3A8A), fontSize: 12, height: 1.4),
-                    ),
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 42,
-                      child: ElevatedButton.icon(
-                        onPressed: () {
-                          final router = GoRouter.of(context);
-                          Navigator.pop(context);
-                          router.push('/vehicle-verification', extra: {'skills': vehicleSelected});
-                        },
-                        icon: const Icon(Icons.drive_eta_rounded, size: 16, color: Colors.white),
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            isVehiclePending
-                                ? 'View Pending Vehicle Verification'
-                                : 'Open Vehical Verification Form (${vehicleSelected.length} skills)',
-                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1D4ED8),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 20),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: (_saving || disableSave) ? null : _save,
-                style: ElevatedButton.styleFrom(
-                  disabledBackgroundColor: const Color(0xFFE2E8F0),
-                  disabledForegroundColor: const Color(0xFF94A3B8),
-                ),
-                child: _saving
-                    ? const SizedBox(
-                        height: 20,
-                        width: 20,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : Text(
-                        disableSave
-                            ? 'Save Disabled (Verification Required)'
-                            : 'Save Skills',
-                      ),
-              ),
-            ),
-            if (disableSave)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Center(
-                  child: Text(
-                    disableSaveForVehicle && disableSaveForSensitive
-                        ? 'Deselect restricted skills to save general skills, or submit required verifications.'
-                        : (disableSaveForVehicle
-                            ? 'Deselect vehicle skills to save general skills, or open Vehical Verification form.'
-                            : 'Deselect sensitive skills to save general skills, or send onboarding request.'),
-                    style: const TextStyle(fontSize: 11, color: AppColors.gray),
-                    textAlign: TextAlign.center,
                   ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Text(
+                        'My Skills',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                          fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEEF2FF),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${_selectedSkills.length} Selected',
+                          style: const TextStyle(
+                            color: Color(0xFF4F46E5),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                          ),
+                        ),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 22, color: Color(0xFF64748B)),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Select skills so AI can match you with relevant tasks',
+                    style: TextStyle(
+                      color: Color(0xFF64748B),
+                      fontSize: 12,
+                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            // Scrollable categorized skills
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Vehicle Skills
+                    _buildSectionHeader(
+                      icon: Icons.directions_car_rounded,
+                      title: 'Vehicle Required',
+                      badgeText: isVehicleVerified
+                          ? 'Verified'
+                          : (isVehiclePending ? 'Under Review' : 'DL & RC Required'),
+                      badgeBg: isVehicleVerified
+                          ? const Color(0xFFDCFCE7)
+                          : (isVehiclePending ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF)),
+                      badgeTextColor: isVehicleVerified
+                          ? const Color(0xFF15803D)
+                          : (isVehiclePending ? const Color(0xFFB45309) : const Color(0xFF1D4ED8)),
+                      iconColor: const Color(0xFF1D4ED8),
+                      iconBg: const Color(0xFFDBEAFE),
+                      subtitle: 'Tasks involving driving, transport, or vehicle delivery',
+                      selectedCount: vehicleSelectedCount,
+                      totalCount: _kVehicleSkills.length,
+                    ),
+                    _buildTwoColumnGrid(_kVehicleSkills, spanLastIfOdd: true),
+                    const SizedBox(height: 22),
+
+                    // 2. Sensitive / In-Home Skills
+                    _buildSectionHeader(
+                      icon: Icons.shield_rounded,
+                      title: 'Sensitive & In-Home',
+                      badgeText: isVerified
+                          ? 'Verified'
+                          : (isPending ? 'Under Review' : 'Verification Required'),
+                      badgeBg: isVerified
+                          ? const Color(0xFFDCFCE7)
+                          : const Color(0xFFFEF3C7),
+                      badgeTextColor: isVerified
+                          ? const Color(0xFF15803D)
+                          : const Color(0xFFB45309),
+                      iconColor: const Color(0xFFD97706),
+                      iconBg: const Color(0xFFFEF3C7),
+                      subtitle: 'In-home services requiring identity & physical onboarding',
+                      selectedCount: sensitiveSelectedCount,
+                      totalCount: _kSensitiveSkillsList.length,
+                    ),
+                    _buildTwoColumnGrid(_kSensitiveSkillsList),
+                    const SizedBox(height: 22),
+
+                    // 3. General Skills
+                    _buildSectionHeader(
+                      icon: Icons.bolt_rounded,
+                      title: 'General Skills',
+                      badgeText: 'Instant Match',
+                      badgeBg: const Color(0xFFEEF2FF),
+                      badgeTextColor: const Color(0xFF4F46E5),
+                      iconColor: const Color(0xFF4F46E5),
+                      iconBg: const Color(0xFFEEF2FF),
+                      subtitle: 'No extra verification needed — start accepting tasks right away',
+                      selectedCount: generalSelectedCount,
+                      totalCount: _kGeneralSkills.length,
+                    ),
+                    _buildTwoColumnGrid(_kGeneralSkills),
+
+                    // Warning banners if restricted skills selected
+                    if (disableSaveForSensitive) ...[
+                      const SizedBox(height: 18),
+                      _buildSensitiveWarningBanner(sensitiveSelected, isPending),
+                    ],
+                    if (disableSaveForVehicle) ...[
+                      const SizedBox(height: 18),
+                      _buildVehicleWarningBanner(vehicleSelected, isVehiclePending),
+                    ],
+                  ],
                 ),
               ),
+            ),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            // Fixed Bottom Bar: Save Button
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                20, 12, 20, MediaQuery.of(context).viewInsets.bottom + 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      onPressed: (_saving || disableSave) ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF4F46E5),
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: const Color(0xFFE2E8F0),
+                        disabledForegroundColor: const Color(0xFF94A3B8),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: _saving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : Text(
+                              disableSave
+                                  ? 'Save Disabled (Verification Required)'
+                                  : 'Save Skills',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                              ),
+                            ),
+                    ),
+                  ),
+                  if (disableSave)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        disableSaveForVehicle && disableSaveForSensitive
+                            ? 'Deselect restricted skills to save general skills, or submit required verifications.'
+                            : (disableSaveForVehicle
+                                ? 'Deselect vehicle skills to save general skills, or open Vehicle Verification form.'
+                                : 'Deselect sensitive skills to save general skills, or send onboarding request.'),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF64748B),
+                          height: 1.35,
+                          fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),

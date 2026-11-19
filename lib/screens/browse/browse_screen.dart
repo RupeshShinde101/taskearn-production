@@ -863,6 +863,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
           width: 72,
           height: 72,
           fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
           errorBuilder: (_, __, ___) => const _ThreeDots3DIllustration(),
         ),
       ),
@@ -1088,31 +1089,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
                             fontSize: 13.5,
                             color: Color(0xFF64748B),
                             fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          height: 44,
-                          child: ElevatedButton.icon(
-                            onPressed: () => context.push('/post-task'),
-                            icon: const Icon(Icons.add_rounded, size: 18),
-                            label: Text(
-                              'Post a Task in ${config.label}',
-                              style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w600,
-                                fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                              ),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2563EB),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(horizontal: 22),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(22),
-                              ),
-                            ),
                           ),
                         ),
                       ],

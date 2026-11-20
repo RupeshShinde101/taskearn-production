@@ -219,6 +219,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _budgetCtrl.text.trim() == _lastAutoBudgetText);
     if (!wasAutoOrEmpty) return;
 
+    if (Task.isRepairCategory(_selectedCategory)) {
+      final visitPrice = Task.fixedVisitPriceForRepairCategory(_selectedCategory);
+      _syncAutoBudget(visitPrice);
+      return;
+    }
+
     if (Task.isFreelancerCategory(_selectedCategory)) {
       final q = _freelancerQuote;
       if (q != null) _syncAutoBudget(q.suggestedBudget);
@@ -275,6 +281,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     } else if (categoryId == 'groceries' || categoryId == 'grocery') {
       _deliveryVehicle = 'bike';
       _initGroceryDefaults(wasAutoOrEmpty: wasAutoOrEmpty);
+    } else if (Task.isRepairCategory(categoryId)) {
+      final visitPrice = Task.fixedVisitPriceForRepairCategory(categoryId);
+      _syncAutoBudget(visitPrice);
     }
     if (Task.isFreelancerCategory(categoryId)) {
       _freelancerManualScope = false;
@@ -2368,9 +2377,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
 
-    final budget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final isRepair = Task.isRepairCategory(_selectedCategory);
+    final double budget = isRepair
+        ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
+        : (double.tryParse(_budgetCtrl.text) ?? 0);
     final isGrocery = Task.isGroceryCategory(_selectedCategory);
-    if (!isGrocery) {
+    if (!isGrocery && !isRepair) {
       if (_isDelivery) {
         if (_calculatedDistanceKm != null) {
           final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
@@ -2401,7 +2413,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-    final posterFee = isGrocery ? 12.0 : (budget * 0.20);
+    final posterFee = isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
     final total  = budget + charge + posterFee;
 
     // Confirm posting — payment is collected AFTER the helper completes the task
@@ -6967,13 +6979,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       valueListenable: _budgetCtrl,
       builder: (_, value, __) {
         final isGrocery = Task.isGroceryCategory(_selectedCategory);
+        final isRepair = Task.isRepairCategory(_selectedCategory);
         final rawBudget = double.tryParse(value.text) ?? 0;
-        final budget = isGrocery && rawBudget <= 0
-            ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
-            : rawBudget;
+        final budget = isRepair
+            ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
+            : (isGrocery && rawBudget <= 0
+                ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+                : rawBudget);
         final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
         final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-        final posterFee = isGrocery ? 12.0 : (budget * 0.20);
+        final posterFee = isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
         final total = budget + charge + posterFee;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -6983,7 +6998,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               serviceCharge: charge,
               posterFee: posterFee,
               totalCost: total,
-              isRepair: Task.isRepairCategory(_selectedCategory),
+              isRepair: isRepair,
               isGrocery: isGrocery,
               distanceKm: _calculatedDistanceKm,
             ),
@@ -7004,6 +7019,158 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           ],
         );
       },
+    );
+  }
+
+  Widget _buildRepairVisitingFeeCard() {
+    final visitPrice = Task.fixedVisitPriceForRepairCategory(_selectedCategory).toInt();
+    final visitTitle = Task.repairVisitTitle(_selectedCategory);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.handyman_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      visitTitle,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Fixed Price Per Visit Model',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4F46E5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFC7D2FE)),
+                ),
+                child: Text(
+                  '₹$visitPrice',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF4338CA),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Doorstep technician visit, inspection & fault diagnosis at standard market rate.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Flat ₹20 platform fee incl. GST (no 20% commission on repairs).',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Spare parts & major labor are quoted after inspection and paid directly to technician.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -7365,7 +7532,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                         ),
                       ],
-                      if (!Task.isGroceryCategory(_selectedCategory)) ...[
+                      if (Task.isRepairCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildRepairVisitingFeeCard(),
+                      ] else if (!Task.isGroceryCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildSuggestedBudgetCard(),
                         _buildBudgetField(),

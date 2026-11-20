@@ -4114,8 +4114,9 @@ def complete_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
+            _is_repair = str(task.get('category', '')).lower() in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
             _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
-            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
+            poster_fee = 12.0 if _is_grocery else (20.0 if _is_repair else (task_amount * _poster_commission_rate))
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4257,8 +4258,9 @@ def verify_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
+            _is_repair = str(task.get('category', '')).lower() in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
             _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
-            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
+            poster_fee = 12.0 if _is_grocery else (20.0 if _is_repair else (task_amount * _poster_commission_rate))
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4667,13 +4669,19 @@ def pay_helper(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Commission rates:
-            # 20% helper commission and 20% poster platform fee & GST for all categories.
             _is_delivery = _category in _DELIVERY_CATS
+            _is_repair = _category in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
+            _is_grocery = _category in {'groceries', 'grocery'}
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
 
             helper_total_deduction = total_task_value * _commission_rate
-            poster_deduction = task_amount * _poster_commission_rate
+            if _is_grocery:
+                poster_deduction = 12.0
+            elif _is_repair:
+                poster_deduction = 20.0
+            else:
+                poster_deduction = task_amount * _poster_commission_rate
             total_poster_cost = total_task_value + poster_deduction
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
@@ -4740,7 +4748,7 @@ def pay_helper(task_id):
                 ''', (
                     poster_wallet.get('id'), request.user_id, 'debit',
                     poster_deduction, poster_new_balance,
-                    f'Platform fee & GST (20%): ₹{poster_deduction:.2f}',
+                    f'Platform fee & GST: ₹{poster_deduction:.2f}' if (_is_grocery or _is_repair) else f'Platform fee & GST (20%): ₹{poster_deduction:.2f}',
                     f'task-platform-fee-{task_id}', task_id, now
                 ))
             
@@ -4834,7 +4842,7 @@ def pay_helper(task_id):
                 ''', (
                     company_wallet.get('id'), '1', 'commission',
                     poster_deduction, company_new_balance,
-                    f'Poster platform fee & GST ({_poster_commission_rate*100:.0f}%) from task #{task_id}: ₹{poster_deduction:.2f}',
+                    f'Poster platform fee & GST from task #{task_id}: ₹{poster_deduction:.2f}' if (_is_grocery or _is_repair) else f'Poster platform fee & GST ({_poster_commission_rate*100:.0f}%) from task #{task_id}: ₹{poster_deduction:.2f}',
                     f'task-poster-fee-{task_id}', task_id, now
                 ))
             

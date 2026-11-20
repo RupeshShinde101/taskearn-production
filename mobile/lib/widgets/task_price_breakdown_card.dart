@@ -119,6 +119,10 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             _PriceRow('Task Delivery Budget', '₹${budget.toStringAsFixed(0)}'),
             const SizedBox(height: 8),
             const _PriceRow('Platform Fee & GST (Fixed)', '₹12'),
+          ] else if (isRepair) ...[
+            _PriceRow('Visiting & Inspection Fee', '₹${budget.toStringAsFixed(0)}'),
+            const SizedBox(height: 8),
+            const _PriceRow('Platform Fee & GST (Fixed)', '₹20'),
           ] else ...[
             _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
             if (serviceCharge > 0) ...[
@@ -183,7 +187,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Materials Policy: Spare parts and materials required for repair services will be paid directly by the task poster and are NOT included in the budget value.',
+                      'Fixed Visiting Fee Model: Covers doorstep visit, expert inspection, and initial fault diagnosis. Any required spare parts or extra labor are quoted on-site and paid directly.',
                       style: TextStyle(
                         fontSize: 11.5,
                         color: Color(0xFF92400E),

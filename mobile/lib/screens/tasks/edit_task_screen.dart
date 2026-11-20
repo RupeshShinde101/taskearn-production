@@ -293,6 +293,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
         (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
     if (!wasAutoOrEmpty || _isDelivery) return;
+    if (Task.isRepairCategory(_selectedCategory)) {
+      _syncAutoBudget(Task.fixedVisitPriceForRepairCategory(_selectedCategory));
+      return;
+    }
     final suggestion = Task.getBudgetSuggestion(
       _selectedCategory,
       areaText: _isFreelancer ? null : _currentAreaCandidate(),
@@ -332,8 +336,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final t = widget.task;
     _titleCtrl      = TextEditingController(text: t.title);
     _descCtrl       = TextEditingController(text: t.description);
-    _budgetCtrl     = TextEditingController(text: t.budget.toStringAsFixed(0));
     _selectedCategory = t.category;
+    final initialBudget = Task.isRepairCategory(_selectedCategory)
+        ? Task.fixedVisitPriceForRepairCategory(_selectedCategory).toStringAsFixed(0)
+        : t.budget.toStringAsFixed(0);
+    _budgetCtrl     = TextEditingController(text: initialBudget);
 
     _suggestedGroceryStoresList = [];
     if (_isGrocery) {
@@ -841,8 +848,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       return;
     }
 
-    final budget = double.tryParse(_budgetCtrl.text) ?? 0;
-    if (!_isGrocery) {
+    final isRepair = Task.isRepairCategory(_selectedCategory);
+    final budget = isRepair
+        ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
+        : (double.tryParse(_budgetCtrl.text) ?? 0);
+    if (!_isGrocery && !isRepair) {
       if (_isDelivery) {
         if (_calculatedDistanceKm != null) {
           final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
@@ -1206,7 +1216,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   }
 
   Widget _buildSuggestedBudgetCard() {
-    if (_isGrocery) return const SizedBox.shrink();
+    if (_isGrocery || Task.isRepairCategory(_selectedCategory)) return const SizedBox.shrink();
     if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
     final areaCandidate = _currentAreaCandidate();
 
@@ -1323,6 +1333,158 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 child: const Text('Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRepairVisitingFeeCard() {
+    final visitPrice = Task.fixedVisitPriceForRepairCategory(_selectedCategory).toInt();
+    final visitTitle = Task.repairVisitTitle(_selectedCategory);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.handyman_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      visitTitle,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Fixed Price Per Visit Model',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF4F46E5),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFC7D2FE)),
+                ),
+                child: Text(
+                  '₹$visitPrice',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF4338CA),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Doorstep technician visit, inspection & fault diagnosis at standard market rate.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Flat ₹20 platform fee incl. GST (no 20% commission on repairs).',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFFF59E0B)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Spare parts & major labor are quoted after inspection and paid directly to technician.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -2183,11 +2345,13 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   if (_isGrocery) {
                     _deliveryVehicle = 'bike';
                     _updateSuggestedStoresForDrop(_dropAddrCtrl.text.trim(), _dropLocation);
+                  } else if (Task.isRepairCategory(c)) {
+                    _syncAutoBudget(Task.fixedVisitPriceForRepairCategory(c));
                   }
                   _recalcDistance();
                   _syncAreaBudgetIfAuto();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
-                    if (mounted && !_isGrocery && _budgetCtrl.text.trim().isNotEmpty) {
+                    if (mounted && !_isGrocery && !Task.isRepairCategory(_selectedCategory) && _budgetCtrl.text.trim().isNotEmpty) {
                       _budgetFieldKey.currentState?.validate();
                     }
                   });
@@ -2234,51 +2398,57 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 ),
                 const SizedBox(height: 14),
 
-                // Suggested budget card based on category + selected area
-                _buildSuggestedBudgetCard(),
+                // Budget & Visiting Fee
+                if (Task.isRepairCategory(_selectedCategory)) ...[
+                  _buildRepairVisitingFeeCard(),
+                  const SizedBox(height: 16),
+                ] else if (!_isGrocery) ...[
+                  // Suggested budget card based on category + selected area
+                  _buildSuggestedBudgetCard(),
 
-                // Budget (Non-grocery only)
-                _buildSectionHeader(
-                  icon: Icons.account_balance_wallet_rounded,
-                  iconColor: const Color(0xFF4F46E5),
-                  iconBg: const Color(0xFFEEF2FF),
-                  title: 'Task Budget',
-                ),
-                const SizedBox(height: 10),
-                TextFormField(
-                  key: _budgetFieldKey,
-                  controller: _budgetCtrl,
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: 'Budget (₹)',
-                    prefixIcon: const Icon(Icons.currency_rupee),
+                  // Budget (Non-grocery only)
+                  _buildSectionHeader(
+                    icon: Icons.account_balance_wallet_rounded,
+                    iconColor: const Color(0xFF4F46E5),
+                    iconBg: const Color(0xFFEEF2FF),
+                    title: 'Task Budget',
                   ),
-                  validator: (v) {
-                    final n = double.tryParse(v ?? '');
-                    if (n == null || n <= 0) return 'Please enter a budget';
-                    if (_isDelivery) {
-                      if (_calculatedDistanceKm != null) {
-                        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-                        if (n < distMin) {
-                          return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km';
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    key: _budgetFieldKey,
+                    controller: _budgetCtrl,
+                    autovalidateMode: AutovalidateMode.onUserInteraction,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: 'Budget (₹)',
+                      prefixIcon: const Icon(Icons.currency_rupee),
+                    ),
+                    validator: (v) {
+                      final n = double.tryParse(v ?? '');
+                      if (n == null || n <= 0) return 'Please enter a budget';
+                      if (_isDelivery) {
+                        if (_calculatedDistanceKm != null) {
+                          final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+                          if (n < distMin) {
+                            return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km';
+                          }
+                        } else {
+                          final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+                          if (catMin > 0 && n < catMin) {
+                            return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                          }
                         }
                       } else {
                         final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
-                        if (catMin > 0 && n < catMin) {
+                        if (n < catMin) {
                           return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
                         }
                       }
-                    } else {
-                      final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
-                      if (n < catMin) {
-                        return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
-                      }
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 16),
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                ],
 
                 // ── Address fields for non-grocery categories ──────
                 if (_isFreelancer) ...[
@@ -2460,19 +2630,22 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
                   final rawBudget = double.tryParse(value.text) ?? 0;
-                  final budget = _isGrocery && rawBudget <= 0
-                      ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
-                      : rawBudget;
+                  final isRepair = Task.isRepairCategory(_selectedCategory);
+                  final budget = isRepair
+                      ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
+                      : (_isGrocery && rawBudget <= 0
+                          ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+                          : rawBudget);
                   final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-                  final posterFee = _isGrocery ? 12.0 : (budget * 0.20);
+                  final posterFee = _isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
                   final total = budget + charge + posterFee;
                   return TaskPriceBreakdownCard(
                     budget: budget,
                     serviceCharge: charge,
                     posterFee: posterFee,
                     totalCost: total,
-                    isRepair: Task.isRepairCategory(_selectedCategory),
+                    isRepair: isRepair,
                     isGrocery: _isGrocery,
                     distanceKm: _calculatedDistanceKm,
                   );

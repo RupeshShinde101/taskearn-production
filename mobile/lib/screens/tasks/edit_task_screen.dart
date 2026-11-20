@@ -1162,9 +1162,11 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     const Divider(height: 1, color: Color(0xFFE2E8F0)),
                     const SizedBox(height: 12),
 
-                    // Subcategory Chips Grid
+                    // Subcategory Chips in 2-Column Grid
                     Text(
-                      '${activeParent.label} Services',
+                      activeParent.label.endsWith('Services')
+                          ? activeParent.label
+                          : '${activeParent.label} Services',
                       style: const TextStyle(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w700,
@@ -1172,10 +1174,18 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: activeParent.subcategories.map((subcatId) {
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: activeParent.subcategories.length,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 10,
+                        mainAxisExtent: 50,
+                      ),
+                      itemBuilder: (context, index) {
+                        final subcatId = activeParent.subcategories[index];
                         final isSubSelected = _selectedCategory == subcatId;
                         final label = _getCategoryLabel(subcatId);
                         return GestureDetector(
@@ -1188,7 +1198,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                           },
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 160),
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                             decoration: BoxDecoration(
                               color: isSubSelected ? const Color(0xFF2563EB) : const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(12),
@@ -1199,7 +1209,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                               boxShadow: isSubSelected
                                   ? [
                                       BoxShadow(
-                                        color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+                                        color: const Color(0xFF2563EB).withValues(alpha: 0.22),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
                                       ),
@@ -1207,27 +1217,31 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                                   : null,
                             ),
                             child: Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
-                                _buildSubcatIcon(subcatId, size: 20),
+                                _buildSubcatIcon(subcatId, size: 22),
                                 const SizedBox(width: 8),
-                                Text(
-                                  label,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: isSubSelected ? FontWeight.w700 : FontWeight.w600,
-                                    color: isSubSelected ? Colors.white : const Color(0xFF1E293B),
+                                Expanded(
+                                  child: Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: isSubSelected ? FontWeight.w700 : FontWeight.w600,
+                                      color: isSubSelected ? Colors.white : const Color(0xFF1E293B),
+                                      height: 1.15,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
                                 if (isSubSelected) ...[
-                                  const SizedBox(width: 6),
-                                  const Icon(Icons.check_circle_rounded, size: 14, color: Colors.white),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.check_circle_rounded, size: 15, color: Colors.white),
                                 ],
                               ],
                             ),
                           ),
                         );
-                      }).toList(),
+                      },
                     ),
                   ],
                 ),

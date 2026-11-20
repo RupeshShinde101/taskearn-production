@@ -71,5 +71,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/images/subcats/
     - assets/animations/
     - assets/icons/

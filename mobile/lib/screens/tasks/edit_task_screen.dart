@@ -1,18 +1,35 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
+
 import '../../models/task.dart';
 import '../../providers/task_provider.dart';
+import '../../services/location_search_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
-import 'dart:async';
-import '../../services/location_search_service.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
-import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
+import '../../widgets/task_price_breakdown_card.dart';
+
+/// Parent Category grouping configuration for the Edit Task screen,
+/// aligned with Browse Tasks and Category standards.
+class _ParentCategoryConfig {
+  final String label;
+  final String subtitle;
+  final String imageAsset;
+  final List<String> subcategories;
+
+  const _ParentCategoryConfig({
+    required this.label,
+    required this.subtitle,
+    required this.imageAsset,
+    required this.subcategories,
+  });
+}
 
 class EditTaskScreen extends StatefulWidget {
   final Task task;
@@ -26,15 +43,18 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleCtrl;
   late final TextEditingController _descCtrl;
-  late final TextEditingController _budgetCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _pickupAddrCtrl;
   late final TextEditingController _dropAddrCtrl;
 
   late String _selectedCategory;
+  late String _selectedParentGroup;
+  late final ValueNotifier<double> _effectiveBudgetNotifier;
+
   LatLng? _location;
   String? _locationLabel;
   bool _loading = false;
+
   // Per-field lat/lng for delivery categories
   LatLng? _pickupLocation;
   LatLng? _dropLocation;
@@ -55,9 +75,146 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   bool _searchingDrop = false;
   bool _searchingAddress = false;
 
-  void _syncAutoBudget(double fare) {
-    final formatted = fare.toStringAsFixed(0);
-    _budgetCtrl.text = formatted;
+  static const List<_ParentCategoryConfig> _parentGroups = [
+    _ParentCategoryConfig(
+      label: 'Delivery & Moving',
+      subtitle: 'Moving, delivery, parcel transport',
+      imageAsset: 'assets/images/cat_3d_delivery.png',
+      subcategories: ['delivery', 'moving', 'transport', 'pickup'],
+    ),
+    _ParentCategoryConfig(
+      label: 'Repair',
+      subtitle: 'Plumbing, electrical, appliance, auto',
+      imageAsset: 'assets/images/cat_3d_repair.png',
+      subcategories: [
+        'repair',
+        'electrician',
+        'plumbing',
+        'carpentry',
+        'vehicle',
+        'tech_support',
+      ],
+    ),
+    _ParentCategoryConfig(
+      label: 'Home & Lifestyle',
+      subtitle: 'Cleaning, cooking, household chores',
+      imageAsset: 'assets/images/cat_3d_home.png',
+      subcategories: [
+        'cleaning',
+        'household',
+        'cooking',
+        'laundry',
+        'gardening',
+        'beauty',
+      ],
+    ),
+    _ParentCategoryConfig(
+      label: 'Shopping & Errands',
+      subtitle: 'Groceries, purchase, errands',
+      imageAsset: 'assets/images/cat_3d_shopping.png',
+      subcategories: [
+        'shopping',
+        'groceries',
+        'errands',
+        'queue_standing',
+        'event_help',
+      ],
+    ),
+    _ParentCategoryConfig(
+      label: 'Professional',
+      subtitle: 'Freelance, IT, design, tutoring',
+      imageAsset: 'assets/images/cat_3d_professional.png',
+      subcategories: [
+        'freelancer',
+        'data_entry',
+        'photography',
+        'tutoring',
+        'painting',
+        'drawing',
+        'graphic_design',
+        'web_app_tech',
+        'video_audio_editing',
+        'digital_marketing',
+        'business_admin',
+      ],
+    ),
+    _ParentCategoryConfig(
+      label: 'Care Services',
+      subtitle: 'Child care, elder care, pet care',
+      imageAsset: 'assets/images/cat_3d_care.png',
+      subcategories: ['child_care', 'elder_care', 'pet_care'],
+    ),
+    _ParentCategoryConfig(
+      label: 'Other',
+      subtitle: 'Custom & miscellaneous tasks',
+      imageAsset: 'assets/images/cat_3d_other_skyline.png',
+      subcategories: ['other'],
+    ),
+  ];
+
+  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
+  bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
+
+  @override
+  void initState() {
+    super.initState();
+    final t = widget.task;
+    _titleCtrl = TextEditingController(text: t.title);
+    _descCtrl = TextEditingController(text: t.description);
+    _selectedCategory = t.category;
+
+    // Resolve parent group from current category
+    _selectedParentGroup = _parentGroups.firstWhere(
+      (p) => p.subcategories.contains(_selectedCategory),
+      orElse: () => _parentGroups.first,
+    ).label;
+
+    // Pre-fill address fields
+    if (_isDelivery && t.address != null) {
+      final addr = t.address!;
+      final pickupMatch = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
+      final dropMatch = RegExp(r'Drop:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
+      _pickupAddrCtrl = TextEditingController(text: pickupMatch?.group(1)?.trim() ?? '');
+      _dropAddrCtrl = TextEditingController(text: dropMatch?.group(1)?.trim() ?? '');
+      _addressCtrl = TextEditingController();
+    } else {
+      _pickupAddrCtrl = TextEditingController();
+      _dropAddrCtrl = TextEditingController();
+      _addressCtrl = TextEditingController(text: t.address ?? '');
+    }
+
+    _location = LatLng(t.latitude, t.longitude);
+    _locationLabel = t.address;
+    if (_isDelivery) {
+      _pickupLocation = _location;
+      if (t.dropLatitude != null && t.dropLongitude != null) {
+        _dropLocation = LatLng(t.dropLatitude!, t.dropLongitude!);
+      }
+      final desc = t.description.toLowerCase();
+      if (desc.contains('rikshaw') || desc.contains('auto')) {
+        _deliveryVehicle = 'rikshaw';
+      }
+    }
+
+    _effectiveBudgetNotifier = ValueNotifier<double>(_computeEffectiveBudget());
+
+    if (_isDelivery) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _recalcDistance());
+    }
+  }
+
+  @override
+  void dispose() {
+    _pickupDebounce?.cancel();
+    _dropDebounce?.cancel();
+    _addressDebounce?.cancel();
+    _titleCtrl.dispose();
+    _descCtrl.dispose();
+    _addressCtrl.dispose();
+    _pickupAddrCtrl.dispose();
+    _dropAddrCtrl.dispose();
+    _effectiveBudgetNotifier.dispose();
+    super.dispose();
   }
 
   double _computeEffectiveBudget() {
@@ -86,13 +243,10 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         _dropLocation!,
       );
       final immediateKm = (meters / 1000.0) * 1.25;
-      final immediatePrice = Task.calculateDistancePrice(
-        immediateKm,
-        _selectedCategory,
-        vehicle: _deliveryVehicle,
-      );
-      _syncAutoBudget(immediatePrice);
-      if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
+      if (mounted) {
+        setState(() => _calculatedDistanceKm = immediateKm);
+        _effectiveBudgetNotifier.value = _computeEffectiveBudget();
+      }
 
       // 2. Fetch exact road driving route via OSRM (Google Maps parity)
       try {
@@ -101,19 +255,14 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           _dropLocation!,
         );
         if (seq == _distCalcSeq && mounted) {
-          final exactPrice = Task.calculateDistancePrice(
-            roadKm,
-            _selectedCategory,
-            vehicle: _deliveryVehicle,
-          );
-          _syncAutoBudget(exactPrice);
           setState(() => _calculatedDistanceKm = roadKm);
+          _effectiveBudgetNotifier.value = _computeEffectiveBudget();
         }
       } catch (_) {}
     } else {
       if (mounted) {
         setState(() => _calculatedDistanceKm = null);
-        _syncAutoBudget(_computeEffectiveBudget());
+        _effectiveBudgetNotifier.value = _computeEffectiveBudget();
       }
     }
   }
@@ -240,69 +389,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     setState(() {});
   }
 
-
-  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
-  bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
-
-  @override
-  void initState() {
-    super.initState();
-    final t = widget.task;
-    _titleCtrl      = TextEditingController(text: t.title);
-    _descCtrl       = TextEditingController(text: t.description);
-    _budgetCtrl     = TextEditingController(text: t.budget.toStringAsFixed(0));
-    _selectedCategory = t.category;
-
-    // Pre-fill address fields
-    if (_isDelivery && t.address != null) {
-      final addr = t.address!;
-      // Try to split "Pickup: X\nDrop: Y" format
-      final pickupMatch = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
-      final dropMatch   = RegExp(r'Drop:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
-      _pickupAddrCtrl = TextEditingController(text: pickupMatch?.group(1)?.trim() ?? '');
-      _dropAddrCtrl   = TextEditingController(text: dropMatch?.group(1)?.trim() ?? '');
-      _addressCtrl    = TextEditingController();
-    } else {
-      _pickupAddrCtrl = TextEditingController();
-      _dropAddrCtrl   = TextEditingController();
-      _addressCtrl    = TextEditingController(text: t.address ?? '');
-    }
-
-    _location = LatLng(t.latitude, t.longitude);
-    _locationLabel = t.address;
-    if (_isDelivery) {
-      _pickupLocation = _location;
-      if (t.dropLatitude != null && t.dropLongitude != null) {
-        _dropLocation = LatLng(t.dropLatitude!, t.dropLongitude!);
-      }
-      final desc = t.description.toLowerCase();
-      if (desc.contains('rikshaw') || desc.contains('auto')) {
-        _deliveryVehicle = 'rikshaw';
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) => _recalcDistance());
-    }
-    _addressCtrl.addListener(_onLocationAreaChanged);
-    _pickupAddrCtrl.addListener(_onLocationAreaChanged);
-    _dropAddrCtrl.addListener(_onLocationAreaChanged);
-  }
-
-  @override
-  void dispose() {
-    _pickupDebounce?.cancel();
-    _dropDebounce?.cancel();
-    _addressDebounce?.cancel();
-    _titleCtrl.dispose();
-    _descCtrl.dispose();
-    _budgetCtrl.dispose();
-    _addressCtrl.removeListener(_onLocationAreaChanged);
-    _pickupAddrCtrl.removeListener(_onLocationAreaChanged);
-    _dropAddrCtrl.removeListener(_onLocationAreaChanged);
-    _addressCtrl.dispose();
-    _pickupAddrCtrl.dispose();
-    _dropAddrCtrl.dispose();
-    super.dispose();
-  }
-
   Future<void> _pickLocationFromMap() async {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
@@ -325,8 +411,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            MapLocationPicker(initialLocation: _pickupLocation ?? _location),
+        builder: (_) => MapLocationPicker(initialLocation: _pickupLocation ?? _location),
         fullscreenDialog: true,
       ),
     );
@@ -345,8 +430,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            MapLocationPicker(initialLocation: _dropLocation ?? _location),
+        builder: (_) => MapLocationPicker(initialLocation: _dropLocation ?? _location),
         fullscreenDialog: true,
       ),
     );
@@ -367,8 +451,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     if (loc == null) {
       setState(() => _gettingPickupGps = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not get GPS. Enable location permission.')),
+        const SnackBar(content: Text('Could not get GPS. Enable location permission.')),
       );
       return;
     }
@@ -406,8 +489,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     if (loc == null) {
       setState(() => _gettingDropGps = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not get GPS. Enable location permission.')),
+        const SnackBar(content: Text('Could not get GPS. Enable location permission.')),
       );
       return;
     }
@@ -444,42 +526,13 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       return;
     }
 
-    final autoBudget = _computeEffectiveBudget();
-    final rawBudget = double.tryParse(_budgetCtrl.text) ?? 0;
-    final budget = rawBudget > 0 ? rawBudget : autoBudget;
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null) {
-        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-        if (budget < distMin) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
-          );
-          return;
-        }
-      } else if (_selectedCategory != 'delivery') {
-        final catMin = Task.minBudgetForCategory(_selectedCategory);
-        if (catMin > 0 && budget < catMin) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
-          );
-          return;
-        }
-      }
-    } else {
-      final catMin = Task.minBudgetForCategory(_selectedCategory);
-      if (budget < catMin) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
-        );
-        return;
-      }
-    }
+    final budget = _computeEffectiveBudget();
     final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
 
     final String? combinedAddress;
     if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
-      final drop   = _dropAddrCtrl.text.trim();
+      final drop = _dropAddrCtrl.text.trim();
       combinedAddress = (pickup.isNotEmpty || drop.isNotEmpty)
           ? 'Pickup: $pickup\nDrop: $drop'
           : _locationLabel;
@@ -496,7 +549,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       'price': budget,
       'budget': budget,
       if (charge > 0) 'service_charge': charge,
-      // Nest location as the backend update_task endpoint expects.
       'location': {
         'lat': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
         'lng': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
@@ -535,98 +587,180 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-      context.pop(true); // signal caller to reload
+      context.pop(true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              context.read<TaskProvider>().error ?? 'Failed to update task'),
+            context.read<TaskProvider>().error ?? 'Failed to update task',
+          ),
           backgroundColor: AppColors.danger,
         ),
       );
     }
   }
 
-    void _onLocationAreaChanged() {
-    if (mounted) setState(() {});
+  String _getCategoryLabel(String categoryId) {
+    final match = TaskCategory.all.firstWhere(
+      (c) => c.id == categoryId,
+      orElse: () => TaskCategory(id: categoryId, label: categoryId.replaceAll('_', ' '), icon: '📋'),
+    );
+    return match.label;
   }
 
-  Widget _buildDeliveryVehicleSelector() {
+  // ── Unified Card Container ──────────────────────────────────────────────
+  Widget _buildCardSection({
+    required IconData icon,
+    required Color iconColor,
+    required Color iconBg,
+    required String title,
+    String? subtitle,
+    Widget? trailing,
+    required Widget child,
+  }) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.delivery_dining, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text(
-                'Delivery Vehicle Option',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppColors.dark,
-                ),
-              ),
-              const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: iconBg,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                child: Text(
-                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    color: AppColors.primary,
-                  ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+              if (trailing != null) trailing,
             ],
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Bike',
-                  rate: '₹12 / km',
-                  desc: 'Small items / docs',
-                  icon: Icons.two_wheeler_rounded,
-                  isSelected: _deliveryVehicle == 'bike',
-                  onTap: () {
-                    if (_deliveryVehicle != 'bike') {
-                      setState(() => _deliveryVehicle = 'bike');
-                      _recalcDistance();
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Rikshaw',
-                  rate: '₹18 / km',
-                  desc: 'Auto / medium items',
-                  icon: Icons.electric_rickshaw_rounded,
-                  isSelected: _deliveryVehicle == 'rikshaw',
-                  onTap: () {
-                    if (_deliveryVehicle != 'rikshaw') {
-                      setState(() => _deliveryVehicle = 'rikshaw');
-                      _recalcDistance();
-                    }
-                  },
-                ),
-              ),
-            ],
+          const SizedBox(height: 14),
+          child,
+        ],
+      ),
+    );
+  }
+
+  // ── High Quality Category Artwork Icons ─────────────────────────────────
+  Widget _buildSubcatIcon(String categoryId, {double size = 28}) {
+    final assetPath = 'assets/images/subcats/$categoryId.png';
+    return Image.asset(
+      assetPath,
+      width: size,
+      height: size,
+      fit: BoxFit.contain,
+      errorBuilder: (_, __, ___) {
+        final cat = TaskCategory.all.firstWhere(
+          (c) => c.id == categoryId,
+          orElse: () => TaskCategory(id: categoryId, label: categoryId, icon: '📋'),
+        );
+        return Text(cat.icon, style: TextStyle(fontSize: size * 0.8));
+      },
+    );
+  }
+
+  // ── Delivery Vehicle Selector ───────────────────────────────────────────
+  Widget _buildDeliveryVehicleSelector() {
+    return _buildCardSection(
+      icon: Icons.two_wheeler_rounded,
+      iconColor: const Color(0xFF2563EB),
+      iconBg: const Color(0xFFEFF6FF),
+      title: 'Delivery Vehicle Option',
+      subtitle: 'Select vehicle capacity matching package weight and size',
+      trailing: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF6FF),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFBFDBFE)),
+        ),
+        child: Text(
+          _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: 11.5,
+            color: Color(0xFF2563EB),
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildVehicleTile(
+              title: 'Bike / 2-Wheeler',
+              rate: '₹12 / km',
+              capacity: 'Max 20kg • 40×40cm',
+              desc: 'Small items, parcels, docs',
+              imageAsset: 'assets/images/vehicle_bike.png',
+              isSelected: _deliveryVehicle == 'bike',
+              onTap: () {
+                if (_deliveryVehicle != 'bike') {
+                  setState(() => _deliveryVehicle = 'bike');
+                  _recalcDistance();
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _buildVehicleTile(
+              title: 'Auto / Rikshaw',
+              rate: '₹18 / km',
+              capacity: 'Max 80kg • Bulky cargo',
+              desc: 'Medium boxes, rain safe',
+              imageAsset: 'assets/images/vehicle_rikshaw.png',
+              isSelected: _deliveryVehicle == 'rikshaw',
+              onTap: () {
+                if (_deliveryVehicle != 'rikshaw') {
+                  setState(() => _deliveryVehicle = 'rikshaw');
+                  _recalcDistance();
+                }
+              },
+            ),
           ),
         ],
       ),
@@ -636,8 +770,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   Widget _buildVehicleTile({
     required String title,
     required String rate,
+    required String capacity,
     required String desc,
-    required IconData icon,
+    required String imageAsset,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -645,48 +780,95 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : AppColors.light,
-          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
             width: isSelected ? 2 : 1,
           ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.gray),
+                Image.asset(
+                  imageAsset,
+                  height: 38,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, __, ___) => Icon(
+                    title.contains('Bike') ? Icons.two_wheeler : Icons.electric_rickshaw,
+                    size: 32,
+                    color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                  ),
+                ),
                 const Spacer(),
-                if (isSelected)
-                  const Icon(Icons.check_circle, size: 16, color: AppColors.primary),
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 13, color: Colors.white)
+                      : null,
+                ),
               ],
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               title,
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 13,
-                color: isSelected ? AppColors.primary : AppColors.dark,
+                color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF0F172A),
               ),
             ),
             const SizedBox(height: 2),
             Text(
               rate,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-                color: isSelected ? AppColors.primary : AppColors.dark,
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12.5,
+                color: Color(0xFF2563EB),
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 4),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                capacity,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
             Text(
               desc,
-              style: const TextStyle(fontSize: 11, color: AppColors.gray),
+              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -696,261 +878,604 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     );
   }
 
-    bool get _isLocationSet {
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
-        return true;
-      }
-      final hasPickup = _pickupLocation != null ||
-          _pickupAddrCtrl.text.trim().isNotEmpty;
-      final hasDrop = _dropLocation != null ||
-          _dropAddrCtrl.text.trim().isNotEmpty;
-      return hasPickup && hasDrop;
-    } else {
-      return _location != null ||
-          (_locationLabel != null && _locationLabel!.trim().isNotEmpty) ||
-          _addressCtrl.text.trim().isNotEmpty;
-    }
+  // ── Reusable Address Field with Inline GPS + Map Actions ────────────────
+  Widget _buildAddressField({
+    required TextEditingController controller,
+    required ValueChanged<String> onChanged,
+    required String label,
+    required String hint,
+    required IconData prefixIcon,
+    required Color prefixColor,
+    required bool isLoading,
+    required VoidCallback onGps,
+    required VoidCallback onMap,
+    LatLng? pinnedLocation,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextFormField(
+          controller: controller,
+          onChanged: onChanged,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF0F172A),
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            hintText: hint,
+            labelStyle: const TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+            hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+            prefixIcon: Icon(prefixIcon, color: prefixColor, size: 20),
+            suffixIcon: _AddressActionButtons(
+              isLoading: isLoading,
+              accentColor: prefixColor,
+              onGps: onGps,
+              onMap: onMap,
+            ),
+            suffixIconConstraints: const BoxConstraints(maxHeight: 48),
+            filled: true,
+            fillColor: const Color(0xFFF8FAFC),
+            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(color: prefixColor, width: 1.5),
+            ),
+          ),
+          validator: (v) {
+            if (label.contains('*') && (v == null || v.trim().isEmpty)) {
+              return '$label is required';
+            }
+            return null;
+          },
+        ),
+        if (pinnedLocation != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, left: 10),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF10B981)),
+                const SizedBox(width: 4),
+                Text(
+                  'Pinned: ${pinnedLocation.latitude.toStringAsFixed(4)}, ${pinnedLocation.longitude.toStringAsFixed(4)}',
+                  style: const TextStyle(color: Color(0xFF10B981), fontSize: 11, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
-
 
   @override
   Widget build(BuildContext context) {
+    final activeParent = _parentGroups.firstWhere(
+      (p) => p.label == _selectedParentGroup,
+      orElse: () => _parentGroups.first,
+    );
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Edit Task')),
+      backgroundColor: const Color(0xFFF8FAFC),
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        centerTitle: true,
+        leading: IconButton(
+          icon: const Icon(Icons.close_rounded, color: Color(0xFF0F172A), size: 24),
+          tooltip: 'Close',
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: const Text(
+          'Edit Task',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF0F172A),
+            letterSpacing: -0.3,
+          ),
+        ),
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Container(color: const Color(0xFFE2E8F0), height: 1),
+        ),
+      ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Title
-              TextFormField(
-                controller: _titleCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Task Title',
-                  prefixIcon: Icon(Icons.title),
+              // ── 1. Task Title (Unified Single Card) ──────────────────────
+              _buildCardSection(
+                icon: Icons.edit_note_rounded,
+                iconColor: const Color(0xFF2563EB),
+                iconBg: const Color(0xFFEFF6FF),
+                title: 'Task Title',
+                subtitle: 'Give your task a clear, descriptive title',
+                child: TextFormField(
+                  controller: _titleCtrl,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF0F172A),
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Deliver cookies to office',
+                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
+                    prefixIcon: const Icon(Icons.title_rounded, color: Color(0xFF2563EB), size: 20),
+                    suffixIcon: _titleCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF94A3B8)),
+                            onPressed: () {
+                              _titleCtrl.clear();
+                              setState(() {});
+                            },
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                    ),
+                  ),
+                  validator: (v) => (v == null || v.trim().length < 5)
+                      ? 'Title must be at least 5 characters'
+                      : null,
+                  onChanged: (_) => setState(() {}),
                 ),
-                validator: (v) =>
-                    (v == null || v.trim().length < 5) ? 'Min 5 characters' : null,
               ),
+
               const SizedBox(height: 14),
 
-              // Category
-              const Text('Category',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 8),
-              _CategoryGrid(
-                selected: _selectedCategory,
-                onChanged: (c) {
-                  setState(() => _selectedCategory = c);
-                  _recalcDistance();
-                },
+              // ── 2. Category Selection (Enhanced High-Res 3D Artwork) ───
+              _buildCardSection(
+                icon: Icons.grid_view_rounded,
+                iconColor: const Color(0xFF2563EB),
+                iconBg: const Color(0xFFEFF6FF),
+                title: 'Select Category',
+                subtitle: 'Choose the service type that best matches your task',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF2563EB)),
+                      const SizedBox(width: 4),
+                      Text(
+                        _getCategoryLabel(_selectedCategory),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Primary Groups (Browse Tasks Reference)
+                    SizedBox(
+                      height: 96,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _parentGroups.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 10),
+                        itemBuilder: (_, i) {
+                          final group = _parentGroups[i];
+                          final isGroupSelected = group.label == _selectedParentGroup;
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _selectedParentGroup = group.label;
+                                if (!group.subcategories.contains(_selectedCategory) &&
+                                    group.subcategories.isNotEmpty) {
+                                  _selectedCategory = group.subcategories.first;
+                                  _recalcDistance();
+                                  _effectiveBudgetNotifier.value = _computeEffectiveBudget();
+                                }
+                              });
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 112,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: isGroupSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: isGroupSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                  width: isGroupSelected ? 2 : 1,
+                                ),
+                                boxShadow: isGroupSelected
+                                    ? [
+                                        BoxShadow(
+                                          color: const Color(0xFF2563EB).withValues(alpha: 0.15),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 2),
+                                        ),
+                                      ]
+                                    : null,
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Image.asset(
+                                    group.imageAsset,
+                                    height: 40,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.category_rounded,
+                                      size: 32,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    group.label,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: isGroupSelected ? FontWeight.w800 : FontWeight.w600,
+                                      color: isGroupSelected ? const Color(0xFF1E3A8A) : const Color(0xFF334155),
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    const SizedBox(height: 12),
+
+                    // Subcategory Chips Grid
+                    Text(
+                      '${activeParent.label} Services',
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: activeParent.subcategories.map((subcatId) {
+                        final isSubSelected = _selectedCategory == subcatId;
+                        final label = _getCategoryLabel(subcatId);
+                        return GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              _selectedCategory = subcatId;
+                              _recalcDistance();
+                              _effectiveBudgetNotifier.value = _computeEffectiveBudget();
+                            });
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: isSubSelected ? const Color(0xFF2563EB) : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: isSubSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                width: isSubSelected ? 1.5 : 1,
+                              ),
+                              boxShadow: isSubSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: const Color(0xFF2563EB).withValues(alpha: 0.25),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ]
+                                  : null,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _buildSubcatIcon(subcatId, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isSubSelected ? FontWeight.w700 : FontWeight.w600,
+                                    color: isSubSelected ? Colors.white : const Color(0xFF1E293B),
+                                  ),
+                                ),
+                                if (isSubSelected) ...[
+                                  const SizedBox(width: 6),
+                                  const Icon(Icons.check_circle_rounded, size: 14, color: Colors.white),
+                                ],
+                              ],
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
               ),
-              if (_selectedCategory == 'delivery') ...[
+
+              // ── 3. Vehicle Option (for Delivery & Moving) ────────────────
+              if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') ...[
                 const SizedBox(height: 14),
                 _buildDeliveryVehicleSelector(),
               ],
+
               const SizedBox(height: 14),
 
-              // Description
-              TextFormField(
-                controller: _descCtrl,
-                maxLines: 5,
-                maxLength: 1000,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  hintText: 'Describe what needs to be done…',
-                  prefixIcon: Icon(Icons.description_outlined),
-                  alignLabelWithHint: true,
+              // ── 4. Task Description (Unified Single Card) ────────────────
+              _buildCardSection(
+                icon: Icons.description_rounded,
+                iconColor: const Color(0xFF2563EB),
+                iconBg: const Color(0xFFEFF6FF),
+                title: 'Description',
+                subtitle: 'Detail instructions, requirements, and items needed',
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${_descCtrl.text.length}/1000',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: _descCtrl.text.length > 900
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFF64748B),
+                    ),
+                  ),
                 ),
-                validator: (v) => (v == null || v.trim().length < 10)
-                    ? 'Min 10 characters'
-                    : null,
+                child: TextFormField(
+                  controller: _descCtrl,
+                  maxLines: 4,
+                  maxLength: 1000,
+                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Color(0xFF0F172A),
+                    height: 1.45,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Describe what needs to be done, location instructions, specific items…',
+                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.all(14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+                    ),
+                  ),
+                  validator: (v) => (v == null || v.trim().length < 10)
+                      ? 'Description must be at least 10 characters'
+                      : null,
+                  onChanged: (_) => setState(() {}),
+                ),
               ),
+
               const SizedBox(height: 14),
 
-
-              // ── Address fields (each with GPS + Map inline buttons) ──────
+              // ── 5 & 6. Pickup and Drop Location with Distance ────────────
               if (_isDelivery) ...[
-                // Pickup Address
-                TextFormField(
-                  controller: _pickupAddrCtrl,
-                  onChanged: _onPickupAddrChanged,
-                  decoration: InputDecoration(
-                    labelText: 'Pickup Address *',
-                    hintText: 'Where to pick up from',
-                    prefixIcon:
-                        const Icon(Icons.location_on, color: AppColors.primary),
-                    suffixIcon: _AddressActionButtons(
-                      isLoading: _gettingPickupGps,
-                      accentColor: AppColors.primary,
-                      onGps: _getGpsForPickup,
-                      onMap: _pickMapForPickup,
-                    ),
-                    suffixIconConstraints:
-                        const BoxConstraints(maxHeight: 48),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Pickup address is required'
-                      : null,
-                ),
-                LocationSuggestionsDropdown(
-                  suggestions: _pickupSuggestions,
-                  isLoading: _searchingPickup,
-                  accentColor: AppColors.primary,
-                  onSelect: _selectPickupSuggestion,
-                  onDismiss: () => setState(() => _pickupSuggestions = []),
-                ),
-                if (_pickupLocation != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3, left: 12),
-                    child: Text(
-                      'Pinned: ${_pickupLocation!.latitude.toStringAsFixed(5)}, '
-                      '${_pickupLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: AppColors.success, fontSize: 11),
-                    ),
-                  ),
-                const SizedBox(height: 10),
-                // Drop Address
-                TextFormField(
-                  controller: _dropAddrCtrl,
-                  onChanged: _onDropAddrChanged,
-                  decoration: InputDecoration(
-                    labelText: 'Drop / Delivery Address *',
-                    hintText: 'Where to deliver / drop off',
-                    prefixIcon:
-                        const Icon(Icons.flag, color: AppColors.danger),
-                    suffixIcon: _AddressActionButtons(
-                      isLoading: _gettingDropGps,
-                      accentColor: AppColors.danger,
-                      onGps: _getGpsForDrop,
-                      onMap: _pickMapForDrop,
-                    ),
-                    suffixIconConstraints:
-                        const BoxConstraints(maxHeight: 48),
-                  ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Drop address is required'
-                      : null,
-                ),
-                LocationSuggestionsDropdown(
-                  suggestions: _dropSuggestions,
-                  isLoading: _searchingDrop,
-                  accentColor: AppColors.danger,
-                  onSelect: _selectDropSuggestion,
-                  onDismiss: () => setState(() => _dropSuggestions = []),
-                ),
-                if (_dropLocation != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3, left: 12),
-                    child: Text(
-                      'Pinned: ${_dropLocation!.latitude.toStringAsFixed(5)}, '
-                      '${_dropLocation!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: AppColors.danger, fontSize: 11),
-                    ),
-                  ),
-                if (_calculatedDistanceKm != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.07),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: AppColors.primary.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.route,
-                            size: 18, color: AppColors.primary),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                _buildCardSection(
+                  icon: Icons.route_rounded,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBg: const Color(0xFFEFF6FF),
+                  title: 'Pickup & Drop Location',
+                  subtitle: 'Set addresses for route calculation and distance fare',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Pickup
+                      _buildAddressField(
+                        controller: _pickupAddrCtrl,
+                        onChanged: _onPickupAddrChanged,
+                        label: 'Pickup Address *',
+                        hint: 'Where to pick up from',
+                        prefixIcon: Icons.trip_origin_rounded,
+                        prefixColor: const Color(0xFF10B981),
+                        isLoading: _gettingPickupGps,
+                        onGps: _getGpsForPickup,
+                        onMap: _pickMapForPickup,
+                        pinnedLocation: _pickupLocation,
+                      ),
+                      LocationSuggestionsDropdown(
+                        suggestions: _pickupSuggestions,
+                        isLoading: _searchingPickup,
+                        accentColor: const Color(0xFF10B981),
+                        onSelect: _selectPickupSuggestion,
+                        onDismiss: () => setState(() => _pickupSuggestions = []),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      // Drop
+                      _buildAddressField(
+                        controller: _dropAddrCtrl,
+                        onChanged: _onDropAddrChanged,
+                        label: 'Drop / Delivery Address *',
+                        hint: 'Where to deliver / drop off',
+                        prefixIcon: Icons.location_on_rounded,
+                        prefixColor: const Color(0xFFEF4444),
+                        isLoading: _gettingDropGps,
+                        onGps: _getGpsForDrop,
+                        onMap: _pickMapForDrop,
+                        pinnedLocation: _dropLocation,
+                      ),
+                      LocationSuggestionsDropdown(
+                        suggestions: _dropSuggestions,
+                        isLoading: _searchingDrop,
+                        accentColor: const Color(0xFFEF4444),
+                        onSelect: _selectDropSuggestion,
+                        onDismiss: () => setState(() => _dropSuggestions = []),
+                      ),
+
+                      // Integrated Distance & Route Fare Card
+                      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: Row(
                             children: [
-                              Text(
-                                'Distance: ${_calculatedDistanceKm!.toStringAsFixed(1)} km',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: AppColors.primary,
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2563EB).withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(8),
                                 ),
+                                child: const Icon(Icons.alt_route_rounded, color: Color(0xFF2563EB), size: 22),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
-                                style: const TextStyle(
-                                    fontSize: 12, color: AppColors.gray),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          'Distance: ${_calculatedDistanceKm!.toStringAsFixed(1)} km',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                            color: Color(0xFF1E3A8A),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFDBEAFE),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            _deliveryVehicle == 'bike' ? 'Bike @ ₹12/km' : 'Rikshaw @ ₹18/km',
+                                            style: const TextStyle(
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF1D4ED8),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Calculated fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
+                                      style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ],
                           ),
                         ),
                       ],
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ] else ...[
-                // Single address for non-delivery tasks
-                TextFormField(
-                  controller: _addressCtrl,
-                  onChanged: _onAddressChanged,
-                  decoration: InputDecoration(
-                    labelText: 'Address / Landmark (optional)',
-                    hintText: 'Type locality, landmark or address',
-                    prefixIcon: const Icon(Icons.location_on_outlined),
-                    suffixIcon: _AddressActionButtons(
-                      isLoading: false,
-                      accentColor: AppColors.primary,
-                      onGps: () async {
-                        final loc =
-                            await LocationService.getCurrentLocation();
-                        if (loc == null || !mounted) return;
-                        setState(() {
-                          _location = loc;
-                          _locationLabel = null;
-                        });
-                      },
-                      onMap: _pickLocationFromMap,
-                    ),
-                    suffixIconConstraints:
-                        const BoxConstraints(maxHeight: 48),
+                // Single Address for non-delivery tasks
+                _buildCardSection(
+                  icon: Icons.location_on_rounded,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBg: const Color(0xFFEFF6FF),
+                  title: 'Task Location',
+                  subtitle: 'Where this task needs to be performed',
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildAddressField(
+                        controller: _addressCtrl,
+                        onChanged: _onAddressChanged,
+                        label: 'Address / Landmark (optional)',
+                        hint: 'Type locality, landmark or address',
+                        prefixIcon: Icons.place_rounded,
+                        prefixColor: const Color(0xFF2563EB),
+                        isLoading: false,
+                        onGps: () async {
+                          final loc = await LocationService.getCurrentLocation();
+                          if (loc == null || !mounted) return;
+                          setState(() {
+                            _location = loc;
+                            _locationLabel = null;
+                          });
+                        },
+                        onMap: _pickLocationFromMap,
+                        pinnedLocation: _location,
+                      ),
+                      LocationSuggestionsDropdown(
+                        suggestions: _addressSuggestions,
+                        isLoading: _searchingAddress,
+                        accentColor: const Color(0xFF2563EB),
+                        onSelect: _selectAddressSuggestion,
+                        onDismiss: () => setState(() => _addressSuggestions = []),
+                      ),
+                    ],
                   ),
                 ),
-                LocationSuggestionsDropdown(
-                  suggestions: _addressSuggestions,
-                  isLoading: _searchingAddress,
-                  accentColor: AppColors.primary,
-                  onSelect: _selectAddressSuggestion,
-                  onDismiss: () => setState(() => _addressSuggestions = []),
-                ),
-                if (_location != null)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 3, left: 12),
-                    child: Text(
-                      _locationLabel != null
-                          ? 'Pinned: $_locationLabel'
-                          : 'Pinned: ${_location!.latitude.toStringAsFixed(5)}, '
-                              '${_location!.longitude.toStringAsFixed(5)}',
-                      style: const TextStyle(
-                          color: AppColors.success, fontSize: 11),
-                    ),
-                  ),
               ],
+
               const SizedBox(height: 14),
 
-              // Price breakdown (real-time via ValueListenableBuilder)
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _budgetCtrl,
-                builder: (_, value, __) {
-                  final rawBudget = double.tryParse(value.text) ?? 0;
-                  final budget = rawBudget > 0 ? rawBudget : _computeEffectiveBudget();
-                  final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+              // ── 7. Price Breakdown Card Layout ───────────────────────────
+              ValueListenableBuilder<double>(
+                valueListenable: _effectiveBudgetNotifier,
+                builder: (_, budget, __) {
+                  final isDelivery = _isDelivery;
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
                   final posterFee = budget * 0.20;
                   final total = budget + charge + posterFee;
@@ -966,14 +1491,16 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   );
                 },
               ),
+
               const SizedBox(height: 20),
 
+              // ── Action Button ───────────────────────────────────────────
               GradientButton(
                 label: 'Update Task',
                 loading: _loading,
                 onPressed: _submit,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -982,76 +1509,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   }
 }
 
-// ── Category grid ─────────────────────────────────────────────────────────────
-class _CategoryGrid extends StatelessWidget {
-  final String selected;
-  final ValueChanged<String> onChanged;
-  const _CategoryGrid({required this.selected, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    const cats = TaskCategory.all;
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: cats.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        mainAxisSpacing: 8,
-        crossAxisSpacing: 8,
-        childAspectRatio: 1,
-      ),
-      itemBuilder: (_, i) {
-        final c = cats[i];
-        final sel = selected == c.id;
-        return GestureDetector(
-          onTap: () => onChanged(c.id),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color: sel ? AppColors.primary : AppColors.light,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: sel ? AppColors.primary : AppColors.border,
-                width: sel ? 2 : 1,
-              ),
-              boxShadow: sel
-                  ? [
-                      BoxShadow(
-                        color: AppColors.primary.withValues(alpha: 0.25),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      )
-                    ]
-                  : null,
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(c.icon, style: const TextStyle(fontSize: 22)),
-                const SizedBox(height: 4),
-                Text(
-                  c.label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight:
-                        sel ? FontWeight.w700 : FontWeight.w500,
-                    color: sel ? Colors.white : AppColors.dark,
-                  ),
-                  textAlign: TextAlign.center,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-// ── Address action buttons (GPS + Map) ────────────────────────────────────────
+/// Suffix widget for address text fields: GPS + Map picker buttons.
 class _AddressActionButtons extends StatelessWidget {
   final bool isLoading;
   final Color accentColor;
@@ -1072,27 +1530,29 @@ class _AddressActionButtons extends StatelessWidget {
       children: [
         if (isLoading)
           const Padding(
-            padding: EdgeInsets.all(14),
+            padding: EdgeInsets.all(12),
             child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2)),
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
           )
         else
           IconButton(
-            icon: Icon(Icons.my_location, size: 20, color: accentColor),
+            icon: Icon(Icons.my_location_rounded, size: 20, color: accentColor),
             tooltip: 'Use GPS',
             onPressed: onGps,
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             constraints: const BoxConstraints(),
           ),
         IconButton(
           icon: Icon(Icons.map_outlined, size: 20, color: accentColor),
           tooltip: 'Pick on map',
           onPressed: onMap,
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(8),
           constraints: const BoxConstraints(),
         ),
+        const SizedBox(width: 4),
       ],
     );
   }

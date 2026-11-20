@@ -338,6 +338,68 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _recalcDistance();
   }
 
+  void _syncAutoBudget(double fare) {
+    final formatted = fare.toStringAsFixed(0);
+    _budgetCtrl.text = formatted;
+  }
+
+  bool _isTaskUrgent() {
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other'] ?? const [];
+    for (final p in prompts) {
+      final lowerP = p.toLowerCase();
+      if (lowerP.contains('urgent') || lowerP.contains('time constraint')) {
+        final ctrl = _descFormControllers[p];
+        if (ctrl != null) {
+          final text = ctrl.text.trim().toLowerCase();
+          if (text.contains('yes') ||
+              text.contains('urgent') ||
+              text.contains('1 hour') ||
+              text.contains('2 hour')) {
+            return true;
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  double? _getItemBudget() {
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other'] ?? const [];
+    for (final p in prompts) {
+      final lowerP = p.toLowerCase();
+      if (lowerP.contains('item budget') || lowerP.contains('budget')) {
+        final ctrl = _descFormControllers[p];
+        if (ctrl != null) {
+          final raw = ctrl.text.replaceAll(RegExp(r'[^\d.]'), '').trim();
+          return double.tryParse(raw);
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Computes the authoritative auto-calculated budget for the current category,
+  /// vehicle selection, distance, urgency, or prompt inputs without requiring manual entry.
+  double _computeEffectiveBudget() {
+    final cat = Task.normalizeCategoryKey(_selectedCategory);
+    final isUrgent = _isTaskUrgent();
+    final urgentExtra = isUrgent ? (cat == 'moving' ? 50.0 : 30.0) : 0.0;
+
+    if (cat == 'moving') {
+      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
+        return Task.calculateDistancePrice(_calculatedDistanceKm!, 'moving', vehicle: _deliveryVehicle) + urgentExtra;
+      }
+      return Task.minBudgetForCategory('moving') + urgentExtra;
+    }
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
+        return Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle) + urgentExtra;
+      }
+      return Task.minBudgetForCategory(_selectedCategory) + urgentExtra;
+    }
+    return Task.minBudgetForCategory(_selectedCategory) + urgentExtra;
+  }
+
   /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
   /// then auto-fills budget with category- and vehicle-specific distance fare.
   Future<void> _recalcDistance() async {
@@ -354,10 +416,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _selectedCategory,
         vehicle: _deliveryVehicle,
       );
-      final current = double.tryParse(_budgetCtrl.text) ?? 0;
-      if (current < immediatePrice) {
-        _budgetCtrl.text = immediatePrice.toStringAsFixed(0);
-      }
+      _syncAutoBudget(immediatePrice);
       if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
 
       // 2. Fetch exact road driving route via OSRM (Google Maps parity)
@@ -372,15 +431,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _selectedCategory,
             vehicle: _deliveryVehicle,
           );
-          final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
-          if (currVal < exactPrice) {
-            _budgetCtrl.text = exactPrice.toStringAsFixed(0);
-          }
+          _syncAutoBudget(exactPrice);
           setState(() => _calculatedDistanceKm = roadKm);
         }
       } catch (_) {}
     } else {
-      if (mounted) setState(() => _calculatedDistanceKm = null);
+      if (mounted) {
+        setState(() => _calculatedDistanceKm = null);
+        _syncAutoBudget(_computeEffectiveBudget());
+      }
     }
   }
 
@@ -496,6 +555,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   _autoFillDescription();
                                 });
                                 _recalcDistance();
+                                _syncAutoBudget(_computeEffectiveBudget());
                                 Navigator.pop(ctx);
                               },
                               child: AnimatedContainer(
@@ -601,6 +661,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   @override
   void initState() {
     super.initState();
+    _budgetCtrl.text = _computeEffectiveBudget().toStringAsFixed(0);
     _savedLocations = StorageService.getSavedLocations();
     _areaCtrl.addListener(_onLocationAreaChanged);
     _pickupAreaCtrl.addListener(_onLocationAreaChanged);
@@ -1615,7 +1676,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
 
-    final budget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final autoBudget = _computeEffectiveBudget();
+    final rawBudget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final budget = rawBudget > 0 ? rawBudget : autoBudget;
     if (_isDelivery) {
       if (_calculatedDistanceKm != null) {
         final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
@@ -1731,6 +1794,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 serviceCharge: charge,
                 posterFee: posterFee,
                 totalCost: total,
+                isRepair: Task.isRepairCategory(_selectedCategory),
+                distanceKm: _calculatedDistanceKm,
+                category: _selectedCategory,
+                vehicle: _deliveryVehicle,
+                isUrgent: _isTaskUrgent(),
+                itemBudget: _getItemBudget(),
               ),
               const SizedBox(height: 24),
               // Action buttons
@@ -1889,7 +1958,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   TextEditingController _getDescQuestionCtrl(String question) {
     return _descFormControllers.putIfAbsent(
       question,
-      () => TextEditingController()..addListener(_compileDescriptionFromForm),
+      () => TextEditingController()
+        ..addListener(() {
+          _compileDescriptionFromForm();
+          _syncAutoBudget(_computeEffectiveBudget());
+        }),
     );
   }
 
@@ -2128,14 +2201,15 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               final isSelected = ctrl.text == chipText;
                               return InkWell(
                                 onTap: () {
-                                  setState(() {
-                                    if (ctrl.text == chipText) {
-                                      ctrl.clear();
-                                    } else {
-                                      ctrl.text = chipText;
-                                    }
-                                    _compileDescriptionFromForm();
-                                  });
+                                    setState(() {
+                                      if (ctrl.text == chipText) {
+                                        ctrl.clear();
+                                      } else {
+                                        ctrl.text = chipText;
+                                      }
+                                      _compileDescriptionFromForm();
+                                      _syncAutoBudget(_computeEffectiveBudget());
+                                    });
                                 },
                                 borderRadius: BorderRadius.circular(14),
                                 child: Container(
@@ -2284,6 +2358,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     if (_deliveryVehicle != 'bike') {
                       setState(() => _deliveryVehicle = 'bike');
                       _recalcDistance();
+                      _syncAutoBudget(_computeEffectiveBudget());
                     }
                   },
                 ),
@@ -2300,6 +2375,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     if (_deliveryVehicle != 'rikshaw') {
                       setState(() => _deliveryVehicle = 'rikshaw');
                       _recalcDistance();
+                      _syncAutoBudget(_computeEffectiveBudget());
                     }
                   },
                 ),
@@ -2394,130 +2470,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-  Widget _buildSuggestedBudgetCard() {
-    if (!_isLocationSet) return const SizedBox.shrink();
-    final areaCandidate = _isDelivery
-        ? (_dropAreaCtrl.text.trim().isNotEmpty
-            ? _dropAreaCtrl.text.trim()
-            : (_locationLabel ?? _pickupAddrCtrl.text.trim()))
-        : (_areaCtrl.text.trim().isNotEmpty
-            ? _areaCtrl.text.trim()
-            : (_locationLabel ?? _addressCtrl.text.trim()));
-
-    final suggestion = Task.getBudgetSuggestion(
-      _selectedCategory,
-      areaText: areaCandidate,
-      distanceKm: _calculatedDistanceKm,
-      vehicle: _deliveryVehicle,
-    );
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEEF2FF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFC7D2FE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Suggested in ${suggestion.localityName}',
-                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE0E7FF),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    suggestion.localityTier,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          '₹${suggestion.suggestedBudget.toInt()}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF4338CA),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Flexible(
-                          child: Text(
-                            '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
-                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: () {
-                  _budgetCtrl.text = suggestion.suggestedBudget.toInt().toString();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF6366F1),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  elevation: 0,
-                ),
-                child: const Text('Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -2624,6 +2576,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           _autoFillDescription();
                         });
                         _recalcDistance();
+                        _syncAutoBudget(_computeEffectiveBudget());
                       },
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 180),
@@ -2743,59 +2696,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               _buildDescriptionFormSection(),
               const SizedBox(height: 14),
 
-              // Suggested budget card based on category + selected area
-              _buildSuggestedBudgetCard(),
-
-              // Budget
-              TextFormField(
-                controller: _budgetCtrl,
-                focusNode: _budgetFocus,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: 'Budget (₹)',
-                  hintText: _isDelivery
-                      ? (_calculatedDistanceKm != null
-                          ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
-                          : (_selectedCategory == 'delivery'
-                              ? 'Enter budget (${_deliveryVehicle == 'bike' ? '₹12/km' : '₹18/km'})'
-                              : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory).toInt()})'))
-                      : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
-                  helperText: _isDelivery
-                      ? (_selectedCategory == 'delivery'
-                          ? (_calculatedDistanceKm != null
-                              ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
-                              : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'}')
-                          : (_calculatedDistanceKm != null
-                              ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
-                              : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
-                      : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory).toInt()}',
-                  prefixIcon: const Icon(Icons.currency_rupee),
-                ),
-                validator: (v) {
-                  final n = double.tryParse(v ?? '');
-                  if (n == null || n <= 0) return 'Please enter a budget';
-                  if (_isDelivery) {
-                    if (_calculatedDistanceKm != null) {
-                      final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-                      if (n < distMin) {
-                        return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
-                      }
-                    } else if (_selectedCategory != 'delivery') {
-                      final catMin = Task.minBudgetForCategory(_selectedCategory);
-                      if (catMin > 0 && n < catMin) {
-                        return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
-                      }
-                    }
-                  } else {
-                    final catMin = Task.minBudgetForCategory(_selectedCategory);
-                    if (n < catMin) {
-                      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
-                    }
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 14),
 
               // ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
@@ -3287,7 +3187,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               ValueListenableBuilder<TextEditingValue>(
                 valueListenable: _budgetCtrl,
                 builder: (_, value, __) {
-                  final budget = double.tryParse(value.text) ?? 0;
+                  final rawBudget = double.tryParse(value.text) ?? 0;
+                  final budget = rawBudget > 0 ? rawBudget : _computeEffectiveBudget();
                   final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
                   final posterFee = budget * 0.20;
@@ -3297,6 +3198,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     serviceCharge: charge,
                     posterFee: posterFee,
                     totalCost: total,
+                    isRepair: Task.isRepairCategory(_selectedCategory),
+                    distanceKm: _calculatedDistanceKm,
+                    category: _selectedCategory,
+                    vehicle: _deliveryVehicle,
+                    isUrgent: _isTaskUrgent(),
+                    itemBudget: _getItemBudget(),
                   );
                 },
               ),

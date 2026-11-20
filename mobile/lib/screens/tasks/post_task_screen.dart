@@ -7558,9 +7558,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         _buildMovingVehicleSelector(),
                         const SizedBox(height: 12),
                         _buildVehicleCapacityBanner(),
-                      ] else if (Task.isRepairCategory(_selectedCategory)) ...[
-                        const SizedBox(height: 16),
-                        _buildRepairMaterialsBanner(),
+
                       ] else if (Task.isGroceryCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildGroceryItemsBanner(),
@@ -7609,10 +7607,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                         ),
                       ],
-                      if (Task.isRepairCategory(_selectedCategory)) ...[
-                        const SizedBox(height: 16),
-                        _buildRepairVisitingFeeCard(),
-                      ] else if (!Task.isGroceryCategory(_selectedCategory)) ...[
+                      if (!Task.isRepairCategory(_selectedCategory) && !Task.isGroceryCategory(_selectedCategory)) ...[
                         const SizedBox(height: 16),
                         _buildSuggestedBudgetCard(),
                         _buildBudgetField(),

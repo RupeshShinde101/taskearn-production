@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// An elevated, modern price breakdown card for task creation and editing screens.
 /// Features clean financial summary rows, escrow protection reassurance badge,
-/// and clear "Due on Verification" messaging.
+/// zero horizontal overflows, and clear "Due on Verification" messaging.
 class TaskPriceBreakdownCard extends StatelessWidget {
   final double budget;
   final double serviceCharge;
@@ -28,6 +28,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -49,36 +50,42 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEEF2FF),
-                      borderRadius: BorderRadius.circular(10),
+              Expanded(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.receipt_long_rounded,
+                        size: 17,
+                        color: Color(0xFF4F46E5),
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.receipt_long_rounded,
-                      size: 18,
-                      color: Color(0xFF4F46E5),
+                    const SizedBox(width: 8),
+                    const Flexible(
+                      child: Text(
+                        'Price Breakdown',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: Color(0xFF0F172A),
+                          letterSpacing: -0.2,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  const Text(
-                    'Price Breakdown',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16.5,
-                      color: Color(0xFF0F172A),
-                      letterSpacing: -0.2,
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
+              const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECFDF5),
                   borderRadius: BorderRadius.circular(8),
@@ -92,7 +99,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                     Text(
                       'Pay on Verification',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF065F46),
                       ),
@@ -167,7 +174,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                         'Total Amount to Pay',
                         style: TextStyle(
                           fontWeight: FontWeight.w800,
-                          fontSize: 14,
+                          fontSize: 13.5,
                           color: Color(0xFF0F172A),
                         ),
                       ),
@@ -183,11 +190,12 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                     ],
                   ),
                 ),
+                const SizedBox(width: 8),
                 Text(
                   '₹${totalCost.toStringAsFixed(0)}',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
-                    fontSize: 22,
+                    fontSize: 21,
                     color: Color(0xFF4338CA),
                     letterSpacing: -0.5,
                   ),
@@ -318,35 +326,40 @@ class _PriceRowWithBadge extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF64748B),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: const Color(0xFFEEF2FF),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: const Color(0xFFC7D2FE)),
-              ),
-              child: Text(
-                badgeText,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF4338CA),
+        Expanded(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-            ),
-          ],
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFFC7D2FE)),
+                ),
+                child: Text(
+                  badgeText,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4338CA),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
         const SizedBox(width: 8),
         Text(

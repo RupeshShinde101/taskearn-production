@@ -2372,10 +2372,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                 const SizedBox(height: 14),
 
                 // Budget & Visiting Fee
-                if (Task.isRepairCategory(_selectedCategory)) ...[
-                  _buildRepairVisitingFeeCard(),
-                  const SizedBox(height: 16),
-                ] else if (!_isGrocery) ...[
+                if (!Task.isRepairCategory(_selectedCategory) && !_isGrocery) ...[
                   // Suggested budget card based on category + selected area
                   _buildSuggestedBudgetCard(),
 

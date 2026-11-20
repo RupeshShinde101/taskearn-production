@@ -1389,15 +1389,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                         letterSpacing: -0.3,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    const Text(
-                      'Fixed Price Per Visit Model',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF4F46E5),
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -1430,24 +1421,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
             ),
             child: Column(
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.check_circle_rounded, size: 16, color: Color(0xFF10B981)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Doorstep technician visit, inspection & fault diagnosis at standard market rate.',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                          height: 1.35,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

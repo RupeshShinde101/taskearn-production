@@ -427,18 +427,18 @@ class Task {
   static String repairVisitTitle(String category) {
     switch (_normalizeCategoryKey(category)) {
       case 'electrician':
-        return 'Electrician Visiting & Inspection Fee';
+        return 'Electrician Visiting Fee';
       case 'plumbing':
-        return 'Plumber Visiting & Inspection Fee';
+        return 'Plumber Visiting Fee';
       case 'carpentry':
-        return 'Carpenter Visiting & Inspection Fee';
+        return 'Carpenter Visiting Fee';
       case 'painting':
-        return 'Painter Visiting & Inspection Fee';
+        return 'Painter Visiting Fee';
       case 'vehicle':
-        return 'Mechanic Visiting & Diagnosis Fee';
+        return 'Mechanic Visiting Fee';
       case 'repair':
       default:
-        return 'Visiting & Diagnostic Charge';
+        return 'Repair Visiting Fee';
     }
   }
 

@@ -15,14 +15,15 @@ import 'screens/home/home_screen.dart';
 import 'screens/browse/browse_screen.dart';
 import 'screens/browse/task_detail_screen.dart';
 import 'screens/tasks/post_task_screen.dart';
+import 'screens/tasks/grocery_item_picker_screen.dart';
 import 'screens/tasks/my_tasks_screen.dart';
 import 'screens/tasks/task_in_progress_screen.dart';
+import 'screens/tasks/poster_task_in_progress_screen.dart';
 import 'screens/chat/chat_screen.dart';
 import 'screens/wallet/wallet_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/profile/kyc_screen.dart';
 import 'screens/profile/physical_onboarding_screen.dart';
-import 'screens/profile/vehicle_verification_screen.dart';
 import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
@@ -30,6 +31,7 @@ import 'screens/tutorial/tutorial_screen.dart';
 import 'screens/legal/terms_screen.dart';
 import 'screens/legal/privacy_screen.dart';
 import 'screens/auth/auth_success_screen.dart';
+import 'navigation/app_back_button_dispatcher.dart';
 
 class Workmate4uApp extends StatefulWidget {
   const Workmate4uApp({super.key});
@@ -40,9 +42,11 @@ class Workmate4uApp extends StatefulWidget {
 
 class _Workmate4uAppState extends State<Workmate4uApp> {
   late final GoRouter _router;
+  late final AppBackButtonDispatcher _backButtonDispatcher;
   AuthProvider? _authProvider;
   StreamSubscription<Map<String, dynamic>>? _notifSub;
   StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
+  StreamSubscription<Map<String, dynamic>>? _taskAcceptedSub;
   /// Navigation path deferred until the user is authenticated.
   /// Set when a notification tap arrives before auth is established.
   String? _pendingNavPath;
@@ -57,6 +61,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         final status = auth.status;
         final loc = state.matchedLocation;
 
+        if (loc.startsWith('/grocery-picker')) return null;
+
         if (status == AuthStatus.unknown) {
           return loc == '/splash' ? null : '/splash';
         }
@@ -66,7 +72,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
           return loc == '/auth-success' ? null : '/auth-success';
         }
 
-        // Auth-success is a post-login bridge screen â€” authenticated only.
+        // Auth-success is a post-login bridge screen — authenticated only.
         if (loc == '/auth-success') {
           return status == AuthStatus.unauthenticated ? '/login' : null;
         }
@@ -78,7 +84,8 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
 
         // Public routes: no login required, but authenticated users can also view them
         final isPublicRoute = loc.startsWith('/terms') ||
-            loc.startsWith('/privacy');
+            loc.startsWith('/privacy') ||
+            loc.startsWith('/grocery-picker');
 
         if (status == AuthStatus.unauthenticated && !isAuthFlowRoute && !isPublicRoute) return '/login';
 
@@ -151,12 +158,23 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         ),
         GoRoute(
           path: '/post-task',
-          builder: (_, __) => const PostTaskScreen(),
+          builder: (_, state) => PostTaskScreen(
+            initialCategory: state.uri.queryParameters['category'],
+          ),
+        ),
+        GoRoute(
+          path: '/grocery-picker',
+          builder: (_, __) => const GroceryItemPickerScreen(),
         ),
         GoRoute(
           path: '/task-in-progress/:id',
           builder: (_, state) =>
               TaskInProgressScreen(taskId: state.pathParameters['id']!),
+        ),
+        GoRoute(
+          path: '/poster-task-in-progress/:id',
+          builder: (_, state) =>
+              PosterTaskInProgressScreen(taskId: state.pathParameters['id']!),
         ),
         GoRoute(
           path: '/chat/:taskId',
@@ -202,17 +220,9 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
             );
           },
         ),
-        GoRoute(
-          path: '/vehicle-verification',
-          builder: (_, state) {
-            final extra = state.extra as Map<String, dynamic>?;
-            return VehicleVerificationScreen(
-              initialSkills: (extra?['skills'] as List?)?.map((e) => e.toString()).toList(),
-            );
-          },
-        ),
       ],
     );
+    _backButtonDispatcher = AppBackButtonDispatcher(_router);
   }
 
   @override
@@ -235,7 +245,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       _handleNotifTap(pendingTap);
     }
 
-    // Consume any notification tap that arrived during a backgroundâ†’foreground
+    // Consume any notification tap that arrived during a background→foreground
     // transition before the stream listener above was registered.
     final pendingBgTap = NotificationService.consumePendingBackgroundTap();
     if (pendingBgTap != null && pendingTap == null) {
@@ -243,6 +253,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         if (mounted) _handleNotifTap(pendingBgTap);
       });
     }
+
+    // Auto-redirect task poster to live tracking screen when a helper accepts their task.
+    _taskAcceptedSub ??= NotificationService.onTaskAccepted.stream.listen((data) {
+      final taskId = data['task_id']?.toString() ?? '';
+      if (taskId.isEmpty) return;
+      if (_authProvider?.status == AuthStatus.authenticated) {
+        _router.push('/poster-task-in-progress/$taskId');
+      }
+    });
 
     // Show in-app popup when a task_completed event arrives while the poster
     // is actively using the app.
@@ -280,7 +299,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
               ),
               onPressed: () {
                 Navigator.of(dialogCtx).pop();
-                _router.push('/task/$taskId');
+                _router.push('/poster-task-in-progress/$taskId');
               },
               child: const Text('Verify & Pay Now'),
             ),
@@ -291,17 +310,21 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   }
 
   void _handleNotifTap(Map<String, dynamic> data) {
-    // Resolve task ID â€” check all common key names the backend may send.
+    // Resolve task ID — check all common key names the backend may send.
     final taskId = data['task_id']?.toString()
         ?? data['taskId']?.toString()
         ?? data['id']?.toString();
     final type = data['type']?.toString() ?? '';
 
-    // Determine where to navigate.
-    // inProgressTypes â€” these screens should open the in-progress view.
+    // Poster live-tracking notification types → Poster's Task In Progress screen.
+    const posterTrackingTypes = {
+      'task_accepted',
+      'task_completed',
+      'verify_and_pay',
+    };
+    // Helper in-progress notification types → Helper's Task In Progress screen.
     const inProgressTypes = {
       'task_assigned',       // helper just accepted
-      'task_accepted',       // poster confirmation
       'task_started',
       'task_completed_helper',
       'task_verify_sent',
@@ -316,7 +339,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'withdrawal_requested', 'withdrawal_approved', 'withdrawal_rejected',
       'penalty_deducted', 'release_penalty', 'task_abandoned_penalty',
     };
-    // Admin notification types â€” navigate to the notifications screen.
+    // Admin notification types — navigate to the notifications screen.
     const adminTypes = {
       'account_suspended', 'admin_suspended',
       'account_banned', 'admin_banned',
@@ -325,7 +348,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'admin_balance_adjusted',
     };
 
-    // task_expired: only mark as read â€” no navigation (task no longer exists).
+    // task_expired: only mark as read — no navigation (task no longer exists).
     if (type == 'task_expired') {
       if (_authProvider?.status == AuthStatus.authenticated &&
           taskId != null && taskId.isNotEmpty) {
@@ -339,11 +362,11 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       return;
     }
 
-    // Notification types whose task has been deleted â€” navigate to My Tasks
+    // Notification types whose task has been deleted — navigate to My Tasks
     // instead of trying to open a non-existent task detail.
     // Use go() for shell tab routes to avoid the navigator key assertion.
     const deletedTaskTypes = {'task_cancelled_confirmation'};
-    // Shell tab routes must use go() not push() â€” push() on an already-mounted
+    // Shell tab routes must use go() not push() — push() on an already-mounted
     // ShellRoute child throws '!keyReservation.contains(key)'.
     const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
 
@@ -354,15 +377,17 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     } else if (chatTypes.contains(type) && taskId != null && taskId.isNotEmpty) {
       destination = '/chat/$taskId';
     } else if (taskId != null && taskId.isNotEmpty) {
-      destination = inProgressTypes.contains(type)
-          ? '/task-in-progress/$taskId'
-          : '/task/$taskId';
+      destination = posterTrackingTypes.contains(type)
+          ? '/poster-task-in-progress/$taskId'
+          : inProgressTypes.contains(type)
+              ? '/task-in-progress/$taskId'
+              : '/task/$taskId';
     } else {
-      // No task ID in the FCM payload â€” pick the most appropriate screen.
+      // No task ID in the FCM payload — pick the most appropriate screen.
       if (adminTypes.contains(type)) {
         destination = '/notifications';
       } else if (matchedTypes.contains(type)) {
-        destination = '/browse'; // Matched-task alerts â†’ browse for the task
+        destination = '/browse'; // Matched-task alerts → browse for the task
       } else if (walletTypes.contains(type) || type.contains('payment')) {
         destination = '/wallet';
       } else if (type.isNotEmpty) {
@@ -414,6 +439,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     _authProvider?.removeListener(_onAuthChanged);
     _notifSub?.cancel();
     _taskCompletedSub?.cancel();
+    _taskAcceptedSub?.cancel();
     super.dispose();
   }
 
@@ -424,7 +450,10 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       themeMode: ThemeMode.light,
-      routerConfig: _router,
+      routeInformationProvider: _router.routeInformationProvider,
+      routeInformationParser: _router.routeInformationParser,
+      routerDelegate: _router.routerDelegate,
+      backButtonDispatcher: _backButtonDispatcher,
     );
   }
 }

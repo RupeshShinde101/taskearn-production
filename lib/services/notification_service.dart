@@ -32,6 +32,23 @@ void _onBackgroundNotificationResponse(NotificationResponse response) {
   // Intentionally minimal — navigation is handled when the app resumes.
 }
 
+final Map<String, int> _bgRecentNotifications = {};
+bool _shouldSuppressBgDuplicate(String type, String? taskId) {
+  if (type != 'skill_matched' && type != 'nearby_task') return false;
+  final key = '${type}_${taskId ?? ''}';
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final last = _bgRecentNotifications[key];
+  if (last != null && (now - last) < 15000) {
+    debugPrint('[FCM bg] Suppressed duplicate notification for key=$key');
+    return true;
+  }
+  _bgRecentNotifications[key] = now;
+  if (_bgRecentNotifications.length > 500) {
+    _bgRecentNotifications.clear();
+  }
+  return false;
+}
+
 @pragma('vm:entry-point')
 Future<void> _bgMessageHandler(RemoteMessage message) async {
   // Guard against [core/duplicate-app] if the isolate already has Firebase.
@@ -46,13 +63,17 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   final type = data['type']?.toString() ?? '';
   if (type.isEmpty) return;
 
+  final String? bgTaskId = data['task_id']?.toString() ?? data['taskId']?.toString();
+  if (_shouldSuppressBgDuplicate(type, bgTaskId)) {
+    return;
+  }
+
   if (_isHelperTaskNotification(type)) {
     try {
       final prefs = await SharedPreferences.getInstance();
       final mode = prefs.getString('profile_mode') ?? 'poster';
       if (mode != 'helper') {
-        debugPrint(
-            '[FCM bg] Suppressed helper task notification ($type) because mode is $mode');
+        debugPrint('[FCM bg] Suppressed helper task notification ($type) because mode is $mode');
         return;
       }
     } catch (e) {
@@ -69,41 +90,31 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   );
 
   // Pre-create channels (idempotent — safe to call every time).
-  final androidPlugin = local.resolvePlatformSpecificImplementation<
-      AndroidFlutterLocalNotificationsPlugin>();
+  final androidPlugin = local
+      .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
   if (androidPlugin != null) {
-    await androidPlugin
-        .createNotificationChannel(const AndroidNotificationChannel(
-      'workmate4u_main',
-      'Task Updates',
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_main', 'Task Updates',
       description: 'Task updates and alerts',
       importance: Importance.high,
     ));
-    await androidPlugin
-        .createNotificationChannel(const AndroidNotificationChannel(
-      'workmate4u_matched',
-      'Matched Tasks',
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_matched', 'Matched Tasks',
       description: 'Tasks near you that match your skills profile',
       importance: Importance.max,
     ));
-    await androidPlugin
-        .createNotificationChannel(const AndroidNotificationChannel(
-      'workmate4u_payment',
-      'Payments',
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_payment', 'Payments',
       description: 'Payment alerts and confirmations',
       importance: Importance.max,
     ));
-    await androidPlugin
-        .createNotificationChannel(const AndroidNotificationChannel(
-      'workmate4u_admin',
-      'Admin Alerts',
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_admin', 'Admin Alerts',
       description: 'Account status and admin messages',
       importance: Importance.max,
     ));
-    await androidPlugin
-        .createNotificationChannel(const AndroidNotificationChannel(
-      'workmate4u_chat',
-      'Chat Messages',
+    await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+      'workmate4u_chat', 'Chat Messages',
       description: 'Direct messages from task poster or helper',
       importance: Importance.max,
     ));
@@ -133,11 +144,10 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     case 'task_matched':
     case 'matched_task':
       title = data['title'] ?? '🎯 New task near you!';
-      body = data['body'] ??
-          'A task within 10 km matches your profile. Tap to view.';
+      body = data['body'] ?? 'A task within 2 km matches your profile. Tap to view.';
       channelId = 'workmate4u_matched';
       channelName = 'Matched Tasks';
-      channelDesc = 'Tasks near you that match your skills profile';
+      channelDesc = 'Tasks near you (within 2 km) that match your skills profile';
       importance = Importance.max;
       break;
 
@@ -151,13 +161,13 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.max;
       break;
 
-    // ── Nearby task (all users within 10 km, any task category) ────────────
+    // ── Nearby task (all users within 2 km, any task category) ────────────
     case 'nearby_task':
       title = data['title'] ?? '📍 New Task Near You!';
-      body = data['body'] ?? 'A new task is available near you. Tap to view.';
+      body = data['body'] ?? 'A new task is available within 2 km of you. Tap to view.';
       channelId = 'workmate4u_matched';
       channelName = 'Matched Tasks';
-      channelDesc = 'Tasks near you that match your skills profile';
+      channelDesc = 'Tasks near you (within 2 km) that match your skills profile';
       importance = Importance.max;
       break;
 
@@ -198,8 +208,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     // ── Helper verified task — poster must verify & pay (new flow) ─────────
     case 'verify_and_pay':
       title = data['title'] ?? 'Verify & Pay Now ✅';
-      body = data['body'] ??
-          'Your helper verified the task is done. Please pay to release funds.';
+      body = data['body'] ?? 'Your helper verified the task is done. Please pay to release funds.';
       channelId = 'workmate4u_payment';
       channelName = 'Payments';
       channelDesc = 'Payment alerts and confirmations';
@@ -217,8 +226,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     // ── Payment released to helper ─────────────────────────────────────────
     case 'payment_released':
       title = data['title'] ?? 'Payment Released! 🎉';
-      body = data['body'] ??
-          'Your payment has been released. Mark the task as completed.';
+      body = data['body'] ?? 'Your payment has been released. Mark the task as completed.';
       channelId = 'workmate4u_payment';
       channelName = 'Payments';
       channelDesc = 'Payment alerts and confirmations';
@@ -296,8 +304,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     case 'release_penalty':
     case 'task_abandoned_penalty':
       title = data['title'] ?? '⚠️ Release Penalty';
-      body = data['body'] ??
-          'A penalty has been deducted from your wallet for releasing the task.';
+      body = data['body'] ?? 'A penalty has been deducted from your wallet for releasing the task.';
       channelId = 'workmate4u_payment';
       channelName = 'Payments';
       channelDesc = 'Payment alerts and confirmations';
@@ -317,8 +324,7 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     // ── Poster notified after helper's final mark-complete ─────────────────
     case 'task_final_completed_poster':
       title = data['title'] ?? 'All Done! ✅';
-      body =
-          data['body'] ?? 'Your task has been fully completed by the helper.';
+      body = data['body'] ?? 'Your task has been fully completed by the helper.';
       channelId = 'workmate4u_main';
       importance = Importance.high;
       break;
@@ -394,19 +400,21 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     priority: importance == Importance.max ? Priority.max : Priority.high,
     icon: '@mipmap/ic_launcher',
     color: channelId == 'workmate4u_payment'
-        ? const Color(0xFF10B981) // green for money
+        ? const Color(0xFF10B981)  // green for money
         : channelId == 'workmate4u_matched' || channelId == 'workmate4u_chat'
-            ? const Color(0xFF6366F1) // indigo for matches & chat
+            ? const Color(0xFF6366F1)  // indigo for matches & chat
             : channelId == 'workmate4u_admin'
-                ? const Color(0xFFEF4444) // red for admin alerts
+                ? const Color(0xFFEF4444)  // red for admin alerts
                 : const Color(0xFF0EA5E9), // sky-blue for tasks
     enableVibration: true,
     playSound: true,
   );
 
-  // Use type+task_id as the ID so skill_matched and nearby_task never collide.
-  final notifId =
-      (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs();
+  // Use unique ID for chat messages so Android never silently merges/mutes
+  // subsequent messages from the same task chat.
+  final notifId = (type == 'chat' || type == 'new_message')
+      ? DateTime.now().millisecondsSinceEpoch & 0x7fffffff
+      : (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs() % 2147483647;
   await local.show(
     id: notifId,
     title: title,
@@ -422,6 +430,24 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
+
+  static final Map<String, int> _recentNotifications = {};
+
+  static bool _shouldSuppressDuplicate(String type, String? taskId) {
+    if (type != 'skill_matched' && type != 'nearby_task') return false;
+    final key = '${type}_${taskId ?? ''}';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _recentNotifications[key];
+    if (last != null && (now - last) < 15000) {
+      debugPrint('[FCM fg] Suppressed duplicate notification for key=$key');
+      return true;
+    }
+    _recentNotifications[key] = now;
+    if (_recentNotifications.length > 500) {
+      _recentNotifications.clear();
+    }
+    return false;
+  }
 
   /// When user is currently inside a ChatScreen, this holds the active taskId.
   /// Foreground notifications for this taskId are suppressed to prevent spamming
@@ -440,6 +466,10 @@ class NotificationService {
 
   // Broadcast stream for foreground task_completed events (poster's in-app popup).
   static final StreamController<Map<String, dynamic>> onTaskCompleted =
+      StreamController.broadcast();
+
+  // Broadcast stream for foreground task_accepted events (auto-redirect poster to live tracking).
+  static final StreamController<Map<String, dynamic>> onTaskAccepted =
       StreamController.broadcast();
 
   /// Holds the data from getInitialMessage() / getNotificationAppLaunchDetails()
@@ -487,48 +517,37 @@ class NotificationService {
           onNotificationTap.add(decoded);
         }
       },
-      onDidReceiveBackgroundNotificationResponse:
-          _onBackgroundNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
     );
 
     // ── Pre-create Android notification channels ───────────────────────────
     // Must exist before FCM delivers any message; creating upfront prevents
     // silent drops when the background isolate shows the first notification.
-    final androidPlugin = _local.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final androidPlugin = _local
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
     if (androidPlugin != null) {
-      await androidPlugin
-          .createNotificationChannel(const AndroidNotificationChannel(
-        'workmate4u_main',
-        'Task Updates',
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_main', 'Task Updates',
         description: 'Task updates and alerts',
         importance: Importance.high,
       ));
-      await androidPlugin
-          .createNotificationChannel(const AndroidNotificationChannel(
-        'workmate4u_matched',
-        'Matched Tasks',
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_matched', 'Matched Tasks',
         description: 'Tasks near you that match your skills profile',
         importance: Importance.max,
       ));
-      await androidPlugin
-          .createNotificationChannel(const AndroidNotificationChannel(
-        'workmate4u_payment',
-        'Payments',
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_payment', 'Payments',
         description: 'Payment alerts and confirmations',
         importance: Importance.max,
       ));
-      await androidPlugin
-          .createNotificationChannel(const AndroidNotificationChannel(
-        'workmate4u_admin',
-        'Admin Alerts',
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_admin', 'Admin Alerts',
         description: 'Account status and admin messages',
         importance: Importance.max,
       ));
-      await androidPlugin
-          .createNotificationChannel(const AndroidNotificationChannel(
-        'workmate4u_chat',
-        'Chat Messages',
+      await androidPlugin.createNotificationChannel(const AndroidNotificationChannel(
+        'workmate4u_chat', 'Chat Messages',
         description: 'Direct messages from task poster or helper',
         importance: Importance.max,
       ));
@@ -557,55 +576,46 @@ class NotificationService {
 
     // ── Foreground messages ────────────────────────────────────────────────
     FirebaseMessaging.onMessage.listen((message) {
-      debugPrint(
-          '[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
+      debugPrint('[FCM] Foreground message: type=${message.data['type']} hasNotif=${message.notification != null}');
       final notification = message.notification;
       final type = message.data['type']?.toString() ?? '';
 
       if (_isHelperTaskNotification(type)) {
         final mode = StorageService.getString('profile_mode') ?? 'poster';
         if (mode != 'helper') {
-          debugPrint(
-              '[FCM fg] Suppressed helper task notification ($type) because mode is $mode');
+          debugPrint('[FCM fg] Suppressed helper task notification ($type) because mode is $mode');
           return;
         }
       }
 
+
       final isChat = type == 'chat' || type == 'chat_message';
-      final String? msgTaskId = message.data['task_id']?.toString() ??
-          message.data['taskId']?.toString();
+      final String? msgTaskId = message.data['task_id']?.toString()
+          ?? message.data['taskId']?.toString();
+
+      if (_shouldSuppressDuplicate(type, msgTaskId)) {
+        return;
+      }
 
       // If the user is currently on the chat screen for this task, suppress the popup banner
       if (isChat && activeChatTaskId != null && activeChatTaskId == msgTaskId) {
-        debugPrint(
-            '[FCM fg] Chat message for task $msgTaskId suppressed because user is viewing chat screen');
+        debugPrint('[FCM fg] Chat message for task $msgTaskId suppressed because user is viewing chat screen');
         onNewNotification?.call();
         return;
       }
 
-      final isMatch = type == 'task_matched' ||
-          type == 'matched_task' ||
-          type == 'skill_matched' ||
-          type == 'nearby_task';
-      final isPayment = type == 'task_completed' ||
-          type == 'verify_and_pay' ||
-          type == 'payment_released' ||
-          type == 'payment_received' ||
-          type == 'payment_done' ||
-          type == 'withdrawal_approved' ||
-          type == 'withdrawal_rejected' ||
-          type == 'withdrawal_requested' ||
-          type == 'task_final_completed' ||
-          type == 'wallet_topup' ||
+      final isMatch = type == 'task_matched' || type == 'matched_task' ||
+          type == 'skill_matched' || type == 'nearby_task';
+      final isPayment = type == 'task_completed' || type == 'verify_and_pay' ||
+          type == 'payment_released' || type == 'payment_received' ||
+          type == 'payment_done' || type == 'withdrawal_approved' ||
+          type == 'withdrawal_rejected' || type == 'withdrawal_requested' ||
+          type == 'task_final_completed' || type == 'wallet_topup' ||
           type == 'wallet_credited';
-      final isAdmin = type == 'account_suspended' ||
-          type == 'admin_suspended' ||
-          type == 'account_banned' ||
-          type == 'admin_banned' ||
-          type == 'account_restored' ||
-          type == 'admin_warning' ||
-          type == 'admin_message' ||
-          type == 'admin_balance_adjusted';
+      final isAdmin = type == 'account_suspended' || type == 'admin_suspended' ||
+          type == 'account_banned' || type == 'admin_banned' ||
+          type == 'account_restored' || type == 'admin_warning' ||
+          type == 'admin_message' || type == 'admin_balance_adjusted';
       final isTaskCompleted = type == 'task_completed' ||
           type == 'verify_pending' ||
           type == 'task_complete_verify' ||
@@ -629,8 +639,8 @@ class NotificationService {
         String? msgTitle = message.data['title'];
         String? msgBody = message.data['body'];
         // Resolve taskId from either key name the backend may send
-        final String? msgTaskId = message.data['task_id']?.toString() ??
-            message.data['taskId']?.toString();
+        final String? msgTaskId = message.data['task_id']?.toString()
+            ?? message.data['taskId']?.toString();
 
         // Provide fallback title/body for critical notification types so they
         // are always displayed even if the data fields are unexpectedly absent.
@@ -647,13 +657,12 @@ class NotificationService {
               break;
             case 'nearby_task':
               msgTitle ??= '📍 New Task Near You!';
-              msgBody ??= 'A new task is available near you. Tap to view.';
+              msgBody ??= 'A new task is available within 2 km of you. Tap to view.';
               break;
             case 'task_matched':
             case 'matched_task':
               msgTitle ??= '🎯 New task near you!';
-              msgBody ??=
-                  'A task within 10 km matches your profile. Tap to view.';
+              msgBody ??= 'A task within 2 km matches your profile. Tap to view.';
               break;
             case 'task_assigned':
               msgTitle ??= 'Task Assigned! 📌';
@@ -681,8 +690,7 @@ class NotificationService {
               break;
             case 'verify_and_pay':
               msgTitle ??= 'Verify & Pay Now ✅';
-              msgBody ??=
-                  'Your helper verified the task is done. Please pay to release funds.';
+              msgBody ??= 'Your helper verified the task is done. Please pay to release funds.';
               break;
             case 'task_verify_sent':
               msgTitle ??= 'Verification Sent! ⏳';
@@ -695,7 +703,7 @@ class NotificationService {
             case 'task_final_completed_poster':
               msgTitle ??= 'All Done! ✅';
               msgBody ??= 'Your task has been fully completed by the helper.';
-              break; // ── Admin actions ───────────────────────────────────────────────
+              break;            // ── Admin actions ───────────────────────────────────────────────
             case 'account_suspended':
             case 'admin_suspended':
               msgTitle ??= 'Account Suspended \u26d4';
@@ -754,15 +762,27 @@ class NotificationService {
         }
       }
 
+      // Notify the app to auto-redirect the poster to live tracking when a helper accepts.
+      if (type == 'task_accepted') {
+        final taskId = message.data['task_id']?.toString() ??
+            message.data['taskId']?.toString() ??
+            '';
+        if (taskId.isNotEmpty) {
+          onTaskAccepted.add({
+            'task_id': taskId,
+            'title': notification?.title ?? message.data['title'] ?? 'Task Accepted',
+            'body': notification?.body ?? message.data['body'] ?? '',
+          });
+        }
+      }
+
       // Notify the app to show an in-app popup when the task poster is active.
       if (isTaskCompleted) {
         final taskId = message.data['task_id']?.toString() ?? '';
         if (taskId.isNotEmpty) {
           onTaskCompleted.add({
             'task_id': taskId,
-            'title': notification?.title ??
-                message.data['title'] ??
-                'Task Completed',
+            'title': notification?.title ?? message.data['title'] ?? 'Task Completed',
             'body': notification?.body ?? message.data['body'] ?? '',
           });
         }
@@ -831,8 +851,7 @@ class NotificationService {
   static Future<void> clearFcmToken() async {
     try {
       await _fcm.deleteToken();
-      debugPrint(
-          '[FCM] Token deleted — device will no longer receive notifications');
+      debugPrint('[FCM] Token deleted — device will no longer receive notifications');
     } catch (e) {
       debugPrint('[FCM] clearFcmToken error: $e');
     }
@@ -952,8 +971,11 @@ class NotificationService {
     final details =
         NotificationDetails(android: androidDetails, iOS: iosDetails);
 
+    final notifId = isChat
+        ? (DateTime.now().millisecondsSinceEpoch & 0x7fffffff)
+        : (((notificationType ?? '') + (taskId ?? '')).hashCode.abs() % 2147483647);
     await _local.show(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      id: notifId,
       title: title,
       body: body,
       notificationDetails: details,

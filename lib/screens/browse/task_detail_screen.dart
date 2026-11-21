@@ -6,6 +6,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
+import '../../models/grocery_item.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
@@ -62,6 +63,22 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
           : null;
     });
     if (task != null && mounted) {
+      final currentUserId = context.read<AuthProvider>().user?.id;
+      final isPosterUser = currentUserId != null && task.posterId == currentUserId;
+      final hasHelperAssigned =
+          (task.helperId != null && task.helperId!.isNotEmpty) ||
+              task.status == 'accepted' ||
+              task.status == 'in_progress' ||
+              task.status == 'completed' ||
+              task.status == 'verify_pending';
+      if (isPosterUser && hasHelperAssigned) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            context.pushReplacement('/poster-task-in-progress/${task.id}');
+          }
+        });
+        return;
+      }
       context.read<TaskProvider>().fetchMyTasks().catchError((_) {});
     }
   }
@@ -390,14 +407,42 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
         !task.helperHasRatedPoster;
     Widget? bottomBar;
     if (canAccept) {
+      final requiresLiveGps = !Task.isFreelancerCategory(task.category);
       bottomBar = SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: GradientButton(
-            label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
-            loading: _accepting,
-            onPressed: _accepting ? () {} : _accept,
-            icon: Icons.check_circle_outline,
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (requiresLiveGps) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.my_location_rounded,
+                        size: 13, color: Color(0xFF059669)),
+                    const SizedBox(width: 6),
+                    const Flexible(
+                      child: Text(
+                        'By accepting, you agree to share your live GPS location with the Task Poster while this task is active.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
+              GradientButton(
+                label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
+                loading: _accepting,
+                onPressed: _accepting ? () {} : _accept,
+                icon: Icons.check_circle_outline,
+              ),
+            ],
           ),
         ),
       );
@@ -685,145 +730,91 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               const Divider(height: 28),
 
-              // Description
-              const Text('Description',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 10),
-              _DescriptionCard(text: task.description),
-
-              const Divider(height: 28),
-
-              // Location
-              const Text('Location',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 8),
-              // Delivery tasks: show pickup + drop clearly separated with dedicated cards
-              if (task.isDeliveryCategory) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Column(
-                    children: [
-                      // Pickup Location
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.radio_button_checked,
-                                color: AppColors.primary, size: 16),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Pickup Location',
-                                    style: TextStyle(
-                                        color: AppColors.gray,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600)),
-                                const SizedBox(height: 2),
-                                Text(
-                                  task.effectivePickupAddress.isNotEmpty
-                                      ? task.effectivePickupAddress
-                                      : (task.address ?? 'Pickup location specified by poster'),
-                                  style: const TextStyle(
-                                      color: AppColors.dark,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Divider(height: 1),
-                      ),
-                      // Drop / Destination Location
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: AppColors.danger.withValues(alpha: 0.12),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.location_on,
-                                color: AppColors.danger, size: 16),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Drop / Destination Location',
-                                    style: TextStyle(
-                                        color: AppColors.danger,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700)),
-                                const SizedBox(height: 2),
-                                Text(
-                                  task.effectiveDropAddress ?? 'Drop location specified by poster',
-                                  style: const TextStyle(
-                                      color: AppColors.dark,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+              // Description (hidden for grocery tasks — grocery tasks show only clean item cards)
+              if (!Task.isGroceryCategory(task.category)) ...[
+                const Text(
+                  'Description',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
                   ),
                 ),
-              ] else
-                Row(
+                const SizedBox(height: 10),
+                _DescriptionCard(text: task.description),
+              ],
+
+              Builder(builder: (context) {
+                final isGrocery = Task.isGroceryCategory(task.category);
+                final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
+                    ? task.groceryItems!
+                    : (isGrocery ? GroceryCatalog.parseGroceryItems(null, task.description) : const <SelectedGroceryItem>[]);
+                if (groceryItems.isEmpty) return const SizedBox.shrink();
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Icon(Icons.location_on_outlined,
-                        color: AppColors.primary, size: 18),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        task.address ?? '${task.latitude}, ${task.longitude}',
-                        style: const TextStyle(color: AppColors.gray),
-                      ),
+                    if (!isGrocery) const Divider(height: 28),
+                    Row(
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.shopping_basket_rounded,
+                              size: 19, color: Color(0xFF15803D)),
+                        ),
+                        const SizedBox(width: 10),
+                        const Expanded(
+                          child: Text(
+                            'Grocery Items',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 19,
+                              color: Color(0xFF102A56),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFF86EFAC)),
+                          ),
+                          child: Text(
+                            '${groceryItems.length} ${groceryItems.length == 1 ? 'Item' : 'Items'}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF166534),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 12),
+                    _GroceryItemsCard(items: groceryItems),
                   ],
-                ),
-
-              const Divider(height: 28),
-
-              // Poster info
-              const Text('Posted By',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-              const SizedBox(height: 10),
-              _UserRow(
-                name: (task.posterName.isEmpty || task.posterName == 'Anonymous') && isPoster
-                    ? (auth.user?.name ?? task.posterName)
-                    : task.posterName,
-                avatar: task.posterAvatar,
-                rating: task.posterRating,
-                avatarColor: AppColors.primary,
-              ),
+                );
+              }),
 
               // Helper info (if assigned)
               if (task.helperName != null) ...[
                 const Divider(height: 28),
-                const Text('Assigned Helper',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const Text(
+                  'Assigned Helper',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
                 const SizedBox(height: 10),
                 _UserRow(
                   name: task.helperName!,
@@ -887,46 +878,59 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
               // Completion proof
               if (task.completionProof != null) ...[
                 const Divider(height: 28),
-                const Text('Completion Proof',
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                const Text(
+                  'Completion Proof',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 19,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
                 const SizedBox(height: 10),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Image.network(
-                    task.completionProof!,
-                    height: 200,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (context, child, loadingProgress) {
-                      if (loadingProgress == null) return child;
-                      final total = loadingProgress.expectedTotalBytes;
-                      final received = loadingProgress.cumulativeBytesLoaded;
-                      return Container(
-                        height: 200,
-                        width: double.infinity,
-                        color: AppColors.light,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              CircularProgressIndicator(
-                                value: total != null ? received / total : null,
-                                color: AppColors.primary,
-                                strokeWidth: 3,
-                              ),
-                              const SizedBox(height: 10),
-                              const Text('Loading proof image…',
-                                  style: TextStyle(color: AppColors.gray, fontSize: 12)),
-                            ],
+                Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AspectRatio(
+                    aspectRatio: 4 / 3,
+                    child: Image.network(
+                      task.completionProof!,
+                      width: double.infinity,
+                      height: double.infinity,
+                      fit: BoxFit.contain,
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        final total = loadingProgress.expectedTotalBytes;
+                        final received = loadingProgress.cumulativeBytesLoaded;
+                        return Container(
+                          color: const Color(0xFFF1F5F9),
+                          child: Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: total != null ? received / total : null,
+                                  color: AppColors.primary,
+                                  strokeWidth: 3,
+                                ),
+                                const SizedBox(height: 10),
+                                const Text('Loading proof image…',
+                                    style: TextStyle(color: AppColors.gray, fontSize: 12)),
+                              ],
+                            ),
                           ),
+                        );
+                      },
+                      errorBuilder: (_, __, ___) => Container(
+                        color: AppColors.light,
+                        child: const Center(
+                          child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
                         ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 80,
-                      color: AppColors.light,
-                      child: const Center(
-                        child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
                       ),
                     ),
                   ),
@@ -935,8 +939,15 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               // Timeline info
               const Divider(height: 28),
-              const Text('Timeline',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+              const Text(
+                'Timeline',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 19,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
+              ),
               const SizedBox(height: 8),
               _TimelineRow('Posted', task.createdAt),
               if (task.acceptedAt != null) _TimelineRow('Accepted', task.acceptedAt!),
@@ -952,6 +963,155 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
   }
 }
 
+// ── Smart grocery items card ──────────────────────────────────────────────────
+
+class _GroceryItemsCard extends StatelessWidget {
+  final List<SelectedGroceryItem> items;
+  const _GroceryItemsCard({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: items.map((item) {
+        final pkg = item.package.trim();
+        final qty = item.qty.trim();
+        final kg = item.kg.trim();
+        final gram = item.gram.trim();
+        final litr = item.litr.trim();
+        final brand = item.brand.trim();
+        final rupee = item.rupee.trim();
+
+        final tags = <Widget>[
+          if (pkg.isNotEmpty)
+            _buildTag(pkg, const Color(0xFFEFF6FF), const Color(0xFF2563EB)),
+          if (qty.isNotEmpty)
+            _buildTag('Qty: $qty', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+          if (kg.isNotEmpty)
+            _buildTag('$kg kg', const Color(0xFFF0FDF4), const Color(0xFF16A34A)),
+          if (gram.isNotEmpty)
+            _buildTag('$gram g', const Color(0xFFF0FDF4), const Color(0xFF15803D)),
+          if (litr.isNotEmpty)
+            _buildTag('$litr L', const Color(0xFFE0F2FE), const Color(0xFF0284C7)),
+          if (brand.isNotEmpty)
+            _buildTag('Brand: $brand', const Color(0xFFFAF5FF), const Color(0xFF9333EA)),
+          if (rupee.isNotEmpty)
+            _buildTag('Est. ₹$rupee', const Color(0xFFFFFBEB), const Color(0xFFD97706)),
+        ];
+
+        return Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Item Thumbnail / Emoji
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: item.imageUrl.isNotEmpty
+                      ? Image.network(
+                          item.imageUrl,
+                          width: 60,
+                          height: 60,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Center(
+                            child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
+                          ),
+                        )
+                      : Center(
+                          child: Text(item.emoji, style: const TextStyle(fontSize: 28)),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // All Item Info in one full-width row card
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 16,
+                        color: Color(0xFF102A56),
+                        height: 1.25,
+                      ),
+                      maxLines: 2,
+                      softWrap: true,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (item.category.trim().isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        item.category.trim(),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    if (tags.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: tags,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  static Widget _buildTag(String text, Color bg, Color textCol) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: textCol.withValues(alpha: 0.22)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w700,
+          color: textCol,
+        ),
+      ),
+    );
+  }
+}
+
 // ── Smart description card ───────────────────────────────────────────────────
 
 class _DescriptionCard extends StatelessWidget {
@@ -960,7 +1120,8 @@ class _DescriptionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final lines = text.split('\n').map((l) => l.trim()).toList();
+    final cleanText = text.replaceAll(RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true), '').trim();
+    final lines = cleanText.split('\n').map((l) => l.trim()).toList();
     final widgets = <Widget>[];
     int i = 0;
     while (i < lines.length) {

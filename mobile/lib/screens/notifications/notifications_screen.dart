@@ -59,11 +59,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
     final taskId = n.taskId;
     if (taskId == null || taskId.isEmpty) return;
+    const posterTrackingTypes = {
+      'task_accepted', 'task_completed', 'verify_and_pay',
+    };
     const inProgressTypes = {
-      'task_assigned', 'task_accepted', 'task_completed_helper',
+      'task_assigned', 'task_completed_helper',
       'task_verify_sent', 'payment_released', 'payment_received',
-      'payment_done', 'verify_and_pay', 'task_completed',
-      'task_final_completed', 'task_cancelled_by_poster',
+      'payment_done', 'task_final_completed', 'task_cancelled_by_poster',
     };
     // Defer push to next frame so markRead's notifyListeners() rebuild
     // doesn't conflict with the navigator key reservation.
@@ -71,6 +73,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       if (!mounted) return;
       if (type == 'chat' || type == 'chat_message') {
         context.push('/chat/$taskId');
+      } else if (posterTrackingTypes.contains(type)) {
+        context.push('/poster-task-in-progress/$taskId');
       } else if (inProgressTypes.contains(type)) {
         context.push('/task-in-progress/$taskId');
       } else {

@@ -38,6 +38,7 @@
         android:icon="@mipmap/ic_launcher"
         android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false"
+        android:enableOnBackInvokedCallback="true"
         android:networkSecurityConfig="@xml/network_security_config">
 
         <activity
@@ -69,6 +70,12 @@
         </activity>
 
         <!-- Firebase / Push notifications -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="workmate4u_main"/>
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher"/>
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">

@@ -1,8 +1,11 @@
+import '../utils/legal_constants.dart';
+
 class User {
   final String id;
   final String name;
   final String email;
   final String? phone;
+  final DateTime? dob;
   final String? avatar;
   final String? bio;
   final String? gender; // 'male' | 'female' | null
@@ -31,6 +34,7 @@ class User {
     required this.name,
     required this.email,
     this.phone,
+    this.dob,
     this.avatar,
     this.bio,
     this.gender,
@@ -67,13 +71,19 @@ class User {
   final String? vehicleVerificationRejectReason;
   final DateTime? vehicleVerificationRejectedAt;
 
+  bool get isConfirmedUnderage => dob != null && !isEligibleAdultDob(dob!);
+
   factory User.fromJson(Map<String, dynamic> json) {
     final kycStatus = json['kyc_status']?.toString();
+    final rawDob = json['dob'] ?? json['date_of_birth'] ?? json['dateOfBirth'];
     return User(
       id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
       name: json['name'] ?? '',
       email: json['email'] ?? '',
       phone: json['phone'],
+      dob: rawDob != null && rawDob.toString().trim().isNotEmpty
+          ? DateTime.tryParse(rawDob.toString().trim())
+          : null,
       avatar: json['avatar'] ?? json['profilePhoto'],
       bio: json['bio'],
       gender: json['gender']?.toString(),
@@ -139,6 +149,9 @@ class User {
         'name': name,
         'email': email,
         'phone': phone,
+        if (dob != null)
+          'dob':
+              '${dob!.year}-${dob!.month.toString().padLeft(2, '0')}-${dob!.day.toString().padLeft(2, '0')}',
         'avatar': avatar,
         'bio': bio,
         'gender': gender,
@@ -169,6 +182,7 @@ class User {
     String? name,
     String? email,
     String? phone,
+    DateTime? dob,
     String? avatar,
     String? bio,
     String? gender,
@@ -202,6 +216,7 @@ class User {
         name: name ?? this.name,
         email: email ?? this.email,
         phone: phone ?? this.phone,
+        dob: dob ?? this.dob,
         avatar: avatar ?? this.avatar,
         bio: bio ?? this.bio,
         gender: gender ?? this.gender,
@@ -277,6 +292,7 @@ class User {
         name: name,
         email: email,
         phone: phone,
+        dob: dob,
         avatar: newAvatar,
         bio: bio,
         gender: gender,
@@ -296,5 +312,6 @@ class User {
         dailyReleaseCount: dailyReleaseCount,
         authProvider: authProvider,
         profileMode: profileMode,
+        physicalVerificationStatus: physicalVerificationStatus,
       );
 }

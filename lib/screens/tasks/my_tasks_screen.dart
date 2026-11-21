@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -10,9 +10,8 @@ import '../../models/task.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 import '../../widgets/confirm_payment_dialog.dart';
-import '../../services/notification_service.dart';
-import '../../widgets/task_screen_watermark.dart';
 import '../../widgets/task_empty_state_illustration.dart';
+import '../../services/notification_service.dart';
 import 'edit_task_screen.dart';
 
 class MyTasksScreen extends StatefulWidget {
@@ -38,51 +37,22 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
 
     return DefaultTabController(
       key: ValueKey(isHelper),
-      length: isHelper ? 3 : 2,
-      child: TaskScreenWatermark(
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          appBar: AppBar(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            centerTitle: true,
-            automaticallyImplyLeading: false,
-            title: const Text(
-              'My Tasks',
-              style: TextStyle(
-                color: Color(0xFF0F172A),
-                fontSize: 21,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -0.2,
-              ),
-            ),
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(48),
-              child: TabBar(
-                labelColor: const Color(0xFF1D4ED8),
-                unselectedLabelColor: const Color(0xFF64748B),
-                labelStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-                unselectedLabelStyle: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-                indicatorColor: const Color(0xFF1D4ED8),
-                indicatorWeight: 3.0,
-                indicatorSize: TabBarIndicatorSize.label,
-                dividerColor: Colors.transparent,
-                tabs: [
-                  const Tab(text: 'Posted'),
-                  if (isHelper) const Tab(text: 'Accepted'),
-                  const Tab(text: 'Completed'),
-                ],
-              ),
-            ),
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('My Tasks'),
+          bottom: TabBar(
+            labelColor: AppColors.primary,
+            unselectedLabelColor: AppColors.gray,
+            indicatorColor: AppColors.primary,
+            tabs: [
+              if (!isHelper) const Tab(text: 'Posted'),
+              if (isHelper) const Tab(text: 'Accepted'),
+              const Tab(text: 'Completed'),
+            ],
           ),
-          body: Consumer<TaskProvider>(
+        ),
+        body: Consumer<TaskProvider>(
           builder: (_, tasks, __) {
             // Show full spinner only on the very first load (no cached data yet).
             // On subsequent refreshes show cached data + a subtle top progress bar.
@@ -103,7 +73,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
                 children: [
                   TabBarView(
                     children: [
-                      _PostedTaskList(tasks: tasks.myPostedTasks),
+                      if (!isHelper)
+                        _PostedTaskList(tasks: tasks.myPostedTasks),
                       if (isHelper)
                         _TaskList(
                           tasks: tasks.myAcceptedTasks,
@@ -130,9 +101,8 @@ class _MyTasksScreenState extends State<MyTasksScreen> {
           },
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 // ── Posted tasks tab — full poster-management UI ─────────────────────────────
@@ -154,37 +124,25 @@ class _PostedTaskList extends StatelessWidget {
 
     if (visibleTasks.isEmpty) {
       return const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              EmptyTasksClipboardIllustration(
-                type: EmptyTasksClipboardType.posted,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.posted),
+            SizedBox(height: 12),
+            Text(
+              'No posted tasks',
+              style: TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 20),
-              Text(
-                'No posted tasks',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Tasks you create will appear here',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Tap + to post a new task for local helpers',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
+          ],
         ),
       );
     }
@@ -206,7 +164,9 @@ class _PostedTaskList extends StatelessWidget {
           return Card(
             margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
             child: InkWell(
-              onTap: () => context.push('/task/${t.id}'),
+              onTap: () => hasHelper
+                  ? context.push('/poster-task-in-progress/${t.id}')
+                  : context.push('/task/${t.id}'),
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -351,7 +311,7 @@ class _PostedTaskList extends StatelessWidget {
                               ),
                               onPressed: () {
                                 context.push(
-                                  '/chat/${t.id}',
+                                  '/chat/' + t.id,
                                   extra: {
                                     'taskId': t.id,
                                     'taskTitle': t.title,
@@ -758,35 +718,43 @@ class _PostedTaskList extends StatelessWidget {
 
   Widget _buildProofImage(String proof, {double height = 240}) {
     final trimmed = proof.trim();
+    Widget content;
     if (trimmed.startsWith('data:')) {
       final commaIdx = trimmed.indexOf(',');
       if (commaIdx != -1) {
         try {
-          return Image.memory(
+          content = Image.memory(
             base64Decode(trimmed.substring(commaIdx + 1)),
-            height: height,
             width: double.infinity,
-            fit: BoxFit.cover,
+            height: double.infinity,
+            fit: BoxFit.contain,
             errorBuilder: (_, __, ___) => _buildProofError(),
           );
         } catch (_) {
-          return _buildProofError();
+          content = _buildProofError();
         }
+      } else {
+        content = _buildProofError();
       }
-      return _buildProofError();
+    } else {
+      content = Image.network(
+        trimmed,
+        width: double.infinity,
+        height: double.infinity,
+        fit: BoxFit.contain,
+        loadingBuilder: (_, child, progress) => progress == null
+            ? child
+            : const Center(child: CircularProgressIndicator()),
+        errorBuilder: (_, __, ___) => _buildProofError(),
+      );
     }
-    return Image.network(
-      trimmed,
-      height: height,
+    return Container(
       width: double.infinity,
-      fit: BoxFit.cover,
-      loadingBuilder: (_, child, progress) => progress == null
-          ? child
-          : SizedBox(
-              height: height,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-      errorBuilder: (_, __, ___) => _buildProofError(),
+      color: const Color(0xFFF1F5F9),
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: content,
+      ),
     );
   }
 
@@ -906,37 +874,25 @@ class _CompletedTaskList extends StatelessWidget {
 
     if (visible.isEmpty) {
       return const Center(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              EmptyTasksClipboardIllustration(
-                type: EmptyTasksClipboardType.completed,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.completed),
+            SizedBox(height: 12),
+            Text(
+              'No completed tasks',
+              style: TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 20),
-              Text(
-                'No completed tasks',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              SizedBox(height: 8),
-              Text(
-                'Completed tasks are kept for 48 hours',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
+            ),
+            SizedBox(height: 4),
+            Text(
+              'Completed tasks are kept for 48 hours',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
+          ],
         ),
       );
     }
@@ -1053,18 +1009,6 @@ class _CompletedTaskList extends StatelessWidget {
                               ),
                             ],
                           ),
-                          if (t.description.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Text(
-                              t.description,
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppColors.gray,
-                                  height: 1.4),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
                           const SizedBox(height: 10),
                           const Divider(height: 1),
                           const SizedBox(height: 10),
@@ -1206,37 +1150,25 @@ class _TaskList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (tasks.isEmpty) {
       return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const EmptyTasksClipboardIllustration(
-                type: EmptyTasksClipboardType.accepted,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.accepted),
+            const SizedBox(height: 12),
+            Text(
+              emptyMsg,
+              style: const TextStyle(
+                color: AppColors.dark,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
               ),
-              const SizedBox(height: 20),
-              Text(
-                emptyMsg,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Tasks you accept to help with will appear here',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xFF64748B),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Browse available tasks and accept one to start earning',
+              style: TextStyle(color: AppColors.gray, fontSize: 13),
+            ),
+          ],
         ),
       );
     }

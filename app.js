@@ -92,6 +92,8 @@ const CATEGORY_MIN_PRICES = {
     'queue-standing': 200,
     'event_help': 400,
     'event-help': 400,
+    'eventhelp': 400,
+    'catering': 500,
 
     // Professional, Creative & Digital
     'data_entry': 150,
@@ -99,28 +101,49 @@ const CATEGORY_MIN_PRICES = {
     'tutoring': 250,
     'beauty': 250,
     'freelancer': 300,
+    'freelance': 300,
+    'techsupport': 250,
+    'business_admin': 300,
+    'business-admin': 300,
+    'graphic_design': 350,
+    'graphic-design': 350,
+    'video_audio_editing': 400,
+    'video-audio-editing': 400,
+    'digital_marketing': 500,
+    'digital-marketing': 500,
+    'web_app_tech': 800,
+    'web-app-tech': 800,
     'photography': 1500,
 
-    // Care Services
+    // Care & Lifestyle
     'pet_care': 150,
     'petcare': 150,
     'child_care': 200,
+    'childcare': 200,
     'babysitting': 200,
     'elder_care': 500,
     'eldercare': 500,
+    'fitness': 250,
+    'tailoring': 150,
+    'waste': 100,
 
     // Delivery & Moving
-    'delivery': 100,
-    'pickup': 100,
-    'transport': 100,
-    'moving': 500,
+    'delivery': 24,
+    'pickup': 30,
+    'transport': 50,
+    'moving': 400,
 
     'other': 100,
 };
 
-function getMinTaskPrice(category) {
+function getMinTaskPrice(category, vehicleKey) {
     if (!category) return 100;
-    return CATEGORY_MIN_PRICES[category.toLowerCase()] || 100;
+    const cat = String(category).toLowerCase();
+    if (cat === 'delivery') {
+        const v = String(vehicleKey || (typeof window !== 'undefined' ? window.__wmSelectedVehicle : '') || 'bike').toLowerCase();
+        return (v === 'auto' || v === 'rikshaw') ? 30 : 24;
+    }
+    return CATEGORY_MIN_PRICES[cat] || 100;
 }
 window.getMinTaskPrice = getMinTaskPrice;
 let selectedTask = null;
@@ -145,12 +168,12 @@ const DELIVERY_CATEGORIES = new Set(['delivery', 'pickup', 'transport', 'moving'
 // Service Charge based on task category (importance & time)
 const SERVICE_CHARGES = {
     // Distance-based categories (Delivery / Moving / Pick&Drop): ₹10–₹40 scaled by km.
-    'delivery':  { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'pickup':    { charge: 15, time: '15-30 mins', level: 'Quick',  distance: true },
-    'transport': { charge: 15, time: '10-30 mins', level: 'Quick',  distance: true },
+    'delivery':  { charge: 0, time: '15-30 mins', level: 'Quick',  distance: true },
+    'pickup':    { charge: 0, time: '15-30 mins', level: 'Quick',  distance: true },
+    'transport': { charge: 0, time: '10-30 mins', level: 'Quick',  distance: true },
     'document':  { charge: 15, time: '15-30 mins', level: 'Quick' },
     'errand':    { charge: 20, time: '30-45 mins', level: 'Quick' },
-    'moving':    { charge: 40, time: '2-6 hours',  level: 'Heavy',  distance: true },
+    'moving':    { charge: 0, time: '2-6 hours',  level: 'Heavy',  distance: true },
     
     // Medium tasks (1-2 hours) - ₹40-50
     'groceries': { charge: 40, time: '1-2 hours', level: 'Medium' },
@@ -193,7 +216,7 @@ function getServiceCharge(category, distanceKm, vehicleKey) {
     if (category === 'delivery' || category === 'transport') {
         const km = (typeof distanceKm === 'number' && distanceKm > 0) ? distanceKm : 0;
         const raw = 10 + 2 * km;
-        return Math.min(40, Math.max(10, Math.round(raw / 5) * 5));
+        return 0; // Extra service charge removed (distance fare included in budget)
     }
     // All other categories: no service charge.
     return 0;
@@ -2692,6 +2715,11 @@ function getTaskIcon(category) {
         repair: '#ef4444',
         photography: '#ec4899',
         freelance: '#14b8a6',
+        graphic_design: '#ec4899',
+        web_app_tech: '#3b82f6',
+        video_audio_editing: '#f43f5e',
+        digital_marketing: '#8b5cf6',
+        business_admin: '#0ea5e9',
         waste: '#78716c',
         cleaning: '#06b6d4',
         cooking: '#f97316',
@@ -2724,6 +2752,11 @@ function getTaskIcon(category) {
         repair: '🔧',
         photography: '📷',
         freelance: '💻',
+        graphic_design: '🎨',
+        web_app_tech: '🌐',
+        video_audio_editing: '🎬',
+        digital_marketing: '📣',
+        business_admin: '📊',
         waste: '🗑️',
         cleaning: '🧹',
         cooking: '👨‍🍳',
@@ -4451,7 +4484,18 @@ function openEditTask(taskId) {
     document.getElementById('editTaskTitle').value = task.title;
     document.getElementById('editTaskCategory').value = task.category;
     document.getElementById('editTaskDescription').value = task.description;
-    document.getElementById('editTaskLocation').value = task.location?.address || '';
+    const editLocEl = document.getElementById('editTaskLocation');
+    if (editLocEl) {
+        editLocEl.value = task.location?.address || '';
+        const isFlEdit = (typeof window.WMIsFreelancerCategory === 'function')
+            ? window.WMIsFreelancerCategory(task.category)
+            : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+                .includes(String(task.category || '').toLowerCase().replace(/-/g, '_'));
+        const editLocFg = editLocEl.closest('.form-group');
+        if (editLocFg) editLocFg.style.display = isFlEdit ? 'none' : '';
+        if (isFlEdit) editLocEl.removeAttribute('required');
+        else editLocEl.setAttribute('required', '');
+    }
     document.getElementById('editCurrentBudget').textContent = '₹' + task.price;
     document.getElementById('editNewBudget').textContent = '₹' + task.price;
     document.getElementById('customBudgetIncrease').value = '';
@@ -4530,10 +4574,16 @@ async function saveTaskEdit(event) {
     const newLocation = document.getElementById('editTaskLocation').value.trim();
     const newPrice = editTaskState.originalBudget + editTaskState.budgetIncrease;
 
-    // Geocode if address changed
-    let newLat = task.location.lat;
-    let newLng = task.location.lng;
-    if (newLocation && newLocation !== task.location.address) {
+    const isFlEditSave = (typeof window.WMIsFreelancerCategory === 'function')
+        ? window.WMIsFreelancerCategory(newCategory)
+        : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+            .includes(String(newCategory || '').toLowerCase().replace(/-/g, '_'));
+
+    // Geocode if address changed (not needed for remote freelancer services)
+    let newLat = isFlEditSave ? null : (task.location ? task.location.lat : null);
+    let newLng = isFlEditSave ? null : (task.location ? task.location.lng : null);
+    const effectiveLocation = isFlEditSave ? 'Remote / Online' : newLocation;
+    if (!isFlEditSave && newLocation && newLocation !== (task.location && task.location.address)) {
         const geo = await geocodeAddress(newLocation);
         if (geo) {
             newLat = geo.lat;
@@ -4548,7 +4598,7 @@ async function saveTaskEdit(event) {
             category: newCategory,
             description: newDescription,
             price: newPrice,
-            location: { lat: newLat, lng: newLng, address: newLocation }
+            location: { lat: newLat, lng: newLng, address: effectiveLocation }
         });
         if (!result || !result.success) {
             showToast('❌ ' + (result ? result.message || 'Failed to save task' : 'Failed to save task'));
@@ -4881,7 +4931,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
     const baseAmount = task.price || 0;
     const svcCharge = task.service_charge || 0;
     const totalTaskVal = baseAmount + svcCharge;
-    // Posting fee DISABLED: const posterFee = totalTaskVal * 0.05;
+    const posterFee = Math.round(baseAmount * 0.20 * 100) / 100;
     const content = `
         <div style="text-align: center; padding: 20px;">
             <div style="font-size: 60px; margin-bottom: 15px;">✅</div>
@@ -4894,6 +4944,7 @@ function showPaymentDonePopup(task, totalPaid, helperReceives, newBalance) {
                     <span style="color: #999;">Budget:</span>
                     <span style="font-weight: 600;">₹${baseAmount.toFixed(2)}</span>
                 </div>
+                ${posterFee > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;"><span style="color: #999;">Platform Fee &amp; GST (20%):</span><span style="font-weight: 600; color: #fbbf24;">+₹${posterFee.toFixed(2)}</span></div>` : ''}
                 ${svcCharge > 0 ? `<div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
                     <span style="color: #999;">Service Charge:</span>
                     <span style="font-weight: 600; color: #fbbf24;">+₹${svcCharge.toFixed(2)}</span>
@@ -5143,9 +5194,9 @@ async function showPaymentInvoice(taskId) {
     const totalTaskValue = taskAmount + serviceCharge;
     const commRate = getCommissionRate(task.category || 'other');
     const helperCommission = totalTaskValue * commRate;
-    // Poster posting fee: DISABLED (was 5%)
+    const posterFee = Math.round(taskAmount * 0.20 * 100) / 100;
     // const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue; // No posting fee
+    const totalCost = totalTaskValue + posterFee;
     const helperNetReceives = totalTaskValue - helperCommission;
 
     // Fetch real wallet balance from server
@@ -5194,6 +5245,10 @@ async function showPaymentInvoice(taskId) {
                     <span style="color: #ccc;">Service Charge <span style="font-size:11px;opacity:0.7;">(Delivery/Distance)</span></span>
                     <span style="color: #fbbf24; font-weight: 600;">+₹${serviceCharge.toFixed(2)}</span>
                 </div>` : ''}
+                <div style="display: flex; justify-content: space-between; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                    <span style="color: #ccc;">Platform Fee &amp; GST (20%)</span>
+                    <span style="color: #fbbf24; font-weight: 600;">+₹${posterFee.toFixed(2)}</span>
+                </div>
                 <div style="display: flex; justify-content: space-between; padding: 12px 0 0 0; border-top: 2px solid rgba(139, 92, 246, 0.4); font-size: 18px; font-weight: 800;">
                     <span style="color: #fff;">Total to Pay</span>
                     <span style="color: #ef4444;">₹${totalCost.toFixed(2)}</span>
@@ -5286,8 +5341,8 @@ async function executePayment(taskId) {
     const totalTaskValue = taskAmount + serviceCharge;
     const commRate2 = getCommissionRate(task.category || 'other');
     const helperCommission = totalTaskValue * commRate2;
-    // Poster posting fee DISABLED: const posterFee = totalTaskValue * 0.05;
-    const totalCost = totalTaskValue; // No posting fee
+    const posterFee = Math.round(taskAmount * 0.20 * 100) / 100;
+    const totalCost = totalTaskValue + posterFee;
     const helperNetReceives = totalTaskValue - helperCommission;
 
     try {
@@ -5399,20 +5454,23 @@ async function handleTaskSubmit(event) {
     let baseBudget = customBudgetValue > 0 ? customBudgetValue : selectedBudget;
     
     const category = document.getElementById('modalTaskCategory').value;
-    const catMin = getMinTaskPrice(category);
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
-        baseBudget = catMin;
-        showToast('⚠️ Minimum task budget for this category is ₹' + catMin);
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // vehicleKey resolved above
+    const catMin = getMinTaskPrice(category, vehicleKey);
+    const distMin = (DELIVERY_CATEGORIES.has(category) && distanceKm > 0 && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(category, distanceKm, vehicleKey) : 0;
+    const effMin = distMin > catMin ? distMin : catMin;
+    if (baseBudget < effMin) {
+        showToast('⚠️ Minimum task budget for this category is ₹' + effMin);
+        return;
     }
     
     const totalPrice = baseBudget + currentBonus;
-    // Distance-aware service charge for pick&drop / delivery / moving.
-    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // Distance-aware service charge (0 across all categories; included in budget).
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKey);
-    // Posting fee DISABLED: const platformFeeForSubmit = Math.round((totalPrice + serviceCharge) * 0.05 * 100) / 100;
-    const platformFeeForSubmit = 0; // No posting fee
-    const totalPayable = totalPrice + serviceCharge; // No posting fee
+    // 20% platform fee & GST on task budget across all categories
+    const platformFeeForSubmit = Math.round(totalPrice * 0.20 * 100) / 100;
+    const totalPayable = totalPrice + serviceCharge + platformFeeForSubmit;
 
     // If a specific vehicle was chosen for ride/delivery categories, surface it
     // on the task so only taskers with that vehicle are eligible.
@@ -5424,28 +5482,34 @@ async function handleTaskSubmit(event) {
             + descriptionText;
     }
 
-    // Resolve task location coordinates
-    const addressText = document.getElementById('modalTaskLocation').value.trim();
-    let taskLat, taskLng;
+    // Resolve task location coordinates (not needed for remote freelancer services)
+    const isFlSubmit = (typeof window.WMIsFreelancerCategory === 'function')
+        ? window.WMIsFreelancerCategory(category)
+        : ['freelance', 'freelancer', 'graphic_design', 'web_app_tech', 'video_audio_editing', 'digital_marketing', 'business_admin']
+            .includes(String(category || '').toLowerCase().replace(/-/g, '_'));
+    let addressText = isFlSubmit ? 'Remote / Online' : document.getElementById('modalTaskLocation').value.trim();
+    let taskLat = null, taskLng = null;
 
-    if (modalTaskCoords) {
-        // User clicked "Use My Location" — use captured GPS coords
-        taskLat = modalTaskCoords.lat;
-        taskLng = modalTaskCoords.lng;
-    } else if (addressText) {
-        // User typed an address — geocode it
-        showToast('📍 Looking up location...');
-        const geo = await geocodeAddress(addressText);
-        if (geo) {
-            taskLat = geo.lat;
-            taskLng = geo.lng;
+    if (!isFlSubmit) {
+        if (modalTaskCoords) {
+            // User clicked "Use My Location" — use captured GPS coords
+            taskLat = modalTaskCoords.lat;
+            taskLng = modalTaskCoords.lng;
+        } else if (addressText) {
+            // User typed an address — geocode it
+            showToast('📍 Looking up location...');
+            const geo = await geocodeAddress(addressText);
+            if (geo) {
+                taskLat = geo.lat;
+                taskLng = geo.lng;
+            } else {
+                showToast('❌ Could not find that address. Please try a different address or use "My Location".');
+                return;
+            }
         } else {
-            showToast('❌ Could not find that address. Please try a different address or use "My Location".');
+            showToast('❌ Please enter a task location');
             return;
         }
-    } else {
-        showToast('❌ Please enter a task location');
-        return;
     }
 
     // Resolve drop location for delivery/transport categories
@@ -5482,6 +5546,8 @@ async function handleTaskSubmit(event) {
         dropLocation: (dropLat !== null) ? { lat: dropLat, lng: dropLng, address: dropAddress } : null,
         price: totalPrice,
         serviceCharge: serviceCharge,
+        service_charge: serviceCharge,
+        vehicle: DELIVERY_CATEGORIES.has(category) ? (vehicleKey || (category === 'delivery' ? 'bike' : 'auto')) : undefined,
         totalPaid: totalPayable
     };
 
@@ -5718,6 +5784,22 @@ async function handleLogin(event) {
     }
 }
 
+function isEligibleAdultDob(dobStr, minAge = 18) {
+    if (!dobStr || typeof dobStr !== 'string') return false;
+    const parts = dobStr.trim().split('T')[0].split('-');
+    if (parts.length !== 3) return false;
+    const y = Number(parts[0]), m = Number(parts[1]), d = Number(parts[2]);
+    if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d) || y < 1900) return false;
+    const dob = new Date(y, m - 1, d);
+    if (dob.getFullYear() !== y || dob.getMonth() !== m - 1 || dob.getDate() !== d) return false;
+    const today = new Date();
+    if (dob > today) return false;
+    let age = today.getFullYear() - y;
+    const monthDiff = (today.getMonth() + 1) - m;
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < d)) age--;
+    return age >= minAge;
+}
+
 async function handleSignup(event) {
     event.preventDefault();
 
@@ -5729,12 +5811,9 @@ async function handleSignup(event) {
     const dob = document.getElementById('signupDOB').value;
     const signupBtn = event.target.querySelector('button[type="submit"]');
     
-    // Validate age
-    const dobDate = new Date(dob);
-    const age = Math.floor((Date.now() - dobDate.getTime()) / (365.25 * 24 * 3600000));
-
-    if (age < 16) {
-        showToast('You must be 16+ to use Workmate4u');
+    // Validate age (must be 18+ legal adult in India)
+    if (!isEligibleAdultDob(dob, 18)) {
+        showToast('You must be 18 or older to use Workmate4u', 'error');
         return;
     }
     
@@ -5765,6 +5844,8 @@ async function handleSignup(event) {
                 password: password,
                 phone: phone,
                 dob: dob,
+                terms_accepted_at: new Date().toISOString(),
+                terms_version: '2026-11-12',
             });
             
             if (result.success) {
@@ -7489,6 +7570,11 @@ function getCategoryIcon(cat) {
         repair: 'fas fa-tools',
         photography: 'fas fa-camera',
         freelance: 'fas fa-laptop-code',
+        graphic_design: 'fas fa-palette',
+        web_app_tech: 'fas fa-globe',
+        video_audio_editing: 'fas fa-film',
+        digital_marketing: 'fas fa-bullhorn',
+        business_admin: 'fas fa-chart-bar',
         waste: 'fas fa-trash-alt',
         cleaning: 'fas fa-broom',
         cooking: 'fas fa-utensils',
@@ -7532,7 +7618,12 @@ function formatCategory(cat) {
         vehicle: 'Vehicle', 
         repair: 'Repairs', 
         photography: 'Photography', 
-        freelance: 'Freelance', 
+        freelance: 'Freelance',
+        graphic_design: 'Graphic Design & Branding',
+        web_app_tech: 'Web, App & Tech Projects',
+        video_audio_editing: 'Video & Audio Editing',
+        digital_marketing: 'Digital Marketing',
+        business_admin: 'Business, Office & Admin', 
         waste: 'Waste',
         cleaning: 'Cleaning',
         cooking: 'Cooking',
@@ -7695,17 +7786,20 @@ function updateTotalBudgetDisplay() {
     
     // ₹100 minimum only for non-distance categories; delivery/pickup use km-based price
     const category = document.getElementById('modalTaskCategory')?.value || 'other';
-    const catMin = getMinTaskPrice(category);
-    if (!DELIVERY_CATEGORIES.has(category) && baseBudget < catMin) {
-        baseBudget = catMin;
+    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
+    const vehicleKey = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // vehicleKey resolved above
+    const catMin = getMinTaskPrice(category, vehicleKey);
+    const distMin = (DELIVERY_CATEGORIES.has(category) && distanceKm > 0 && typeof window.WMCalculateDistancePrice === 'function') ? window.WMCalculateDistancePrice(category, distanceKm, vehicleKey) : 0;
+    const effMin = distMin > catMin ? distMin : catMin;
+    if (customBudget <= 0) {
+        baseBudget = effMin;
     }
     
     const total = baseBudget + currentBonus;
     
-    // Get service charge based on selected category.
-    // Service charge ONLY for Delivery/Pick&Drop categories; 0 for everything else.
-    const distanceKm = (typeof window.__wmLastDistance === 'number') ? window.__wmLastDistance : null;
-    const vehicleKeyForCharge = (typeof window.__wmSelectedVehicle === 'string') ? window.__wmSelectedVehicle : null;
+    // Get service charge based on selected category (0 across all categories).
+    const vehicleKeyForCharge = vehicleKey;
     const serviceCharge = getServiceCharge(category, distanceKm, vehicleKeyForCharge); // 0 for non-delivery
     const chargeInfo = getServiceChargeInfo(category);
 
@@ -7756,7 +7850,7 @@ function updateTotalBudgetDisplay() {
 
     // Hide the platform-fee row (posting fee disabled).
     const platformRow = platformFeeDisplay ? platformFeeDisplay.closest('.charge-row') : null;
-    if (platformRow) platformRow.style.display = 'none';
+    if (platformRow) platformRow.style.display = '';
     // Show service-charge row ONLY for Delivery/Pick&Drop categories.
     const feeRow = document.getElementById('serviceChargeRow');
     const timeRow = document.getElementById('serviceChargeTimeRow');
@@ -8534,8 +8628,9 @@ function showCompleteProfileModal() {
                     <label for="cpDob">Date of Birth <span style="color:#ef4444;">*</span></label>
                     <input type="date" id="cpDob" required
                         style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;">
-                    <small style="color:#64748b;">You must be 16 or older to use Workmate4u</small>
+                    <small style="color:#64748b;">You must be 18 or older to use Workmate4u</small>
                 </div>` : ''}
+                <p style="font-size:12px;color:#64748b;margin:8px 0 0;">By continuing, you confirm you are 18+ and agree to our <a href="terms.html" target="_blank">Terms &amp; Conditions</a> and <a href="privacy.html" target="_blank">Privacy Policy</a>.</p>
                 <button type="submit" class="btn btn-primary btn-block" style="margin-top:10px;">
                     <i class="fas fa-check"></i> Save & Continue
                 </button>
@@ -8561,9 +8656,10 @@ async function submitCompleteProfile(e) {
     if (dobEl) {
         const dob = dobEl.value;
         if (!dob) { showToast('❌ Please enter your date of birth', 'error'); return; }
-        const age = Math.floor((Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600000));
-        if (age < 16) { showToast('❌ You must be 16 or older to use Workmate4u', 'error'); return; }
+        if (!isEligibleAdultDob(dob, 18)) { showToast('❌ You must be 18 or older to use Workmate4u', 'error'); return; }
         updates.dob = dob;
+        updates.terms_accepted_at = new Date().toISOString();
+        updates.terms_version = '2026-11-12';
     }
 
     try {

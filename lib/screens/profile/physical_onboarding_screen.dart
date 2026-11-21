@@ -3,15 +3,18 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/verification_cooldown_banner.dart';
+import '../../utils/legal_constants.dart';
 
 /// List of sensitive skills requiring admin physical verification
 const List<String> kSensitiveSkills = [
   'Cleaning',
+  'Delivery',
+  'Driving',
   'Cooking',
   'Plumbing',
   'Electrical',
   'Carpentry',
+  'Moving & Packing',
   'Pet Care',
   'Babysitting',
   'Elder Care',
@@ -26,9 +29,7 @@ bool hasSensitiveSkill(Iterable<String> skills) {
 /// Helper filter to extract sensitive skills from a list
 List<String> getSensitiveSkillsFrom(Iterable<String> skills) {
   final sensitiveSet = kSensitiveSkills.map((s) => s.toLowerCase()).toSet();
-  return skills
-      .where((s) => sensitiveSet.contains(s.trim().toLowerCase()))
-      .toList();
+  return skills.where((s) => sensitiveSet.contains(s.trim().toLowerCase())).toList();
 }
 
 class PhysicalOnboardingScreen extends StatefulWidget {
@@ -36,8 +37,7 @@ class PhysicalOnboardingScreen extends StatefulWidget {
   const PhysicalOnboardingScreen({super.key, this.initialSkills});
 
   @override
-  State<PhysicalOnboardingScreen> createState() =>
-      _PhysicalOnboardingScreenState();
+  State<PhysicalOnboardingScreen> createState() => _PhysicalOnboardingScreenState();
 }
 
 class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
@@ -100,43 +100,28 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     );
   }
 
-  String _formatDuration(Duration? d) {
-    if (d == null) return '0m';
-    final h = d.inHours;
-    final m = d.inMinutes % 60;
-    if (h > 0) return '${h}h ${m}m';
-    return '${m}m';
-  }
-
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    final auth = context.read<AuthProvider>();
-    final user = auth.user;
-
-    // Check 24-hour cooldown if previously rejected
-    if (user != null && !user.canReapplyPhysicalVerification) {
-      final rem = user.physicalVerificationReapplyRemaining ?? Duration.zero;
-      final hours = rem.inHours;
-      final minutes = rem.inMinutes % 60;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Onboarding verification was recently rejected. You can reapply in ${hours}h ${minutes}m.',
-          ),
-          backgroundColor: AppColors.danger,
-        ),
-      );
       return;
     }
 
     if (!_declarationAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              'Please accept the physical verification declaration to proceed.'),
+          content: Text('Please accept the physical verification declaration to proceed.'),
+          backgroundColor: AppColors.danger,
+        ),
+      );
+      return;
+    }
+
+    final auth = context.read<AuthProvider>();
+    final user = auth.user;
+
+    if (user?.isConfirmedUnderage == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(kMinAgeErrorMessage),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -144,10 +129,9 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     }
 
     // Use initialSkills, or user's active sensitive skills, or default full sensitive skills list
-    List<String> targetSkills =
-        widget.initialSkills != null && widget.initialSkills!.isNotEmpty
-            ? getSensitiveSkillsFrom(widget.initialSkills!)
-            : getSensitiveSkillsFrom(user?.skills ?? []);
+    List<String> targetSkills = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
+        ? getSensitiveSkillsFrom(widget.initialSkills!)
+        : getSensitiveSkillsFrom(user?.skills ?? []);
 
     if (targetSkills.isEmpty) {
       targetSkills = user?.skills.isNotEmpty == true
@@ -174,8 +158,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content:
-              Text(auth.error ?? 'Failed to submit request. Please try again.'),
+          content: Text(auth.error ?? 'Failed to submit request. Please try again.'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -218,7 +201,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
               ),
               const SizedBox(height: 10),
               const Text(
-                'Your physical onboarding request for sensitive skills has been successfully dispatched to the Workmate4u Admin team.\n\nOur verification agent will contact your primary or alternative number to complete your physical verification review within 24 hours.',
+                'Your physical onboarding request for sensitive skills has been successfully dispatched to the Workmate4u Admin team.\n\nOur verification agent will contact your primary or alternative number within 24–48 hours to schedule your physical in-person verification visit.',
                 style: TextStyle(
                   fontSize: 13,
                   color: Color(0xFF475569),
@@ -263,10 +246,9 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     final auth = context.watch<AuthProvider>();
     final user = auth.user;
 
-    final sensitiveSkillsToDisplay =
-        widget.initialSkills != null && widget.initialSkills!.isNotEmpty
-            ? getSensitiveSkillsFrom(widget.initialSkills!)
-            : getSensitiveSkillsFrom(user?.skills ?? []);
+    final sensitiveSkillsToDisplay = widget.initialSkills != null && widget.initialSkills!.isNotEmpty
+        ? getSensitiveSkillsFrom(widget.initialSkills!)
+        : getSensitiveSkillsFrom(user?.skills ?? []);
 
     final skillsList = sensitiveSkillsToDisplay.isNotEmpty
         ? sensitiveSkillsToDisplay
@@ -280,14 +262,13 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-            16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(context).padding.bottom + 24),
         child: Form(
           key: _formKey,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // â”€â”€ Top Header Notice Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Top Header Notice Card ──────────────────────────────────────
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(16),
@@ -313,8 +294,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             color: Colors.white.withValues(alpha: 0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.shield_rounded,
-                              color: Colors.white, size: 22),
+                          child: const Icon(Icons.shield_rounded, color: Colors.white, size: 22),
                         ),
                         const SizedBox(width: 12),
                         const Expanded(
@@ -344,17 +324,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
               const SizedBox(height: 16),
 
-              // ── Cooldown & Review Status Banner ──────────────────────────────
-              VerificationCooldownBanner(
-                verificationTitle: 'Physical Onboarding',
-                status: user?.physicalVerificationStatus ?? 'none',
-                rejectionReason: user?.physicalVerificationRejectReason,
-                rejectedAt: user?.physicalVerificationRejectedAt,
-              ),
-
-              const SizedBox(height: 16),
-
-              // â”€â”€ Selected Sensitive Skills Chip Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Selected Sensitive Skills Chip Banner ───────────────────────
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
@@ -368,8 +338,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                   children: [
                     const Row(
                       children: [
-                        Icon(Icons.verified_outlined,
-                            color: Color(0xFFD97706), size: 18),
+                        Icon(Icons.verified_outlined, color: Color(0xFFD97706), size: 18),
                         SizedBox(width: 6),
                         Text(
                           'Skill verification and onbaording',
@@ -387,20 +356,16 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       runSpacing: 6,
                       children: skillsList.map((skill) {
                         return Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: const Color(0xFFF59E0B)
-                                    .withValues(alpha: 0.5)),
+                            border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.5)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(Icons.check_circle,
-                                  color: Color(0xFFD97706), size: 14),
+                              const Icon(Icons.check_circle, color: Color(0xFFD97706), size: 14),
                               const SizedBox(width: 4),
                               Text(
                                 skill,
@@ -421,7 +386,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
               const SizedBox(height: 20),
 
-              // â”€â”€ Form Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Form Card ──────────────────────────────────────────────────
               Card(
                 elevation: 0,
                 shape: RoundedRectangleBorder(
@@ -444,8 +409,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       const SizedBox(height: 4),
                       const Text(
                         'All marked fields are mandatory for physical inspection and background validation.',
-                        style:
-                            TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                       ),
                       const SizedBox(height: 18),
 
@@ -455,18 +419,13 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         controller: _nameCtrl,
                         decoration: InputDecoration(
                           hintText: 'Enter your legal name as on ID proof',
-                          prefixIcon: const Icon(Icons.person_outline,
-                              color: AppColors.primary),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          prefixIcon: const Icon(Icons.person_outline, color: AppColors.primary),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty)
-                            return 'Full legal name is required';
-                          if (v.trim().length < 3)
-                            return 'Name must be at least 3 characters';
+                          if (v == null || v.trim().isEmpty) return 'Full legal name is required';
+                          if (v.trim().length < 3) return 'Name must be at least 3 characters';
                           return null;
                         },
                       ),
@@ -479,23 +438,17 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         controller: _addressCtrl,
                         maxLines: 3,
                         decoration: InputDecoration(
-                          hintText:
-                              'Flat/House No., Society/Street, Landmark, City & PIN code',
+                          hintText: 'Flat/House No., Society/Street, Landmark, City & PIN code',
                           prefixIcon: const Padding(
                             padding: EdgeInsets.only(bottom: 40),
-                            child: Icon(Icons.home_outlined,
-                                color: AppColors.primary),
+                            child: Icon(Icons.home_outlined, color: AppColors.primary),
                           ),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
-                          if (v == null || v.trim().isEmpty)
-                            return 'Complete residential address is required';
-                          if (v.trim().length < 10)
-                            return 'Please provide full address with city and PIN';
+                          if (v == null || v.trim().isEmpty) return 'Complete residential address is required';
+                          if (v.trim().length < 10) return 'Please provide full address with city and PIN';
                           return null;
                         },
                       ),
@@ -510,21 +463,16 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         maxLength: 10,
                         decoration: InputDecoration(
                           hintText: '10-digit primary contact number',
-                          prefixIcon: const Icon(Icons.phone_outlined,
-                              color: AppColors.primary),
+                          prefixIcon: const Icon(Icons.phone_outlined, color: AppColors.primary),
                           prefixText: '+91 ',
                           counterText: '',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
                           final clean = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (clean.isEmpty)
-                            return 'Primary mobile number is required';
-                          if (clean.length != 10)
-                            return 'Enter a valid 10-digit mobile number';
+                          if (clean.isEmpty) return 'Primary mobile number is required';
+                          if (clean.length != 10) return 'Enter a valid 10-digit mobile number';
                           return null;
                         },
                       ),
@@ -539,23 +487,17 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                         maxLength: 10,
                         decoration: InputDecoration(
                           hintText: 'Secondary or family contact number',
-                          prefixIcon: const Icon(Icons.phone_android_outlined,
-                              color: AppColors.primary),
+                          prefixIcon: const Icon(Icons.phone_android_outlined, color: AppColors.primary),
                           prefixText: '+91 ',
                           counterText: '',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                         validator: (v) {
                           final clean = (v ?? '').replaceAll(RegExp(r'\D'), '');
-                          if (clean.isEmpty)
-                            return 'Alternative mobile number is required';
-                          if (clean.length != 10)
-                            return 'Enter a valid 10-digit mobile number';
-                          final primaryClean = _primaryPhoneCtrl.text
-                              .replaceAll(RegExp(r'\D'), '');
+                          if (clean.isEmpty) return 'Alternative mobile number is required';
+                          if (clean.length != 10) return 'Enter a valid 10-digit mobile number';
+                          final primaryClean = _primaryPhoneCtrl.text.replaceAll(RegExp(r'\D'), '');
                           if (clean == primaryClean) {
                             return 'Alternative number must be different from primary number';
                           }
@@ -566,18 +508,14 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                       const SizedBox(height: 16),
 
                       // 5. Additional Experience / Notes (Optional)
-                      _buildFieldLabel('Experience / Additional Remarks',
-                          isRequired: false),
+                      _buildFieldLabel('Experience / Additional Remarks', isRequired: false),
                       TextFormField(
                         controller: _notesCtrl,
                         maxLines: 2,
                         decoration: InputDecoration(
-                          hintText:
-                              'e.g., 3 years of electrical experience, valid driving license, etc.',
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10)),
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 12),
+                          hintText: 'e.g., 3 years of electrical experience, valid driving license, etc.',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
                       ),
 
@@ -590,9 +528,7 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                           color: const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: _declarationAccepted
-                                ? AppColors.primary
-                                : const Color(0xFFCBD5E1),
+                            color: _declarationAccepted ? AppColors.primary : const Color(0xFFCBD5E1),
                           ),
                         ),
                         child: Row(
@@ -601,35 +537,26 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
                             Checkbox(
                               value: _declarationAccepted,
                               activeColor: AppColors.primary,
-                              materialTapTargetSize:
-                                  MaterialTapTargetSize.shrinkWrap,
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                               onChanged: (val) {
-                                setState(
-                                    () => _declarationAccepted = val ?? false);
+                                setState(() => _declarationAccepted = val ?? false);
                               },
                             ),
                             Expanded(
                               child: GestureDetector(
                                 onTap: () {
-                                  setState(() => _declarationAccepted =
-                                      !_declarationAccepted);
+                                  setState(() => _declarationAccepted = !_declarationAccepted);
                                 },
                                 child: const Padding(
                                   padding: EdgeInsets.only(top: 8),
                                   child: Text.rich(
                                     TextSpan(
-                                      text:
-                                          'I declare that the address and contact details provided are authentic. I agree to an in-person physical background and skill verification by an authorized Workmate4u admin or agent.',
-                                      style: TextStyle(
-                                          fontSize: 11.5,
-                                          color: Color(0xFF334155),
-                                          height: 1.4),
+                                      text: 'I confirm that I am at least 18 years old with full legal capacity in India, and will perform tasks personally without engaging any minor or adolescent under 18. I declare that the address and contact details provided are authentic and consent to an in-person background and skill verification by an authorized Workmate4u admin or agent.',
+                                      style: TextStyle(fontSize: 11.5, color: Color(0xFF334155), height: 1.4),
                                       children: [
                                         TextSpan(
                                           text: ' *',
-                                          style: TextStyle(
-                                              color: Colors.red,
-                                              fontWeight: FontWeight.bold),
+                                          style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
                                         ),
                                       ],
                                     ),
@@ -643,112 +570,58 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
 
                       const SizedBox(height: 24),
 
-                      // â”€â”€ Request Onboarding Button â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-                      Builder(
-                        builder: (context) {
-                          final isVerified =
-                              user?.physicalVerificationStatus == 'verified';
-                          final isPending =
-                              user?.physicalVerificationStatus == 'pending';
-                          final isRejected =
-                              user?.physicalVerificationStatus == 'rejected';
-                          final canReapply =
-                              user?.canReapplyPhysicalVerification ?? true;
-                          final cooldownActive = isRejected && !canReapply;
-
-                          final bool isDisabled = _submitting ||
-                              isVerified ||
-                              isPending ||
-                              cooldownActive;
-
-                          String buttonText = 'Request Onboarding';
-                          IconData buttonIcon = Icons.send_rounded;
-                          Color buttonBg = AppColors.primary;
-
-                          if (isVerified) {
-                            buttonText = 'Onboarding Verified';
-                            buttonIcon = Icons.verified_user_rounded;
-                            buttonBg = const Color(0xFF059669);
-                          } else if (isPending) {
-                            buttonText = 'Under Review (Completes in 24 hrs)';
-                            buttonIcon = Icons.hourglass_top_rounded;
-                            buttonBg = const Color(0xFFD97706);
-                          } else if (cooldownActive) {
-                            buttonText =
-                                'Reapply in ${_formatDuration(user!.physicalVerificationReapplyRemaining)}';
-                            buttonIcon = Icons.timer_outlined;
-                            buttonBg = const Color(0xFFDC2626);
-                          } else if (isRejected) {
-                            buttonText = 'Reapply Onboarding Request';
-                            buttonIcon = Icons.refresh_rounded;
-                            buttonBg = AppColors.primary;
-                          }
-
-                          return SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: isDisabled
-                                    ? buttonBg.withValues(alpha: 0.6)
-                                    : buttonBg,
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: isDisabled
-                                    ? null
-                                    : [
-                                        BoxShadow(
-                                          color:
-                                              buttonBg.withValues(alpha: 0.25),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 3),
-                                        ),
-                                      ],
+                      // ── Request Onboarding Button ──────────────────────────
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.primary.withValues(alpha: 0.25),
+                                blurRadius: 8,
+                                offset: const Offset(0, 3),
                               ),
-                              child: ElevatedButton(
-                                onPressed: isDisabled ? null : _submit,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  disabledForegroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.transparent,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: _submitting
-                                    ? const SizedBox(
-                                        height: 22,
-                                        width: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.5,
-                                          color: Colors.white,
-                                        ),
-                                      )
-                                    : Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: [
-                                          Icon(buttonIcon,
-                                              color: Colors.white, size: 20),
-                                          const SizedBox(width: 8),
-                                          Flexible(
-                                            child: Text(
-                                              buttonText,
-                                              style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 15,
-                                                letterSpacing: 0.3,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: _submitting ? null : _submit,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
                             ),
-                          );
-                        },
+                            child: _submitting
+                                ? const SizedBox(
+                                    height: 22,
+                                    width: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.5,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.send_rounded, color: Colors.white, size: 20),
+                                      SizedBox(width: 8),
+                                      Text(
+                                        'Request Onboarding',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -761,3 +634,4 @@ class _PhysicalOnboardingScreenState extends State<PhysicalOnboardingScreen> {
     );
   }
 }
+

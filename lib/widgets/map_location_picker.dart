@@ -439,9 +439,11 @@ class _MapLocationPickerState extends State<MapLocationPicker> {
                             Icon(Icons.search_off,
                                 color: AppColors.gray, size: 18),
                             SizedBox(width: 8),
-                            Text('No results found',
-                                style: TextStyle(
-                                    color: AppColors.gray, fontSize: 13)),
+                            Expanded(
+                              child: Text('No results found',
+                                  style: TextStyle(
+                                      color: AppColors.gray, fontSize: 13)),
+                            ),
                           ],
                         ),
                       ),

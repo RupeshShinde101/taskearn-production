@@ -16,6 +16,28 @@ def test_api():
     print("🧪 TaskEarn API End-to-End Test")
     print("="*70 + "\n")
     
+    # Test 0: Reject underage (< 18) registration
+    print("0️⃣  Testing < 18 Age Gate on Registration...")
+    today = __import__('datetime').date.today()
+    underage_dob = f"{today.year - 17}-{today.month:02d}-{min(today.day, 28):02d}"
+    try:
+        r_minor = requests.post(f"{API_URL}/auth/register", json={
+            "name": "Minor User",
+            "email": "minor_test@taskearn.local",
+            "password": "TestPass123",
+            "phone": "9999999998",
+            "dob": underage_dob,
+            "terms_version": "2026-11-12"
+        }, timeout=5)
+        if r_minor.status_code == 400:
+            print("   ✅ Underage (< 18) registration properly rejected (HTTP 400)")
+        else:
+            print(f"   ❌ Expected 400 for underage DOB, got {r_minor.status_code}: {r_minor.text}")
+            return False
+    except Exception as e:
+        print(f"   ❌ Underage gate test failed: {e}")
+        return False
+
     # Test 1: Register
     print("1️⃣  Testing User Registration...")
     register_data = {
@@ -23,7 +45,8 @@ def test_api():
         "email": f"test@taskearn.local",
         "password": "TestPass123",
         "phone": "9999999999",
-        "dob": "1995-01-01"
+        "dob": "1995-01-01",
+        "terms_version": "2026-11-12"
     }
     
     try:

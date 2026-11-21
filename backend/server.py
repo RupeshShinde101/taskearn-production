@@ -6,6 +6,7 @@ Flask + PostgreSQL + bcrypt + JWT + Razorpay
 import sys
 import os
 import io
+import threading
 
 # Set UTF-8 encoding for Windows console
 if sys.platform == 'win32':
@@ -447,7 +448,8 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
       workmate4u_chat    — chat messages        (max importance)
     """
     if not _has_fcm:
-        return
+        print('[FCM] ⚠️ firebase-admin not initialized — skipping push')
+        return False
     _ensure_fcm_token_column()
     try:
         with get_db() as (cursor, _):
@@ -458,11 +460,11 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             row = cursor.fetchone()
         if not row:
             print(f'[FCM] ⚠️ No user row for user_id={user_id} — skipping push')
-            return
+            return False
         token = dict_from_row(row).get('fcm_token') if hasattr(row, 'keys') else row[0]
         if not token:
             print(f'[FCM] ⚠️ No FCM token registered for user_id={user_id} — skipping push')
-            return
+            return False
 
         # All data values must be strings for FCM data messages
         payload = {'type': data.get('type', 'general') if data else 'general',
@@ -486,11 +488,14 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
         aps_alert = None
         if include_native_notification:
             fcm_notif = fb_messaging.Notification(title=title, body=body)
+            is_chat_notif = notif_type in ('chat', 'chat_message')
             android_notif = fb_messaging.AndroidNotification(
                 channel_id=channel,
                 priority='max' if channel in ('workmate4u_chat', 'workmate4u_payment', 'workmate4u_matched') else 'high',
                 default_sound=True,
                 default_vibrate_timings=True,
+                click_action='FLUTTER_NOTIFICATION_CLICK',
+                tag=f"chat_{payload.get('task_id', '')}_{int(time.time() * 1000)}" if is_chat_notif else None,
             )
             aps_alert = fb_messaging.ApsAlert(title=title, body=body)
 
@@ -514,9 +519,11 @@ def send_fcm_to_user(user_id, title, body, data=None, channel='workmate4u_main')
             token=token,
         )
         fb_messaging.send(message)
-        print(f'[FCM] ✉ "{title}" → user {user_id}')
+        print(f'[FCM] ✉ "{title}" → user {user_id} (channel={channel})')
+        return True
     except Exception as e:
         print(f'[FCM] Error sending to user {user_id}: {e}')
+        return False
 
 
 def _safe_delete_tasks(cursor, task_ids):
@@ -901,6 +908,67 @@ def verify_jwt_token(token):
         return None
 
 
+MINIMUM_LEGAL_AGE = 18
+TERMS_VERSION = '2026-11-12'
+MIN_AGE_ERROR_MESSAGE = 'You must be at least 18 years old (legal adult age in India) to use Workmate4u.'
+_IST_TZ = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
+
+def _parse_dob_date(dob_value):
+    """Parse YYYY-MM-DD (or ISO datetime string) into a datetime.date, or return None."""
+    if not dob_value or not isinstance(dob_value, str):
+        return None
+    raw = dob_value.strip()
+    if not raw:
+        return None
+    date_part = raw.split('T')[0].strip()
+    try:
+        parsed = datetime.date.fromisoformat(date_part)
+    except ValueError:
+        return None
+    if parsed.year < 1900:
+        return None
+    return parsed
+
+
+def calculate_age_years(dob_date, reference_date=None):
+    """Exact calendar-year age calculation (handles leap years accurately)."""
+    if dob_date is None:
+        return None
+    today = reference_date or datetime.datetime.now(_IST_TZ).date()
+    age = today.year - dob_date.year
+    if (today.month, today.day) < (dob_date.month, dob_date.day):
+        age -= 1
+    return age
+
+
+def validate_adult_dob(dob_value):
+    """Validate that dob_value represents an adult aged >= 18.
+    Returns (is_valid: bool, normalized_dob: str | None, error_message: str | None).
+    """
+    parsed = _parse_dob_date(dob_value)
+    if parsed is None:
+        return False, None, 'Invalid date of birth format (YYYY-MM-DD required)'
+    today = datetime.datetime.now(_IST_TZ).date()
+    if parsed > today:
+        return False, None, 'Date of birth cannot be in the future'
+    age = calculate_age_years(parsed, today)
+    if age is None or age < MINIMUM_LEGAL_AGE:
+        return False, None, MIN_AGE_ERROR_MESSAGE
+    return True, parsed.isoformat(), None
+
+
+def is_confirmed_underage_user(user_row):
+    """True when a user record has a valid stored DOB showing age < 18."""
+    if not user_row:
+        return False
+    parsed = _parse_dob_date(user_row.get('dob'))
+    if parsed is None:
+        return False
+    age = calculate_age_years(parsed)
+    return age is not None and age < MINIMUM_LEGAL_AGE
+
+
 def validate_email(email):
     """Validate email format"""
     pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
@@ -926,6 +994,7 @@ def screen_task_content(title, description, category):
     """
     import re as _re
     text = ' '.join([str(title or ''), str(description or '')]).lower()
+    text = _re.sub(r'\[grocery_items\].*?\[/grocery_items\]', ' ', text, flags=_re.DOTALL)
     if not text.strip():
         return True, ''
 
@@ -1040,6 +1109,10 @@ def screen_task_content(title, description, category):
          'Weapons-related tasks are prohibited.'),
         (r'\b(mdma|lsd|ganja|hashish|opium|brown\s*sugar)\b',
          'Drug-related tasks are prohibited.'),
+
+        # Child / minor labour prohibition (18+ only platform)
+        (r'\b(child\s*labou?r|under\s*18|underage\s*(helper|worker|boy|girl|teen)|minor\s*(worker|helper|boy|girl|for\s*work))\b',
+         'Tasks involving minors under 18 years old are strictly prohibited.'),
     ]
     for rx, reason in extra_blocks:
         try:
@@ -1049,9 +1122,10 @@ def screen_task_content(title, description, category):
             continue
 
     # Phone / email in title or description → forces in-app contact (anti-bypass)
-    if _re.search(r'(?:\+?91[\s\-]?)?[6-9]\d{9}', text):
+    scan_text = _re.sub(r'https?://\S+', ' ', text)
+    if _re.search(r'(?<!\d)(?:\+?91[\s\-]?)?[6-9]\d{9}(?!\d)', scan_text):
         return False, 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.'
-    if _re.search(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', text):
+    if _re.search(r'\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b', scan_text):
         return False, 'Sharing email addresses in the task is not allowed. Use in-app chat instead.'
     # Whatsapp/telegram links
     if _re.search(r'\b(?:wa\.me|t\.me|telegram\.me|chat\.whatsapp\.com)\b', text):
@@ -1103,7 +1177,7 @@ def get_service_charge(category):
         'transport': 15,
         'moving':   40,
     }
-    return delivery_charges.get(category, 15)
+    return 0  # Extra service charge removed (distance fare is in task budget)
 
 
 CATEGORY_MIN_PRICES = {
@@ -1125,7 +1199,8 @@ CATEGORY_MIN_PRICES = {
     'cleaning': 300.0,
 
     # Shopping, Errands & On-Demand
-    'groceries': 100.0,
+    'groceries': 50.0,
+    'grocery': 50.0,
     'shopping': 150.0,
     'errands': 200.0,
     'errand': 200.0,
@@ -1133,6 +1208,8 @@ CATEGORY_MIN_PRICES = {
     'queue-standing': 200.0,
     'event_help': 400.0,
     'event-help': 400.0,
+    'eventhelp': 400.0,
+    'catering': 500.0,
 
     # Professional, Creative & Digital
     'data_entry': 150.0,
@@ -1140,21 +1217,37 @@ CATEGORY_MIN_PRICES = {
     'tutoring': 250.0,
     'beauty': 250.0,
     'freelancer': 300.0,
+    'freelance': 300.0,
+    'techsupport': 250.0,
+    'business_admin': 300.0,
+    'business-admin': 300.0,
+    'graphic_design': 350.0,
+    'graphic-design': 350.0,
+    'video_audio_editing': 400.0,
+    'video-audio-editing': 400.0,
+    'digital_marketing': 500.0,
+    'digital-marketing': 500.0,
+    'web_app_tech': 800.0,
+    'web-app-tech': 800.0,
     'photography': 1500.0,
 
-    # Care Services
+    # Care & Lifestyle
     'pet_care': 150.0,
     'petcare': 150.0,
     'child_care': 200.0,
+    'childcare': 200.0,
     'babysitting': 200.0,
     'elder_care': 500.0,
     'eldercare': 500.0,
+    'fitness': 250.0,
+    'tailoring': 150.0,
+    'waste': 100.0,
 
     # Delivery & Moving (dynamic distance pricing; removed ₹100 static floor for delivery)
-    'delivery': 1.0,
-    'pickup': 20.0,
-    'transport': 30.0,
-    'moving': 200.0,
+    'delivery': 24.0,
+    'pickup': 30.0,
+    'transport': 50.0,
+    'moving': 400.0,
 
     'other': 100.0,
 }
@@ -1165,11 +1258,12 @@ def get_min_price_for_category(category):
         return 100.0
     cat_lower = str(category).lower()
     if cat_lower == 'delivery':
-        return 1.0  # Dynamic distance-based; no static ₹100 minimum floor
-    if cat_lower in {'pickup', 'transport'}:
-        return 20.0
+        return 24.0  # Bike delivery base minimum (₹12/km, min ₹24)
+    if cat_lower == 'pickup': return 30.0
+    if cat_lower == 'transport': return 50.0
+    # Delivery/transport min handled above
     if cat_lower == 'moving':
-        return 200.0
+        return 400.0
     return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
@@ -1535,31 +1629,29 @@ def send_message(data):
     }, room=room)
 
     if recipient_id:
-        import threading
-        def _async_push_socket():
-            try:
-                send_fcm_to_user(
-                    recipient_id,
-                    notif_title,
-                    notif_body,
-                    data={
-                        'type': 'chat',
-                        'task_id': str(task_id),
-                        'taskId': str(task_id),
-                        'sender_name': str(user_name),
-                        'sender_id': user_id,
-                    },
-                    channel='workmate4u_chat'
-                )
-            except Exception as f_err:
-                print(f'[Chat Socket] FCM warning: {f_err}')
+        try:
+            fcm_sent = send_fcm_to_user(
+                recipient_id,
+                notif_title,
+                notif_body,
+                data={
+                    'type': 'chat',
+                    'task_id': str(task_id),
+                    'taskId': str(task_id),
+                    'message_id': str(msg_id or ''),
+                    'sender_name': str(user_name),
+                    'sender_id': str(user_id),
+                },
+                channel='workmate4u_chat'
+            )
+            print(f'[Chat Socket] FCM push to recipient={recipient_id} task={task_id} sent={fcm_sent}')
+        except Exception as f_err:
+            print(f'[Chat Socket] FCM warning: {f_err}')
 
-            try:
-                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
-            except Exception as p_err:
-                print(f'[Chat Socket] Web push warning: {p_err}')
-
-        threading.Thread(target=_async_push_socket, daemon=True).start()
+        try:
+            send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+        except Exception as p_err:
+            print(f'[Chat Socket] Web push warning: {p_err}')
     
     print(f"💬 Message from {user_name}: {message[:50]}...")
 
@@ -1624,14 +1716,11 @@ def register():
         if get_user_by_email(email):
             return jsonify({'success': False, 'message': 'Email already registered'}), 400
 
-        # Validate age (must be 16+)
-        try:
-            dob_date = datetime.datetime.strptime(dob, '%Y-%m-%d')
-            age = (datetime.datetime.now() - dob_date).days // 365
-            if age < 16:
-                return jsonify({'success': False, 'message': 'You must be 16 or older'}), 400
-        except ValueError:
-            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+        # Validate age (must be 18+ legal adult in India)
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(dob)
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        dob = normalized_dob
 
         # Create user
         user_id = generate_user_id()
@@ -1642,7 +1731,7 @@ def register():
             try:
                 _ensure_terms_columns()
                 terms_at = data.get('terms_accepted_at') or joined_at
-                terms_ver = data.get('terms_version', '2026-05-22')
+                terms_ver = (data.get('terms_version') or TERMS_VERSION).strip() or TERMS_VERSION
                 cursor.execute(f'''
                     INSERT INTO users (id, name, email, password_hash, phone, dob, joined_at, terms_accepted_at, terms_version)
                     VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
@@ -1753,6 +1842,10 @@ def login():
         # Check if user is banned
         if user.get('is_banned'):
             return jsonify({'success': False, 'message': 'Your account has been permanently banned. Contact support for assistance.'}), 403
+
+        # Reject confirmed underage (<18) accounts
+        if is_confirmed_underage_user(user):
+            return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
         # Update last login
         with get_db() as (cursor, conn):
@@ -2403,10 +2496,14 @@ def reset_password():
 @require_auth
 def update_profile():
     """Update user profile"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     _ensure_bio_skills_columns()
     _ensure_terms_columns()
     import json as _json_profile
+
+    current_user_row = get_user_by_id(request.user_id)
+    if is_confirmed_underage_user(current_user_row) and 'dob' not in data:
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
     _ensure_gender_column()
     allowed_fields = ['name', 'phone', 'email', 'profile_photo', 'dob', 'bio', 'gender',
@@ -2453,15 +2550,15 @@ def update_profile():
             print(f"[Skills Validation Warning] {se}")
         updates['skills'] = _json_profile.dumps(submitted_skills)
 
-    # Validate DOB / age if provided
+    # Validate DOB / age if provided (must be 18+)
     if 'dob' in updates:
-        try:
-            dob_date = datetime.datetime.strptime(updates['dob'], '%Y-%m-%d')
-            age = (datetime.datetime.now() - dob_date).days // 365
-            if age < 16:
-                return jsonify({'success': False, 'message': 'You must be 16 or older to use Workmate4u'}), 400
-        except ValueError:
-            return jsonify({'success': False, 'message': 'Invalid date of birth format'}), 400
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(updates['dob'])
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        updates['dob'] = normalized_dob
+
+    if 'terms_accepted_at' in updates and 'terms_version' not in updates:
+        updates['terms_version'] = TERMS_VERSION
 
     # Validate email uniqueness if changing email
     if 'email' in updates:
@@ -2686,14 +2783,30 @@ def get_tasks():
                 base_where += f" AND t.price >= {PH}"
                 base_params.append(min_budget)
             if lat is not None and lng is not None and radius_km is not None:
-                # Haversine formula — filter tasks within radius_km of user's location
+                # Haversine formula — filter physical tasks within radius_km of user's location,
+                # while keeping remote freelancer tasks (which do not require a physical location).
                 base_where += f"""
-                    AND t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
-                    AND (6371 * acos(LEAST(1.0,
-                        cos(radians({PH})) * cos(radians(t.location_lat)) *
-                        cos(radians(t.location_lng) - radians({PH})) +
-                        sin(radians({PH})) * sin(radians(t.location_lat))
-                    ))) <= {PH}"""
+                    AND (
+                        (
+                            t.location_lat IS NOT NULL AND t.location_lng IS NOT NULL
+                            AND (6371 * acos(LEAST(1.0,
+                                cos(radians({PH})) * cos(radians(t.location_lat)) *
+                                cos(radians(t.location_lng) - radians({PH})) +
+                                sin(radians({PH})) * sin(radians(t.location_lat))
+                            ))) <= {PH}
+                        )
+                        OR (
+                            (t.location_lat IS NULL OR t.location_lng IS NULL)
+                            AND LOWER(COALESCE(t.category, '')) IN (
+                                'freelancer', 'freelance',
+                                'graphic_design', 'graphic-design',
+                                'web_app_tech', 'web-app-tech',
+                                'video_audio_editing', 'video-audio-editing',
+                                'digital_marketing', 'digital-marketing',
+                                'business_admin', 'business-admin'
+                            )
+                        )
+                    )"""
                 base_params.extend([lat, lng, lat, radius_km])
             
             if page is not None:
@@ -2835,6 +2948,8 @@ def create_task():
         
         # Check phone number is set (required for task helpers to contact poster)
         user_check = get_user_by_id(request.user_id)
+        if is_confirmed_underage_user(user_check):
+            return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
         if user_check and not user_check.get('phone'):
             return jsonify({'success': False, 'message': 'Please add your phone number in Profile before posting tasks. It is required so task helpers can contact you.', 'needsPhone': True}), 400
 
@@ -2952,12 +3067,26 @@ def create_task():
                 data.get('drop_location_address') or
                 data.get('delivery_address') or
                 data.get('drop_address') or
+                data.get('dropAddress') or
                 data.get('to_address')
             )
             if not drop_addr_val and location.get('address'):
                 m_drop_extracted = re.search(r'Drop:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
                 if m_drop_extracted:
                     drop_addr_val = m_drop_extracted.group(1).strip()
+
+            pickup_addr_val = (
+                data.get('pickup_address') or
+                data.get('pickupAddress') or
+                data.get('pickup_addr') or
+                data.get('from_address')
+            )
+            if not pickup_addr_val and location.get('address'):
+                m_pickup_extracted = re.search(r'Pickup:\s*(.+?)(?:\n|$)', str(location.get('address')), re.IGNORECASE)
+                if m_pickup_extracted:
+                    pickup_addr_val = m_pickup_extracted.group(1).strip()
+
+            final_loc_address = pickup_addr_val if pickup_addr_val else (location.get('address', '') or '')
             
             print(f"   Posted at: {posted_at}")
             print(f"   Expires at: {expires_at}")
@@ -2986,7 +3115,7 @@ def create_task():
                     html_escape(data['category']),
                     location.get('lat'),
                     location.get('lng'),
-                    html_escape(location.get('address', '') or ''),
+                    html_escape(final_loc_address or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
                     html_escape(drop_addr_val or '') if drop_addr_val else None,
@@ -3011,7 +3140,7 @@ def create_task():
                     html_escape(data['category']),
                     location.get('lat'),
                     location.get('lng'),
-                    html_escape(location.get('address', '') or ''),
+                    html_escape(final_loc_address or ''),
                     drop_location.get('lat') if drop_location else None,
                     drop_location.get('lng') if drop_location else None,
                     html_escape(drop_addr_val or '') if drop_addr_val else None,
@@ -3641,6 +3770,7 @@ def get_task(task_id):
                     'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
                 } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'pickup_address': task.get('location_address') or '',
                 'drop_address': task.get('drop_location_address') or '',
                 'drop_location_address': task.get('drop_location_address') or '',
                 'price': float(task.get('price') or 0),
@@ -3652,6 +3782,9 @@ def get_task(task_id):
                     'tasksPosted': int(task.get('tasks_posted') or 0),
                     'phone': task.get('poster_phone') or '' if show_poster_phone else ''
                 },
+                'posted_by': task.get('posted_by'),
+                'poster_name': task.get('poster_name', 'Anonymous'),
+                'helper_name': task.get('helper_name') or '',
                 'poster_phone': task.get('poster_phone') or '' if show_poster_phone else '',
                 'helper_phone': task.get('helper_phone') or '' if show_helper_phone else '',
                 'accepted_by': task.get('accepted_by'),
@@ -3721,17 +3854,50 @@ def update_task(task_id):
             # Flutter edit screen may send instead of the nested object.
             location_lat = location.get('lat') or data.get('latitude') or data.get('location_lat')
             location_lng = location.get('lng') or data.get('longitude') or data.get('location_lng')
-            location_address = location.get('address') or data.get('address') or data.get('location_address') or ''
+            pickup_addr_val = (
+                data.get('pickup_address') or
+                data.get('pickupAddress') or
+                data.get('pickup_addr') or
+                data.get('from_address')
+            )
+            location_address = pickup_addr_val or location.get('address') or data.get('address') or data.get('location_address') or ''
+
+            drop_location = data.get('dropLocation') or data.get('drop_location') or {}
+            if not isinstance(drop_location, dict):
+                drop_location = {}
+            drop_lat = drop_location.get('lat') if drop_location.get('lat') is not None else task.get('drop_location_lat')
+            drop_lng = drop_location.get('lng') if drop_location.get('lng') is not None else task.get('drop_location_lng')
+            drop_addr_val = (
+                drop_location.get('address') or
+                data.get('drop_location_address') or
+                data.get('delivery_address') or
+                data.get('drop_address') or
+                data.get('dropAddress') or
+                task.get('drop_location_address')
+            )
+
+            client_sc = data.get('serviceCharge', data.get('service_charge'))
+            try:
+                client_sc_val = float(client_sc) if client_sc is not None else None
+            except (TypeError, ValueError):
+                client_sc_val = None
+            new_service_charge = (
+                client_sc_val
+                if (client_sc_val is not None and 0 <= client_sc_val <= 500)
+                else get_service_charge(category)
+            )
 
             cursor.execute(f'''
                 UPDATE tasks
                 SET title = {PH}, description = {PH}, category = {PH},
                     location_lat = {PH}, location_lng = {PH}, location_address = {PH},
-                    price = {PH}
+                    drop_location_lat = {PH}, drop_location_lng = {PH}, drop_location_address = {PH},
+                    price = {PH}, service_charge = {PH}
                 WHERE id = {PH}
             ''', (data['title'], data['description'], data['category'],
                   location_lat, location_lng, location_address,
-                  price, task_id))
+                  drop_lat, drop_lng, drop_addr_val,
+                  price, new_service_charge, task_id))
             conn.commit()
 
         print(f"✅ Task {task_id} updated by user {request.user_id}")
@@ -3859,6 +4025,16 @@ def get_task_details(task_id):
                     'lng': task['location_lng'],
                     'address': task['location_address']
                 },
+                'drop_location': {
+                    'lat': task.get('drop_location_lat'),
+                    'lng': task.get('drop_location_lng'),
+                    'address': task.get('drop_location_address') or ''
+                } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'drop_location_lat': task.get('drop_location_lat'),
+                'drop_location_lng': task.get('drop_location_lng'),
+                'drop_location_address': task.get('drop_location_address') or '',
+                'drop_address': task.get('drop_location_address') or '',
+                'pickup_address': task.get('location_address') or '',
                 'status': task['status'],
                 'completion_proof': task.get('completion_proof'),
                 'poster_phone': task.get('provider_phone') or '',
@@ -3958,14 +4134,15 @@ def complete_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
             
             print(f"\n💵 AMOUNTS (for notification):")
             print(f"   Total Task Value: ₹{total_task_value:.2f}")
-            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (no posting fee)")
+            print(f"   Poster will pay: ₹{total_poster_cost:.2f} (incl. 20% platform fee & GST)")
             print(f"   Helper commission rate: {_commission_rate*100:.0f}%")
             print(f"   Helper will receive: ₹{helper_net_receives:.2f}")
             
@@ -4100,7 +4277,8 @@ def verify_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
-            poster_fee = task_amount * _poster_commission_rate
+            _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
+            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4215,7 +4393,7 @@ def mark_task_completed(task_id):
             _raw_sc = float(task.get('service_charge', 0))
             service_charge = _raw_sc if _category in _DELIVERY_CATS else 0.0
             total_task_value = task_amount + service_charge
-            _commission_rate = 0.15 if _category in _DELIVERY_CATS else 0.20
+            _commission_rate = 0.20
             helper_total_deduction = total_task_value * _commission_rate
             helper_earnings = total_task_value - helper_total_deduction
             helper_id = request.user_id
@@ -5113,26 +5291,55 @@ def get_tracking_info(task_id):
         if task['posted_by'] != request.user_id and task['accepted_by'] != request.user_id:
             return jsonify({'success': False, 'message': 'Not authorized to track this task'}), 403
         
-        # Get latest location of helper
+        # Get latest location of helper (location_tracking -> latest helper track -> users.last_lat/last_lng)
         helper_location = None
         if task['accepted_by']:
             cursor.execute(f'''
                 SELECT latitude, longitude, accuracy, heading, speed, recorded_at
                 FROM location_tracking
-                WHERE task_id = {PH} AND user_id = {PH} AND is_active = {PH}
-                ORDER BY recorded_at DESC LIMIT 1
-            ''', (task_id, task['accepted_by'], True if config.USE_POSTGRES else 1))
+                WHERE task_id = {PH} AND user_id = {PH}
+                ORDER BY is_active DESC, recorded_at DESC LIMIT 1
+            ''', (task_id, task['accepted_by']))
             loc = cursor.fetchone()
+            if not loc:
+                cursor.execute(f'''
+                    SELECT latitude, longitude, accuracy, heading, speed, recorded_at
+                    FROM location_tracking
+                    WHERE user_id = {PH}
+                    ORDER BY recorded_at DESC LIMIT 1
+                ''', (task['accepted_by'],))
+                loc = cursor.fetchone()
             if loc:
                 loc = dict_from_row(loc)
+                rec_at = loc.get('recorded_at')
+                if hasattr(rec_at, 'isoformat'):
+                    rec_at = rec_at.isoformat()
                 helper_location = {
                     'lat': float(loc['latitude']),
                     'lng': float(loc['longitude']),
-                    'accuracy': float(loc['accuracy']) if loc['accuracy'] else None,
-                    'heading': float(loc['heading']) if loc['heading'] else None,
-                    'speed': float(loc['speed']) if loc['speed'] else None,
-                    'timestamp': loc['recorded_at']
+                    'accuracy': float(loc['accuracy']) if loc.get('accuracy') is not None else None,
+                    'heading': float(loc['heading']) if loc.get('heading') is not None else None,
+                    'speed': float(loc['speed']) if loc.get('speed') is not None else None,
+                    'timestamp': rec_at
                 }
+            else:
+                try:
+                    _ensure_user_location_columns()
+                    cursor.execute(f'SELECT last_lat, last_lng FROM users WHERE id = {PH}', (task['accepted_by'],))
+                    u_row = cursor.fetchone()
+                    if u_row:
+                        u_dict = dict_from_row(u_row)
+                        if u_dict.get('last_lat') and u_dict.get('last_lng'):
+                            helper_location = {
+                                'lat': float(u_dict['last_lat']),
+                                'lng': float(u_dict['last_lng']),
+                                'accuracy': None,
+                                'heading': None,
+                                'speed': None,
+                                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                            }
+                except Exception:
+                    pass
         
         # Build timeline
         timeline = []
@@ -5201,9 +5408,9 @@ def get_tracking_info(task_id):
                 'lng': float(task['location_lng']) if task['location_lng'] else None
             },
             'destination': {
-                'address': task.get('drop_location_address') or task['location_address'] or 'Delivery Location',
-                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else (float(task['location_lat']) if task['location_lat'] else None),
-                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else (float(task['location_lng']) if task['location_lng'] else None)
+                'address': task.get('drop_location_address') or 'Delivery Location',
+                'lat': float(task['drop_location_lat']) if task.get('drop_location_lat') else None,
+                'lng': float(task['drop_location_lng']) if task.get('drop_location_lng') else None
             },
             'helper': {
                 'id': task['accepted_by'],
@@ -5268,14 +5475,44 @@ def get_helper_location(task_id):
                 'message': 'Waiting for helper to accept'
             })
         
-        # Get latest location
+        # Get latest location (active first -> latest helper track -> users.last_lat/last_lng)
         cursor.execute(f'''
             SELECT latitude, longitude, accuracy, heading, speed, recorded_at
             FROM location_tracking
-            WHERE task_id = {PH} AND user_id = {PH} AND is_active = {PH}
-            ORDER BY recorded_at DESC LIMIT 1
-        ''', (task_id, task['accepted_by'], True if config.USE_POSTGRES else 1))
+            WHERE task_id = {PH} AND user_id = {PH}
+            ORDER BY is_active DESC, recorded_at DESC LIMIT 1
+        ''', (task_id, task['accepted_by']))
         loc = cursor.fetchone()
+        if not loc:
+            cursor.execute(f'''
+                SELECT latitude, longitude, accuracy, heading, speed, recorded_at
+                FROM location_tracking
+                WHERE user_id = {PH}
+                ORDER BY recorded_at DESC LIMIT 1
+            ''', (task['accepted_by'],))
+            loc = cursor.fetchone()
+
+        if loc:
+            loc = dict_from_row(loc)
+        else:
+            loc = None
+            try:
+                _ensure_user_location_columns()
+                cursor.execute(f'SELECT last_lat, last_lng FROM users WHERE id = {PH}', (task['accepted_by'],))
+                u_row = cursor.fetchone()
+                if u_row:
+                    u_dict = dict_from_row(u_row)
+                    if u_dict.get('last_lat') and u_dict.get('last_lng'):
+                        loc = {
+                            'latitude': float(u_dict['last_lat']),
+                            'longitude': float(u_dict['last_lng']),
+                            'accuracy': None,
+                            'heading': None,
+                            'speed': None,
+                            'recorded_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                        }
+            except Exception:
+                pass
         
         if not loc:
             return jsonify({
@@ -5284,7 +5521,9 @@ def get_helper_location(task_id):
                 'message': 'Helper location not available yet'
             })
         
-        loc = dict_from_row(loc)
+        rec_at = loc.get('recorded_at')
+        if hasattr(rec_at, 'isoformat'):
+            rec_at = rec_at.isoformat()
         
         # Calculate ETA
         eta = "Calculating..."
@@ -5297,7 +5536,7 @@ def get_helper_location(task_id):
             lat2, lon2 = math.radians(float(task['location_lat'])), math.radians(float(task['location_lng']))
             dlat, dlon = lat2 - lat1, lon2 - lon1
             a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-            c = 2 * math.asin(math.sqrt(a))
+            c = 2 * math.asin(math.sqrt(min(1.0, max(0.0, a))))
             dist_km = R * c
             
             distance = f"{dist_km:.1f} km"
@@ -5309,10 +5548,10 @@ def get_helper_location(task_id):
             'location': {
                 'lat': float(loc['latitude']),
                 'lng': float(loc['longitude']),
-                'accuracy': float(loc['accuracy']) if loc['accuracy'] else None,
-                'heading': float(loc['heading']) if loc['heading'] else None,
-                'speed': float(loc['speed']) if loc['speed'] else None,
-                'timestamp': loc['recorded_at']
+                'accuracy': float(loc['accuracy']) if loc.get('accuracy') is not None else None,
+                'heading': float(loc['heading']) if loc.get('heading') is not None else None,
+                'speed': float(loc['speed']) if loc.get('speed') is not None else None,
+                'timestamp': rec_at
             },
             'eta': eta,
             'distance': distance
@@ -5322,18 +5561,43 @@ def get_helper_location(task_id):
 @app.route('/api/tracking/update-location', methods=['POST'])
 @require_auth
 def update_location():
-    """Update user's current location for tracking"""
-    data = request.get_json()
-    
-    task_id = data.get('taskId')
-    location = data.get('location', {})
-    
-    if not task_id:
+    """Update user's current location for tracking (accepts nested or flat lat/lng)."""
+    import math as _m
+    data = request.get_json(silent=True) or {}
+
+    raw_task_id = data.get('taskId') or data.get('task_id')
+    if not raw_task_id:
         return jsonify({'success': False, 'message': 'Task ID required'}), 400
-    
-    if not location.get('lat') or not location.get('lng'):
+    try:
+        task_id = int(raw_task_id)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'message': 'Invalid task ID'}), 400
+
+    location = data.get('location') if isinstance(data.get('location'), dict) else {}
+    lat_val = location.get('lat', location.get('latitude', data.get('latitude', data.get('lat'))))
+    lng_val = location.get('lng', location.get('longitude', data.get('longitude', data.get('lng'))))
+
+    try:
+        lat_f = float(lat_val)
+        lng_f = float(lng_val)
+        if not (_m.isfinite(lat_f) and _m.isfinite(lng_f)) or (lat_f == 0 and lng_f == 0):
+            raise ValueError('zero/nan coords')
+    except (TypeError, ValueError):
         return jsonify({'success': False, 'message': 'Valid location required'}), 400
-    
+
+    def _safe_dec(val, max_abs):
+        try:
+            f = float(val)
+            if not _m.isfinite(f):
+                return None
+            return round(max(-max_abs, min(max_abs, f)), 2)
+        except (TypeError, ValueError):
+            return None
+
+    acc_val = _safe_dec(location.get('accuracy', data.get('accuracy')), 999999.0)
+    hdg_val = _safe_dec(location.get('heading', data.get('heading')), 360.0)
+    spd_val = _safe_dec(location.get('speed', data.get('speed')), 999.0)
+
     with get_db() as (cursor, conn):
         # Verify user is part of this task
         cursor.execute(f'''
@@ -5346,11 +5610,11 @@ def update_location():
         
         task = dict_from_row(task)
         
-        if task['posted_by'] != request.user_id and task['accepted_by'] != request.user_id:
+        if str(task['posted_by']) != str(request.user_id) and str(task['accepted_by']) != str(request.user_id):
             return jsonify({'success': False, 'message': 'Not authorized'}), 403
         
         # Determine user type
-        user_type = 'poster' if task['posted_by'] == request.user_id else 'helper'
+        user_type = 'poster' if str(task['posted_by']) == str(request.user_id) else 'helper'
         
         # Deactivate old locations
         cursor.execute(f'''
@@ -5369,14 +5633,32 @@ def update_location():
             task_id,
             request.user_id,
             user_type,
-            location['lat'],
-            location['lng'],
-            location.get('accuracy'),
-            location.get('heading'),
-            location.get('speed'),
+            round(lat_f, 7),
+            round(lng_f, 7),
+            acc_val,
+            hdg_val,
+            spd_val,
             recorded_at,
             True if config.USE_POSTGRES else 1
         ))
+        try:
+            _ensure_user_location_columns()
+            cursor.execute(
+                f'UPDATE users SET last_lat = {PH}, last_lng = {PH} WHERE id = {PH}',
+                (round(lat_f, 7), round(lng_f, 7), request.user_id)
+            )
+        except Exception:
+            pass
+
+        # Enforce 30-day DPDP retention limit on historical GPS tracking logs
+        try:
+            cutoff_30d = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+            cursor.execute(
+                f'DELETE FROM location_tracking WHERE recorded_at < {PH}',
+                (cutoff_30d,)
+            )
+        except Exception:
+            pass
     
     return jsonify({
         'success': True,
@@ -6469,37 +6751,38 @@ def send_chat_message(task_id):
         except Exception as se:
             print(f'[Chat] Socket.IO emit error: {se}')
 
-        # Dispatch FCM and WebPush asynchronously in daemon thread
-        # (Must NEVER block or slow down client HTTP response)
+        # Dispatch FCM directly (matching task_accepted / task_completed) so Gunicorn
+        # workers never kill or drop chat push notifications before delivery.
+        fcm_sent = False
         if recipient_id:
-            import threading
-            def _dispatch_push():
-                try:
-                    send_fcm_to_user(
-                        recipient_id,
-                        notif_title,
-                        notif_body,
-                        data={
-                            'type': 'chat',
-                            'task_id': str(task_id),
-                            'taskId': str(task_id),
-                            'sender_name': str(user_name),
-                            'sender_id': str(uid),
-                        },
-                        channel='workmate4u_chat'
-                    )
-                    print(f'[Chat] Async FCM delivered to {recipient_id}')
-                except Exception as fe:
-                    print(f'[Chat] Async FCM error: {fe}')
-                try:
-                    send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
-                except Exception as pe:
-                    print(f'[Chat] Async WebPush error: {pe}')
-
-            threading.Thread(target=_dispatch_push, daemon=True).start()
+            try:
+                fcm_sent = bool(send_fcm_to_user(
+                    recipient_id,
+                    notif_title,
+                    notif_body,
+                    data={
+                        'type': 'chat',
+                        'task_id': str(task_id),
+                        'taskId': str(task_id),
+                        'sender_name': str(user_name),
+                        'sender_id': str(uid),
+                        'message_id': str(msg_id or ''),
+                    },
+                    channel='workmate4u_chat'
+                ))
+                print(f'[Chat] FCM to recipient={recipient_id} (sender={uid}) sent={fcm_sent}')
+            except Exception as fe:
+                print(f'[Chat] FCM error for recipient={recipient_id}: {fe}')
+            try:
+                send_push_to_user(recipient_id, notif_title, notif_body, f'/chat/{task_id}')
+            except Exception as pe:
+                print(f'[Chat] WebPush error: {pe}')
+        else:
+            print(f'[Chat] ⚠️ No recipient_id for task={task_id} sender={uid} posted_by={posted_by} accepted_by={accepted_by}')
 
         return jsonify({
             'success': True,
+            'fcm_sent': fcm_sent,
             'message': {
                 'id': msg_id,
                 'taskId': task_id,
@@ -9999,10 +10282,15 @@ def delete_account():
 # TASK NOTIFICATION BROADCAST ENDPOINTS
 # ========================================
 
+import threading
+_notified_task_events = set()  # set of (int(task_id), str(user_id), notif_type)
+_notified_events_lock = threading.Lock()
+
 def _do_notify_skill_matched(task_id, poster_user_id):
     """Send FCM skill_matched notifications for task_id to all users with matching
     skills.  Runs in a daemon thread after task creation so notifications fire
-    regardless of client app version.  Returns count of users notified."""
+    regardless of client app version. Deduplicates against already-sent notifications
+    so users never receive duplicate FCM notifications. Returns count of users notified."""
     import json as _nsj, datetime as _nsdt
 
     def _norm(v):
@@ -10025,8 +10313,21 @@ def _do_notify_skill_matched(task_id, poster_user_id):
         'repair':         {'repair', 'tech support'},
         'vehicle':        {'vehicle', 'driving'},
         'tutoring':       {'tutoring', 'teaching'},
-        'freelancer':     {'freelancer', 'graphic design', 'video editing',
-                           'web development', 'translation', 'data entry'},
+        'freelancer':     {'freelancer', 'graphic design', 'graphic design and branding',
+                           'video editing', 'video and audio editing',
+                           'web development', 'web, app and tech projects', 'web app tech',
+                           'digital marketing', 'business, office and admin', 'business admin',
+                           'translation', 'data entry'},
+        'graphic_design': {'graphic design', 'graphic design and branding', 'branding',
+                           'logo design', 'freelancer'},
+        'web_app_tech':   {'web, app and tech projects', 'web app tech', 'web development',
+                           'app development', 'tech projects', 'freelancer'},
+        'video_audio_editing': {'video and audio editing', 'video editing', 'audio editing',
+                                'reel editing', 'freelancer'},
+        'digital_marketing': {'digital marketing', 'seo', 'social media marketing',
+                              'google ads', 'freelancer'},
+        'business_admin': {'business, office and admin', 'business admin', 'office admin',
+                           'virtual assistant', 'excel', 'data entry', 'freelancer'},
         'data_entry':     {'data entry'},
         'photography':    {'photography'},
         'gardening':      {'gardening'},
@@ -10089,12 +10390,36 @@ def _do_notify_skill_matched(task_id, poster_user_id):
             ''', (poster_user_id, '[]', '', 'null'))
             candidates = [dict_from_row(r) for r in cursor.fetchall()]
 
+        # Pre-fetch users who already received a skill_matched notification for this task
+        try:
+            with get_db() as (_dc, _):
+                _dc.execute(f'''
+                    SELECT DISTINCT user_id FROM notifications
+                    WHERE task_id = {PH} AND notification_type = 'skill_matched'
+                ''', (task_id,))
+                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
+        except Exception:
+            _already_skill_notified = set()
+
         print(f'[FCM] notify-skills task={task_id} cat={cat!r} '
               f'search={search_text[:80]!r} candidates={len(candidates)}')
 
         notified = 0
         for user in candidates:
             try:
+                u_id_str = str(user['id'])
+                if u_id_str in _already_skill_notified:
+                    continue
+
+                # Thread-safe in-memory deduplication across concurrent threads/requests
+                evt_key = (int(task_id), u_id_str, 'skill_matched')
+                with _notified_events_lock:
+                    if evt_key in _notified_task_events:
+                        continue
+                    _notified_task_events.add(evt_key)
+                    if len(_notified_task_events) > 20000:
+                        _notified_task_events.clear()
+
                 raw = user.get('skills', '[]')
                 user_skills = [s.lower() for s in (
                     _nsj.loads(raw) if isinstance(raw, str) else (raw or []))]
@@ -10105,6 +10430,8 @@ def _do_notify_skill_matched(task_id, poster_user_id):
                 print(f'[FCM]   user={user["id"]} skills={user_skills} matched={matched}')
                 if not matched:
                     continue
+
+                _already_skill_notified.add(u_id_str)
                 n_title = '\U0001f4bc Task Matching Your Skills!'
                 n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
                 _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
@@ -10139,8 +10466,8 @@ def _do_notify_skill_matched(task_id, poster_user_id):
 
 
 def _do_notify_nearby(task_id, poster_user_id):
-    """Send FCM nearby_task notifications for task_id to users within 10 km.
-    Skips users who already received a skill_matched push for the same task.
+    """Send FCM nearby_task notifications for task_id to users within 2 km.
+    Skips users who already received a skill_matched or nearby_task push for the same task.
     Returns count of users notified."""
     import json as _nj, datetime as _dt
     try:
@@ -10181,7 +10508,7 @@ def _do_notify_nearby(task_id, poster_user_id):
             with get_db() as (_dc, _):
                 _dc.execute(f'''
                     SELECT DISTINCT user_id FROM notifications
-                    WHERE task_id = {PH} AND notification_type = 'skill_matched'
+                    WHERE task_id = {PH} AND notification_type IN ('skill_matched', 'nearby_task')
                 ''', (task_id,))
                 _already = {str(r[0]) for r in _dc.fetchall()}
         except Exception:
@@ -10190,14 +10517,28 @@ def _do_notify_nearby(task_id, poster_user_id):
         notified = 0
         for user in candidates:
             try:
+                u_id_str = str(user['id'])
+                if u_id_str in _already:
+                    continue
+
                 u_lat = user.get('last_lat')
                 u_lng = user.get('last_lng')
                 if u_lat is None or u_lng is None:
                     continue
-                if _haversine_km(t_lat, t_lng, float(u_lat), float(u_lng)) > 10.0:
+                # Set 2 km radius for task near you notifications
+                if _haversine_km(t_lat, t_lng, float(u_lat), float(u_lng)) > 2.0:
                     continue
-                if str(user['id']) in _already:
-                    continue
+
+                # Thread-safe in-memory deduplication across concurrent threads/requests
+                evt_key = (int(task_id), u_id_str, 'nearby_task')
+                with _notified_events_lock:
+                    if evt_key in _notified_task_events:
+                        continue
+                    _notified_task_events.add(evt_key)
+                    if len(_notified_task_events) > 20000:
+                        _notified_task_events.clear()
+
+                _already.add(u_id_str)
                 n_title = '\U0001f4cd New Task Near You!'
                 n_body  = f'"{title_raw}" \u2014 \u20b9{price} \u2014 {cat_disp}'
                 _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
@@ -10234,172 +10575,19 @@ def _do_notify_nearby(task_id, poster_user_id):
 def notify_task_skills(task_id):
     """Push FCM notification (type: skill_matched) to every user whose profile
     skills overlap with this task's category/title/description.
-    No location radius is applied here.
+    Delegates to _do_notify_skill_matched with thread-safe deduplication.
     Only the task poster may call this endpoint."""
-    import json as _nsj
-
-    def _norm_skill_text(value):
-        return ' '.join(
-            str(value or '')
-            .lower()
-            .replace('_', ' ')
-            .replace('&', ' and ')
-            .replace('/', ' ')
-            .split()
-        )
-
-    _skill_aliases = {
-        'delivery': {'delivery', 'deliver'},
-        'moving': {'moving', 'moving packing', 'moving and packing', 'packing'},
-        'groceries': {'groceries', 'grocery', 'shopping', 'errands'},
-        'cooking': {'cooking', 'cook'},
-        'cleaning': {'cleaning', 'clean'},
-        'laundry': {'laundry'},
-        'household': {'household', 'errands'},
-        'shopping': {'shopping', 'errands'},
-        'electrician': {'electrician', 'electrical'},
-        'plumbing': {'plumbing', 'plumber'},
-        'carpentry': {'carpentry', 'carpenter'},
-        'painting': {'painting', 'painter'},
-        'repair': {'repair', 'tech support'},
-        'vehicle': {'vehicle', 'driving'},
-        'tutoring': {'tutoring', 'teaching'},
-        'freelancer': {
-            'freelancer', 'graphic design', 'video editing',
-            'web development', 'translation', 'data entry'
-        },
-        'data_entry': {'data entry'},
-        'photography': {'photography'},
-        'gardening': {'gardening'},
-        'beauty': {'beauty'},
-        'pet_care': {'pet care'},
-        'child_care': {'child care', 'babysitting'},
-        'elder_care': {'elder care'},
-        'errands': {'errands', 'shopping'},
-        'queue_standing': {'errands'},
-        'event_help': {'event help'},
-        'tech_support': {'tech support', 'technical support', 'electrical'},
-    }
-
-    def _skill_terms(value):
-        normalized = _norm_skill_text(value)
-        if not normalized:
-            return set()
-        terms = {normalized}
-        if normalized in _skill_aliases:
-            terms.update(_skill_aliases[normalized])
-        for key, aliases in _skill_aliases.items():
-            if normalized in aliases:
-                terms.add(key)
-                terms.update(aliases)
-        return {_norm_skill_text(term) for term in terms if _norm_skill_text(term)}
-
     try:
         with get_db() as (cursor, _):
-            cursor.execute(
-                f'SELECT id, posted_by, title, category, description, price, '
-                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
-                (task_id,)
-            )
-            task = dict_from_row(cursor.fetchone()) if cursor.rowcount != 0 else None
-            if task is None:
-                cursor.execute(
-                    f'SELECT id, posted_by, title, category, description, price, '
-                    f'location_lat, location_lng FROM tasks WHERE id = {PH}',
-                    (task_id,)
-                )
-                row = cursor.fetchone()
-                task = dict_from_row(row) if row else None
-        if not task:
+            cursor.execute(f'SELECT posted_by FROM tasks WHERE id = {PH}', (task_id,))
+            row = cursor.fetchone()
+        if not row:
             return jsonify({'success': False, 'message': 'Task not found'}), 404
-
-        poster_id = str(task.get('posted_by', ''))
+        poster_id = str(row[0] if isinstance(row, (list, tuple)) else row.get('posted_by', ''))
         if str(request.user_id) != poster_id:
             return jsonify({'success': False, 'message': 'Not authorised'}), 403
 
-        _task_category = (task.get('category') or '').lower()
-        _task_title    = (task.get('title')    or '').lower()
-        _task_desc     = (task.get('description') or '').lower()
-        _task_price    = task.get('price', 0)
-        _task_title_display = task.get('title', '')
-        _task_cat_display   = task.get('category', 'General')
-        _task_search_text = ' '.join(
-            part for part in [
-                _norm_skill_text(_task_category),
-                _norm_skill_text(_task_title),
-                _norm_skill_text(_task_desc),
-                _norm_skill_text(_task_cat_display),
-                ' '.join(sorted(_skill_terms(_task_category))),
-            ]
-            if part
-        )
-
-        # Task location — kept for display but NOT used to filter users
-        _task_lat = task.get('location_lat')
-        _task_lng = task.get('location_lng')
-        _task_lat = float(_task_lat) if _task_lat is not None else None
-        _task_lng = float(_task_lng) if _task_lng is not None else None
-
-        _ensure_bio_skills_columns()
-        _ensure_fcm_token_column()
-        _ensure_user_location_columns()
-
-        with get_db() as (cursor, _):
-            cursor.execute(f'''
-                SELECT id, fcm_token, skills FROM users
-                WHERE fcm_token IS NOT NULL
-                  AND id != {PH}
-                  AND skills IS NOT NULL
-                  AND skills NOT IN ({PH}, {PH}, {PH})
-            ''', (request.user_id, '[]', '', 'null'))
-            candidates = [dict_from_row(r) for r in cursor.fetchall()]
-
-        notified = 0
-        for user in candidates:
-            try:
-                # ── Skill match check (no location filter) ────────────────
-                raw_skills = user.get('skills', '[]')
-                user_skills = [s.lower() for s in (
-                    _nsj.loads(raw_skills) if isinstance(raw_skills, str) else (raw_skills or [])
-                )]
-                matched = any(
-                    any(term and term in _task_search_text for term in _skill_terms(skill))
-                    for skill in user_skills
-                )
-                if not matched:
-                    continue
-                import datetime as _nsdt, json as _nsj2
-                _n_title = '\U0001f4bc Task Matching Your Skills!'
-                _n_body  = f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}'
-                _n_data  = _nsj2.dumps({'type': 'skill_matched', 'taskId': str(task_id),
-                                        'label': '\U0001f441\ufe0f View Task'})
-                _now = _nsdt.datetime.now(_nsdt.timezone.utc).isoformat()
-                # Insert in-app notification (bell icon)
-                try:
-                    with get_db() as (_nc, _nconn):
-                        _nc.execute(f'''
-                            INSERT INTO notifications
-                                (user_id, task_id, notification_type, title, message, status, data, created_at)
-                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                        ''', (user['id'], task_id, 'skill_matched',
-                              _n_title, _n_body, 'unread', _n_data, _now))
-                        _nconn.commit()
-                except Exception:
-                    pass
-                # FCM push
-                if user.get('fcm_token'):
-                    send_fcm_to_user(
-                        user['id'],
-                        _n_title,
-                        _n_body,
-                        data={'type': 'skill_matched', 'task_id': str(task_id)},
-                        channel='workmate4u_matched',
-                    )
-                notified += 1
-            except Exception:
-                pass
-
-        print(f'[FCM] notify-skills task={task_id}: notified {notified} user(s)')
+        notified = _do_notify_skill_matched(task_id, poster_id)
         return jsonify({'success': True, 'notified': notified})
     except Exception as e:
         print(f'[FCM] notify-skills error: {e}')
@@ -10409,106 +10597,24 @@ def notify_task_skills(task_id):
 @app.route('/api/tasks/<int:task_id>/notify-nearby', methods=['POST'])
 @require_auth
 def notify_task_nearby(task_id):
-    """Push FCM notification (type: nearby_task) to every user within 10 km of
+    """Push FCM notification (type: nearby_task) to every user within 2 km of
     the task's location, regardless of their skills or the task's category.
+    Delegates to _do_notify_nearby with thread-safe deduplication and 2 km radius.
     Only the task poster may call this endpoint."""
     try:
         with get_db() as (cursor, _):
             cursor.execute(
-                f'SELECT id, posted_by, title, category, description, price, '
-                f'location_lat, location_lng FROM tasks WHERE id = {PH}',
+                f'SELECT posted_by, location_lat, location_lng FROM tasks WHERE id = {PH}',
                 (task_id,)
             )
             row = cursor.fetchone()
-            task = dict_from_row(row) if row else None
-        if not task:
+        if not row:
             return jsonify({'success': False, 'message': 'Task not found'}), 404
-
-        poster_id = str(task.get('posted_by', ''))
+        poster_id = str(row[0] if isinstance(row, (list, tuple)) else row.get('posted_by', ''))
         if str(request.user_id) != poster_id:
             return jsonify({'success': False, 'message': 'Not authorised'}), 403
 
-        task_lat = task.get('location_lat')
-        task_lng = task.get('location_lng')
-        if task_lat is None or task_lng is None:
-            # No location — cannot do proximity filtering; skip silently
-            return jsonify({'success': True, 'notified': 0, 'reason': 'task has no location'})
-
-        task_lat = float(task_lat)
-        task_lng = float(task_lng)
-        _task_title_display = task.get('title', '')
-        _task_cat_display   = task.get('category', 'General')
-        _task_price         = task.get('price', 0)
-
-        _ensure_user_location_columns()
-        _ensure_fcm_token_column()
-
-        with get_db() as (cursor, _):
-            cursor.execute(f'''
-                SELECT id, fcm_token, last_lat, last_lng FROM users
-                WHERE fcm_token IS NOT NULL
-                  AND id != {PH}
-                  AND last_lat IS NOT NULL
-                  AND last_lng IS NOT NULL
-            ''', (request.user_id,))
-            candidates = [dict_from_row(r) for r in cursor.fetchall()]
-
-        # Pre-fetch users already notified via notify-skills for this task
-        # so we skip them here and avoid duplicate FCM pushes.
-        try:
-            with get_db() as (_dc, _):
-                _dc.execute(f'''
-                    SELECT DISTINCT user_id FROM notifications
-                    WHERE task_id = {PH}
-                      AND notification_type = 'skill_matched'
-                ''', (task_id,))
-                _already_skill_notified = {str(r[0]) for r in _dc.fetchall()}
-        except Exception:
-            _already_skill_notified = set()
-
-        notified = 0
-        for user in candidates:
-            try:
-                u_lat = user.get('last_lat')
-                u_lng = user.get('last_lng')
-                if u_lat is None or u_lng is None:
-                    continue
-                if _haversine_km(task_lat, task_lng, float(u_lat), float(u_lng)) > 10.0:
-                    continue
-                # Skip users who already received a skill_matched notification
-                # for this task — they don't need a second nearby_task push.
-                if str(user['id']) in _already_skill_notified:
-                    continue
-                # Store in-app notification so it shows in the bell icon
-                try:
-                    import json as _nj, datetime as _dt
-                    _ndata = _nj.dumps({'type': 'nearby_task', 'taskId': task_id,
-                                        'label': '\U0001f441\ufe0f View Task'})
-                    _now = _dt.datetime.now(_dt.timezone.utc).isoformat()
-                    with get_db() as (_nc, _nconn):
-                        _nc.execute(f'''
-                            INSERT INTO notifications
-                                (user_id, task_id, notification_type, title, message, status, data, created_at)
-                            VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
-                        ''', (user['id'], task_id, 'nearby_task',
-                              '\U0001f4cd New Task Near You!',
-                              f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
-                              'unread', _ndata, _now))
-                        _nconn.commit()
-                except Exception:
-                    pass
-                send_fcm_to_user(
-                    user['id'],
-                    '\U0001f4cd New Task Near You!',
-                    f'"{_task_title_display}" \u2014 \u20b9{_task_price} \u2014 {_task_cat_display}',
-                    data={'type': 'nearby_task', 'task_id': str(task_id)},
-                    channel='workmate4u_matched',
-                )
-                notified += 1
-            except Exception:
-                pass
-
-        print(f'[FCM] notify-nearby task={task_id}: notified {notified} user(s)')
+        notified = _do_notify_nearby(task_id, poster_id)
         return jsonify({'success': True, 'notified': notified})
     except Exception as e:
         print(f'[FCM] notify-nearby error: {e}')
@@ -11555,6 +11661,10 @@ def submit_kyc():
         doc_image_back = _ensure_data_uri(doc_image_back)
         acknowledged = bool(data.get('acknowledged'))
 
+    user_row = get_user_by_id(request.user_id)
+    if is_confirmed_underage_user(user_row):
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
+
     # Mandatory legal declaration (acts as legal evidence in case of fraud)
     if not acknowledged:
         return jsonify({
@@ -12005,6 +12115,10 @@ def request_helper_physical_verification():
     _ensure_physical_onboarding_table()
     data = request.get_json(silent=True) or {}
     uid = str(request.user_id)
+
+    user_row = get_user_by_id(uid)
+    if is_confirmed_underage_user(user_row):
+        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
 
     name = (data.get('name') or '').strip()
     address = (data.get('address') or '').strip()
@@ -13191,14 +13305,23 @@ def google_login():
     id_token = data.get('credential', '')
     # Optional registration fields (collected via Flutter onboarding)
     reg_phone = (data.get('phone') or '').strip()
-    reg_dob = (data.get('dob') or None)
+    raw_reg_dob = data.get('dob')
+    reg_dob = raw_reg_dob.strip() if isinstance(raw_reg_dob, str) else raw_reg_dob
     reg_referral = (data.get('referral_code') or '').strip()
     reg_terms_at = data.get('terms_accepted_at') or None
-    reg_terms_ver = data.get('terms_version', '2026-05-22')
+    reg_terms_ver = (data.get('terms_version') or TERMS_VERSION).strip() or TERMS_VERSION
     reg_name_override = (data.get('name') or '').strip()  # name confirmed in onboarding
 
     if not id_token:
         return jsonify({'success': False, 'message': 'Google credential is required'}), 400
+
+    # Strictly reject underage (<18) or malformed DOB if supplied on /auth/google
+    validated_reg_dob = None
+    if reg_dob is not None and str(reg_dob).strip() != '':
+        dob_ok, normalized_dob, dob_err = validate_adult_dob(str(reg_dob))
+        if not dob_ok:
+            return jsonify({'success': False, 'message': dob_err}), 400
+        validated_reg_dob = normalized_dob
 
     try:
         # Ensure Google auth schema is ready. Return 503 if the DB isn't up
@@ -13287,16 +13410,8 @@ def google_login():
                             # Use onboarding-confirmed name if provided, else Google profile name
                             final_name = reg_name_override if reg_name_override else name
                             terms_at = reg_terms_at or joined_at
-                            # Validate DOB if provided (must be 16+)
-                            dob_value = None
-                            if reg_dob:
-                                try:
-                                    dob_date = datetime.datetime.strptime(reg_dob, '%Y-%m-%d')
-                                    age = (datetime.datetime.now() - dob_date).days // 365
-                                    if age >= 16:
-                                        dob_value = reg_dob
-                                except ValueError:
-                                    pass
+                            # DOB already validated as 18+ if supplied
+                            dob_value = validated_reg_dob
                             # Check phone uniqueness if a phone number was provided
                             if reg_phone:
                                 cursor.execute(f'SELECT id FROM users WHERE phone = {PH}', (reg_phone,))
@@ -13351,6 +13466,8 @@ def google_login():
                     user = get_user_by_id(user_id)
                     if user and user.get('is_banned'):
                         return jsonify({'success': False, 'message': 'Account is banned'}), 403
+                    if is_confirmed_underage_user(user):
+                        return jsonify({'success': False, 'message': MIN_AGE_ERROR_MESSAGE}), 403
                 break
             except Exception as db_exc:
                 err = str(db_exc).lower()

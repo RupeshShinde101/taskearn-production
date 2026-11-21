@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/storage_service.dart';
 import '../services/notification_service.dart';
 import '../services/location_service.dart';
+import '../utils/legal_constants.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated }
 
@@ -25,10 +26,6 @@ class AuthProvider extends ChangeNotifier {
   String? _localAvatarUri;
   String _profileMode = 'poster';
 
-  // City gate — persisted across sessions (cleared only on full account wipe)
-  bool _cityVerified = false;
-  String _cityGateReason = '';
-
   final GoogleSignIn _googleSignIn = GoogleSignIn(
     serverClientId: '874101147109-st0q2a3h1r2109vguko7g1cu0nmabcju.apps.googleusercontent.com',
     scopes: ['email', 'profile'],
@@ -43,10 +40,6 @@ class AuthProvider extends ChangeNotifier {
       _googleProfileCompletionRequired;
   bool get pendingSuccessScreen => _pendingSuccessScreen;
   bool get googleAuthPending => _googleAuthPending;
-  bool get cityVerified => _cityVerified;
-  // restricted = authenticated but city not verified and a reason is recorded
-  bool get cityRestricted => !_cityVerified && _cityGateReason.isNotEmpty;
-  String get cityGateReason => _cityGateReason;
   String get profileMode => _profileMode;
   bool get isPosterMode => _profileMode == 'poster';
   bool get isHelperMode => _profileMode == 'helper';
@@ -59,8 +52,6 @@ class AuthProvider extends ChangeNotifier {
     // "Invalid or expired token" response automatically clears the session
     // and redirects the user to login — regardless of where in the app it fires.
     ApiService.onUnauthorized = _handleUnauthorized;
-    _cityVerified = StorageService.getBool('city_verified');
-    _cityGateReason = StorageService.getString('city_gate_reason') ?? '';
     _profileMode = StorageService.getString('profile_mode') ?? 'poster';
     _checkAuth();
   }
@@ -125,6 +116,14 @@ class AuthProvider extends ChangeNotifier {
         if (localGender != null) cachedJson['gender'] = localGender;
       }
       _user = User.fromJson(cachedJson);
+      if (_user!.isConfirmedUnderage) {
+        await StorageService.clearSession();
+        _user = null;
+        _error = kMinAgeErrorMessage;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        return;
+      }
       final cachedMode = StorageService.getString('profile_mode');
       if (cachedMode != null && cachedMode.isNotEmpty) {
         _profileMode = cachedMode;
@@ -159,6 +158,14 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      if (_user!.isConfirmedUnderage) {
+        await StorageService.clearSession();
+        _user = null;
+        _error = kMinAgeErrorMessage;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        return;
+      }
       final activeMode = StorageService.getString('profile_mode');
       if (activeMode != null && activeMode.isNotEmpty) {
         _profileMode = activeMode;
@@ -207,6 +214,15 @@ class AuthProvider extends ChangeNotifier {
             StorageService.touchSessionActivity(),
         ]);
         _user = User.fromJson(data['user'] ?? data);
+        if (_user!.isConfirmedUnderage) {
+          await StorageService.clearSession();
+          _user = null;
+          _error = kMinAgeErrorMessage;
+          _status = AuthStatus.unauthenticated;
+          _loading = false;
+          notifyListeners();
+          return false;
+        }
         await Future.wait([
           StorageService.saveUserId(_user!.id),
           StorageService.saveUserJson(_user!.toJson()),
@@ -243,6 +259,17 @@ class AuthProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
+    // ── Age eligibility check (18+ required under Indian law) ───────────────
+    if (dob != null && dob.trim().isNotEmpty) {
+      final parsedDob = DateTime.tryParse(dob.trim());
+      if (parsedDob != null && !isEligibleAdultDob(parsedDob)) {
+        _error = kMinAgeErrorMessage;
+        _loading = false;
+        notifyListeners();
+        return false;
+      }
+    }
+
     // ── Pre-flight connectivity check ─────────────────────────────────────
     final connectivityResults = await Connectivity().checkConnectivity();
     final hasNetwork =
@@ -264,7 +291,7 @@ class AuthProvider extends ChangeNotifier {
       if (referralCode != null && referralCode.isNotEmpty)
         'referral_code': referralCode.trim(),
       if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
-      'terms_version': '2026-05-22',
+      'terms_version': kTermsVersion,
     };
 
     // ── Attempt registration (one auto-retry on transient network errors) ──
@@ -281,11 +308,21 @@ class AuthProvider extends ChangeNotifier {
 
         final token = data['token'] ?? data['access_token'];
         if (token != null) {
+          final parsedUser = User.fromJson(data['user'] ?? data);
+          if (parsedUser.isConfirmedUnderage) {
+            await StorageService.clearSession();
+            _user = null;
+            _error = kMinAgeErrorMessage;
+            _status = AuthStatus.unauthenticated;
+            _loading = false;
+            notifyListeners();
+            return false;
+          }
           await StorageService.saveToken(token);
-          _user = User.fromJson(data['user'] ?? data);
+          _user = parsedUser;
           await StorageService.saveUserId(_user!.id);
           await StorageService.saveUserJson(_user!.toJson());
-            await StorageService.touchSessionActivity();
+          await StorageService.touchSessionActivity();
           _status = AuthStatus.authenticated;
           _pendingSuccessScreen = true;
         }
@@ -317,33 +354,6 @@ class AuthProvider extends ChangeNotifier {
   void clearPendingSuccessScreen() {
     _pendingSuccessScreen = false;
     _googleProfileCompletionRequired = false;
-    notifyListeners();
-  }
-
-  void setCityVerified() {
-    _cityVerified = true;
-    _cityGateReason = '';
-    unawaited(StorageService.setBool('city_verified', true));
-    unawaited(StorageService.setString('city_gate_reason', ''));
-    notifyListeners();
-  }
-
-  void setCityBlocked() {
-    _cityGateReason = 'blocked';
-    unawaited(StorageService.setString('city_gate_reason', 'blocked'));
-    notifyListeners();
-  }
-
-  void setCityMismatch() {
-    _cityGateReason = 'mismatch';
-    unawaited(StorageService.setString('city_gate_reason', 'mismatch'));
-    notifyListeners();
-  }
-
-  // Clears the gate reason so the popup re-shows for a retry attempt
-  void resetCityGateForRetry() {
-    _cityGateReason = '';
-    unawaited(StorageService.setString('city_gate_reason', ''));
     notifyListeners();
   }
 
@@ -414,6 +424,14 @@ class AuthProvider extends ChangeNotifier {
         await StorageService.saveGender(userJson['gender'].toString());
       }
       _user = User.fromJson(userJson);
+      if (_user!.isConfirmedUnderage) {
+        await StorageService.clearSession();
+        _user = null;
+        _error = kMinAgeErrorMessage;
+        _status = AuthStatus.unauthenticated;
+        notifyListeners();
+        return;
+      }
       final activeMode = StorageService.getString('profile_mode');
       if (activeMode != null && activeMode.isNotEmpty) {
         _profileMode = activeMode;
@@ -783,6 +801,13 @@ class AuthProvider extends ChangeNotifier {
     _googleProfileCompletionRequired = false;
     notifyListeners();
 
+    if (dob != null && !isEligibleAdultDob(dob)) {
+      _error = kMinAgeErrorMessage;
+      _loading = false;
+      notifyListeners();
+      return false;
+    }
+
     try {
       final account = await _googleSignIn.signIn();
       if (account == null) {
@@ -827,13 +852,26 @@ class AuthProvider extends ChangeNotifier {
           'dob': '${dob.year}-${dob.month.toString().padLeft(2, '0')}-${dob.day.toString().padLeft(2, '0')}',
         if (phone != null && phone.isNotEmpty) 'phone': phone,
         if (termsAcceptedAt != null) 'terms_accepted_at': termsAcceptedAt,
-        'terms_version': '2026-05-22',
+        'terms_version': kTermsVersion,
       }, timeout: const Duration(seconds: 60));
 
       final token = data['token'] ?? data['access_token'];
       if (token != null) {
         await StorageService.saveToken(token);
         _user = User.fromJson(data['user'] ?? data);
+        if (_user!.isConfirmedUnderage) {
+          await StorageService.clearSession();
+          try { await _googleSignIn.signOut(); } catch (_) {}
+          _user = null;
+          _status = AuthStatus.unauthenticated;
+          _googleAuthPending = false;
+          _googleProfileCompletionRequired = false;
+          _pendingSuccessScreen = false;
+          _error = kMinAgeErrorMessage;
+          _loading = false;
+          notifyListeners();
+          return false;
+        }
         await StorageService.saveUserId(_user!.id);
         await StorageService.saveUserJson(_user!.toJson());
         await StorageService.touchSessionActivity();
@@ -909,8 +947,13 @@ class AuthProvider extends ChangeNotifier {
     String? termsAcceptedAt,
   }) async {
     _error = null;
+    if (dob != null && !isEligibleAdultDob(dob)) {
+      _error = kMinAgeErrorMessage;
+      notifyListeners();
+      return false;
+    }
     try {
-      final body = <String, dynamic>{'terms_version': '2026-05-22'};
+      final body = <String, dynamic>{'terms_version': kTermsVersion};
       if (name != null && name.isNotEmpty) body['name'] = name;
       if (phone != null && phone.isNotEmpty) body['phone'] = phone;
       if (dob != null) {
@@ -926,6 +969,11 @@ class AuthProvider extends ChangeNotifier {
         notifyListeners();
       }
       return true;
+    } on ApiException catch (e) {
+      debugPrint('[updateGoogleProfile] ApiException: ${e.message}');
+      _error = e.message;
+      notifyListeners();
+      return false;
     } catch (e) {
       debugPrint('[updateGoogleProfile] error: $e');
       _error = 'Failed to update profile. Please try again.';

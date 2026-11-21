@@ -25,7 +25,7 @@ class SplashScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               const Text(
-                'Find • Work • Earn',
+                'Find • Work • Earn · 18+ Only',
                 style: TextStyle(color: AppColors.gray, fontSize: 14),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/task.dart';
 import '../services/api_service.dart';
+import '../services/location_service.dart';
 import '../services/storage_service.dart';
 
 class TaskProvider extends ChangeNotifier {
@@ -332,6 +333,65 @@ class TaskProvider extends ChangeNotifier {
             }
           }
 
+          // Preserve / fetch drop/delivery location for grocery, delivery & moving tasks
+          // in case /tasks/<id>/details omitted drop_location fields.
+          if (task.isDeliveryCategory &&
+              (task.dropLatitude == null ||
+                  task.dropLongitude == null ||
+                  task.dropAddress == null ||
+                  task.dropAddress!.trim().isEmpty)) {
+            Task? donor = cachedForType;
+            if (donor == null ||
+                (donor.dropLatitude == null && (donor.dropAddress == null || donor.dropAddress!.trim().isEmpty))) {
+              for (final list in [_myAcceptedTasks, _myPostedTasks, _browseTasks, _myCompletedTasks]) {
+                for (final t in list) {
+                  if (t.id == id &&
+                      (t.dropLatitude != null || (t.dropAddress != null && t.dropAddress!.trim().isNotEmpty))) {
+                    donor = t;
+                    break;
+                  }
+                }
+              }
+            }
+            if (donor != null &&
+                (donor.dropLatitude != null || (donor.dropAddress != null && donor.dropAddress!.trim().isNotEmpty))) {
+              if (task.dropLatitude == null && donor.dropLatitude != null) {
+                enriched['drop_location_lat'] = donor.dropLatitude;
+                needsReparse = true;
+              }
+              if (task.dropLongitude == null && donor.dropLongitude != null) {
+                enriched['drop_location_lng'] = donor.dropLongitude;
+                needsReparse = true;
+              }
+              if ((task.dropAddress == null || task.dropAddress!.trim().isEmpty) &&
+                  donor.dropAddress != null &&
+                  donor.dropAddress!.trim().isNotEmpty) {
+                enriched['drop_location_address'] = donor.dropAddress;
+                enriched['drop_address'] = donor.dropAddress;
+                needsReparse = true;
+              }
+            } else if (path.endsWith('/details')) {
+              // Secondary fetch from /tasks/$id which includes drop_location
+              try {
+                final altData = await ApiService.get('/tasks/$id');
+                final altJson = altData is Map<String, dynamic>
+                    ? (altData['task'] ?? altData['data'] ?? altData)
+                    : null;
+                if (altJson is Map<String, dynamic>) {
+                  if (altJson['drop_location'] != null) {
+                    enriched['drop_location'] = altJson['drop_location'];
+                    needsReparse = true;
+                  }
+                  if (altJson['drop_address'] != null && altJson['drop_address'].toString().trim().isNotEmpty) {
+                    enriched['drop_address'] = altJson['drop_address'];
+                    enriched['drop_location_address'] = altJson['drop_address'];
+                    needsReparse = true;
+                  }
+                }
+              } catch (_) {}
+            }
+          }
+
           if (needsReparse) {
             task = Task.fromJson(enriched);
           }
@@ -393,11 +453,15 @@ class TaskProvider extends ChangeNotifier {
     return null;
   }
 
+  String? _lastCreatedTaskId;
+  String? get lastCreatedTaskId => _lastCreatedTaskId;
+
   Future<bool> postTask(Map<String, dynamic> taskData) async {
     try {
       final response = await ApiService.post('/tasks', body: taskData);
       final newTaskId = _extractNewTaskId(response);
-      await fetchMyTasks();
+      _lastCreatedTaskId = newTaskId;
+      fetchMyTasks().catchError((_) {});
       if (newTaskId != null && newTaskId.isNotEmpty) {
         _triggerNewTaskNotifications(newTaskId);
       }
@@ -423,14 +487,9 @@ class TaskProvider extends ChangeNotifier {
   }
 
   void _triggerNewTaskNotifications(String taskId) {
-    Future.microtask(() async {
-      try {
-        await ApiService.post('/tasks/$taskId/notify-skills');
-      } catch (_) {}
-      try {
-        await ApiService.post('/tasks/$taskId/notify-nearby');
-      } catch (_) {}
-    });
+    // The backend POST /api/tasks automatically dispatches skill-matched and
+    // nearby notifications asynchronously in a daemon thread upon task creation.
+    // Client-side redundant HTTP calls are suppressed to avoid double notifications.
   }
 
   Future<bool> acceptTask(String taskId) async {
@@ -457,6 +516,27 @@ class TaskProvider extends ChangeNotifier {
           );
 
       final response = await ApiService.post('/tasks/$taskId/accept');
+      // Immediately seed helper's live GPS into /tracking/update-location for
+      // physical/on-site/delivery tasks only (Professional/Freelancer remote tasks
+      // are exempt from live GPS tracking).
+      final isRemoteProfessional =
+          browseTask != null && Task.isFreelancerCategory(browseTask.category);
+      if (!isRemoteProfessional) {
+        LocationService.getAccuratePosition().then((pos) {
+          if (pos != null) {
+            ApiService.post('/tracking/update-location', body: {
+              'taskId': int.tryParse(taskId) ?? taskId,
+              'location': {
+                'lat': pos.latitude,
+                'lng': pos.longitude,
+                'accuracy': pos.accuracy,
+                'heading': pos.heading,
+                'speed': pos.speed,
+              },
+            }).catchError((_) => <String, dynamic>{});
+          }
+        }).catchError((_) {});
+      }
       _browseTasks.removeWhere((t) => t.id == taskId);
 
       if (browseTask != null) {
@@ -514,13 +594,27 @@ class TaskProvider extends ChangeNotifier {
     }
   }
 
+  Map<String, dynamic>? _lastAbandonResult;
+  Map<String, dynamic>? get lastAbandonResult => _lastAbandonResult;
+
   Future<bool> abandonTask(String taskId) async {
     try {
-      await ApiService.post('/tasks/$taskId/abandon');
-      await fetchMyTasks();
+      _lastAbandonResult = null;
+      final res = await ApiService.post('/tasks/$taskId/abandon');
+      _detailCache.remove(taskId);
+      if (res is Map<String, dynamic>) {
+        _lastAbandonResult = res;
+      } else {
+        _lastAbandonResult = {'success': true};
+      }
+      fetchMyTasks().catchError((_) {});
       return true;
     } on ApiException catch (e) {
       _error = e.message;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = e.toString();
       notifyListeners();
       return false;
     }

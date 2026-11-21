@@ -5,15 +5,17 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
-import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'proof_camera_screen.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import '../../models/grocery_item.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
+import '../../widgets/task_released_dialog.dart';
 
 class TaskInProgressScreen extends StatefulWidget {
   final String taskId;
@@ -23,7 +25,8 @@ class TaskInProgressScreen extends StatefulWidget {
   State<TaskInProgressScreen> createState() => _TaskInProgressScreenState();
 }
 
-class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
+class _TaskInProgressScreenState extends State<TaskInProgressScreen>
+    with WidgetsBindingObserver {
   Task? _task;
   bool _loading = true;
   bool _initialLoad = true; // show spinner only on first load; polls are silent
@@ -34,11 +37,13 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   String? _proofPath;
   String? _submittedProofPath; // local path kept after submit for proof preview fallback
   Timer? _pollTimer;
+  Timer? _gpsHeartbeatTimer;
   StreamSubscription<Position>? _locationSub;
   String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
   String? _cachedProofValue;
   Uint8List? _cachedProofBytes;
+  final Set<int> _pickedItemIndices = {}; // tracks checked-off grocery items
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
@@ -64,17 +69,29 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
   bool get _isDone =>
       _task != null && _doneStatuses.contains(_task!.status);
 
+  bool _locationUpdatesStarted = false;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
-    _startLocationUpdates();
-    // Poll for status changes every 30 s so the helper is redirected
+    // Poll for status changes every 15 s so the helper is redirected
     // automatically if the poster cancels or payment is released.
     _pollTimer = Timer.periodic(
       const Duration(seconds: 15),
       (_) { if (mounted) _load(); },
     );
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Push an immediate fresh GPS fix whenever helper returns from Google Maps / background.
+    if (state == AppLifecycleState.resumed &&
+        _task != null &&
+        !Task.isFreelancerCategory(_task!.category)) {
+      _sendFreshGpsFix();
+    }
   }
 
   Future<void> _load() async {
@@ -112,6 +129,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       _pollTimer?.cancel();
       _showCancelledDialog();
       return;
+    }
+
+    // Start live GPS sharing once task is loaded (non-Professional categories only).
+    if (!_locationUpdatesStarted &&
+        _task != null &&
+        !Task.isFreelancerCategory(_task!.category)) {
+      _locationUpdatesStarted = true;
+      _startLocationUpdates();
     }
 
     // When status first transitions to payment_released, show earnings popup.
@@ -291,27 +316,78 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
+    _gpsHeartbeatTimer?.cancel();
     _locationSub?.cancel();
     super.dispose();
   }
 
+  Future<void> _pushHelperLatLng(
+    double lat,
+    double lng, {
+    double? accuracy,
+    double? heading,
+    double? speed,
+  }) async {
+    if (!mounted) return;
+    // Professional / Freelancer tasks are remote work-from-home tasks and
+    // are strictly exempt from live GPS tracking.
+    if (_task == null || Task.isFreelancerCategory(_task!.category)) {
+      return;
+    }
+    if (_verifyPendingStatuses.contains(_task!.status) ||
+        _paymentReleasedStatuses.contains(_task!.status) ||
+        _doneStatuses.contains(_task!.status)) {
+      return;
+    }
+    try {
+      await ApiService.post('/tracking/update-location', body: {
+        'taskId': int.tryParse(widget.taskId) ?? widget.taskId,
+        'location': {
+          'lat': lat,
+          'lng': lng,
+          if (accuracy != null) 'accuracy': accuracy,
+          if (heading != null) 'heading': heading,
+          if (speed != null) 'speed': speed,
+        },
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _sendFreshGpsFix() async {
+    final pos = await LocationService.getAccuratePosition();
+    if (pos != null) {
+      await _pushHelperLatLng(
+        pos.latitude,
+        pos.longitude,
+        accuracy: pos.accuracy,
+        heading: pos.heading,
+        speed: pos.speed,
+      );
+    }
+  }
+
   void _startLocationUpdates() {
+    // Immediate fresh GPS fix + 10-second heartbeat so poster always gets accurate GPS
+    // even when helper is stationary at store/doorstep.
+    _sendFreshGpsFix();
+    _gpsHeartbeatTimer?.cancel();
+    _gpsHeartbeatTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) {
+        if (mounted) _sendFreshGpsFix();
+      },
+    );
+
     _locationSub = LocationService.getLocationStream().listen((position) async {
-      if (!mounted) return;
-      // Only send location updates while task is still active
-      if (_task != null &&
-          !_verifyPendingStatuses.contains(_task!.status) &&
-          !_paymentReleasedStatuses.contains(_task!.status) &&
-          !_doneStatuses.contains(_task!.status)) {
-        try {
-          await ApiService.post('/tracking/update-location', body: {
-            'taskId': widget.taskId,
-            'latitude': position.latitude,
-            'longitude': position.longitude,
-          });
-        } catch (_) {}
-      }
+      await _pushHelperLatLng(
+        position.latitude,
+        position.longitude,
+        accuracy: position.accuracy,
+        heading: position.heading,
+        speed: position.speed,
+      );
     });
   }
 
@@ -328,6 +404,11 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           '&destination=${Uri.encodeComponent(query.trim())}'
           '&travelmode=driving');
     } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Location coordinates/address not available yet')),
+        );
+      }
       return;
     }
     if (await canLaunchUrl(uri)) {
@@ -374,67 +455,14 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     }
   }
 
-  Future<void> _whatsappPoster() async {
-    final raw = _task?.posterPhone?.replaceAll(RegExp(r'[^0-9]'), '');
-    if (raw == null || raw.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Phone number not available for this poster.')),
-        );
-      }
-      return;
-    }
-    final full = raw.startsWith('91') ? raw : '91$raw';
-    final uri = Uri.parse('https://wa.me/$full');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open WhatsApp.')),
-      );
-    }
-  }
-
   Future<void> _pickProof() async {
-    final picker = ImagePicker();
-    await showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
-              child: Text('Add Completion Proof',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Take Photo'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final f = await picker.pickImage(
-                    source: ImageSource.camera, imageQuality: 70);
-                if (mounted && f != null) setState(() => _proofPath = f.path);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Choose from Gallery'),
-              onTap: () async {
-                Navigator.pop(ctx);
-                final f = await picker.pickImage(
-                    source: ImageSource.gallery, imageQuality: 70);
-                if (mounted && f != null) setState(() => _proofPath = f.path);
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
-      ),
+    final capturedPath =
+        await Navigator.of(context, rootNavigator: true).push<String>(
+      MaterialPageRoute(builder: (_) => const ProofCameraScreen()),
     );
+    if (mounted && capturedPath != null && capturedPath.isNotEmpty) {
+      setState(() => _proofPath = capturedPath);
+    }
   }
 
   // ── Step 1: Helper submits proof for verification ─────────────────────────
@@ -514,36 +542,85 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Release Task'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 24),
+            SizedBox(width: 8),
+            Text('Release Task?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          ],
+        ),
         content: const Text(
-            'Releasing a task without completing it may result in a penalty.\n\n'
-            'More than 3 releases may trigger a 48-hour account suspension.'),
+          'Releasing a task without completing it may result in a 10% penalty deducted from your wallet.\n\n'
+          'Releasing more than 3 tasks today will trigger an automatic 48-hour account suspension.',
+          style: TextStyle(height: 1.45, color: AppColors.darkLight, fontSize: 13.5),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.gray, fontWeight: FontWeight.w600)),
           ),
-          TextButton(
+          ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Release',
-                style: TextStyle(color: AppColors.danger)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Release Task', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
     if (confirm != true || !mounted) return;
 
+    // Immediately stop polling timer and location stream to prevent background conflict
+    _pollTimer?.cancel();
+    _pollTimer = null;
+    _locationSub?.cancel();
+    _locationSub = null;
+
     setState(() => _abandoning = true);
-    final ok = await context.read<TaskProvider>().abandonTask(widget.taskId);
+    final provider = context.read<TaskProvider>();
+    final taskTitle = _task?.title ?? 'Task #${widget.taskId}';
+    final ok = await provider.abandonTask(widget.taskId);
     if (!mounted) return;
     setState(() => _abandoning = false);
+
     if (ok) {
-      context.go('/my-tasks');
+      final res = provider.lastAbandonResult;
+      final penalty = (res?['releasePenalty'] as num?)?.toDouble() ?? 0.0;
+      final dailyCount = (res?['dailyReleaseCount'] as num?)?.toInt() ?? 0;
+      final isSuspended = res?['suspended'] == true;
+      final message = res?['message']?.toString();
+
+      await TaskReleasedDialog.show(
+        context: context,
+        taskTitle: taskTitle,
+        releasePenalty: penalty,
+        dailyReleasesUsed: dailyCount,
+        isSuspended: isSuspended,
+        message: message,
+        onHome: () {
+          if (mounted) context.go('/home');
+        },
+      );
+
+      if (mounted) {
+        context.go('/home');
+      }
     } else {
+      // Re-enable polling timer and location if release failed
+      _pollTimer = Timer.periodic(
+        const Duration(seconds: 15),
+        (_) { if (mounted) _load(); },
+      );
+      _startLocationUpdates();
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-              context.read<TaskProvider>().error ?? 'Failed to release task'),
+              provider.error ?? 'Failed to release task'),
           backgroundColor: AppColors.danger,
         ),
       );
@@ -586,24 +663,153 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     final hasPhone = task.posterPhone != null && task.posterPhone!.trim().isNotEmpty;
     final busy = _submitting || _completing || _abandoning;
 
+    final isActivePhase =
+        !_isPaymentReleased && !_isVerifyPending && !_proofSubmitted && !_isDone;
+
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
       bottomNavigationBar: _isPaymentReleased
-          ? SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: GradientButton(
-                  label: 'Mark as Completed',
-                  loading: _completing,
-                  icon: Icons.check_circle_outline,
-                  onPressed: _completing ? () {} : _finalMarkComplete,
+          ? Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: const Border(
+                  top: BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 12,
+                    offset: const Offset(0, -3),
+                  ),
+                ],
+              ),
+              child: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                  child: GradientButton(
+                    label: 'Mark as Completed',
+                    loading: _completing,
+                    icon: Icons.check_circle_outline,
+                    onPressed: _completing ? () {} : _finalMarkComplete,
+                  ),
                 ),
               ),
             )
-          : null,
+          : isActivePhase
+              ? Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: const Border(
+                      top: BorderSide(color: Color(0xFFE2E8F0)),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.05),
+                        blurRadius: 12,
+                        offset: const Offset(0, -3),
+                      ),
+                    ],
+                  ),
+                  child: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton.icon(
+                              onPressed: busy ? null : _submitForVerification,
+                              icon: _submitting
+                                  ? const SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2.2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.verified_outlined,
+                                      size: 19),
+                              label: const Text(
+                                'Submit for Verification',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 0.1,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3B43E6),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: OutlinedButton.icon(
+                              onPressed: busy ? null : _releaseTask,
+                              icon: _abandoning
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Color(0xFFDC2626),
+                                      ),
+                                    )
+                                  : const Icon(Icons.exit_to_app_outlined,
+                                      size: 18),
+                              label: const Text(
+                                'Release Task',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFFDC2626),
+                                side: const BorderSide(
+                                    color: Color(0xFFFCA5A5), width: 1.3),
+                                backgroundColor: const Color(0xFFFEF2F2),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(24),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : null,
       appBar: AppBar(
-        title: const Text('Task In Progress'),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+        ),
+        title: const Text(
+          'Task In Progress',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 18,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
+          icon: const Icon(Icons.arrow_back_ios_new_rounded,
+              color: Color(0xFF0F172A), size: 20),
           onPressed: () {
             if (GoRouter.of(context).canPop()) {
               context.pop();
@@ -614,7 +820,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh_rounded, color: Color(0xFF0F172A)),
             tooltip: 'Refresh',
             onPressed: _load,
           ),
@@ -624,361 +830,636 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
         onRefresh: _load,
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 40),
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Status header banner ─────────────────────────────────
-              _buildStatusBanner(task),
-
-              const SizedBox(height: 14),
-
-              // ── Navigate to Location (only while actively working) ───
-              if (!_isVerifyPending && !_isDone)
-                _SectionCard(
-                  title: task.isDeliveryCategory ? 'Pickup & Drop Locations' : 'Task Location',
-                  icon: task.isDeliveryCategory ? Icons.alt_route_rounded : Icons.location_on_outlined,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              // ── Completed status banner (only shown when truly done) ──
+              if (_isDone) ...[
+                Container(
+                  width: double.infinity,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFA7F3D0)),
+                  ),
+                  child: const Row(
                     children: [
-                      if (task.isDeliveryCategory) ...[
-                        // Pickup
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.radio_button_checked,
-                                color: AppColors.primary, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Pickup Location',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                          color: AppColors.primary)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    task.effectivePickupAddress.isNotEmpty
-                                        ? task.effectivePickupAddress
-                                        : (task.address ?? 'Pickup location'),
-                                    style: const TextStyle(
-                                        color: AppColors.gray,
-                                        fontSize: 13,
-                                        height: 1.3),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                      Icon(Icons.check_circle_rounded,
+                          color: Color(0xFF15803D), size: 22),
+                      SizedBox(width: 10),
+                      Text(
+                        'Task Completed',
+                        style: TextStyle(
+                          color: Color(0xFF166534),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
                         ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          onPressed: () => _openNavigationTo(
-                            task.latitude,
-                            task.longitude,
-                            task.effectivePickupAddress,
-                          ),
-                          icon: const Icon(Icons.navigation_rounded, size: 16),
-                          label: const Text('Navigate to Pickup'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.primary,
-                            side: const BorderSide(color: AppColors.primary),
-                            minimumSize: const Size(double.infinity, 38),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 10),
-                          child: Divider(height: 1),
-                        ),
-                        // Drop
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Icon(Icons.location_on,
-                                color: AppColors.danger, size: 16),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Drop / Destination Location',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 12,
-                                          color: AppColors.danger)),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    task.effectiveDropAddress ?? 'Drop location specified by poster',
-                                    style: const TextStyle(
-                                        color: AppColors.dark,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.3),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ElevatedButton.icon(
-                          onPressed: () => _openNavigationTo(
-                            task.dropLatitude ?? (task.dropAddress != null ? 0 : task.latitude),
-                            task.dropLongitude ?? (task.dropAddress != null ? 0 : task.longitude),
-                            task.effectiveDropAddress,
-                          ),
-                          icon: const Icon(Icons.navigation_rounded, size: 16),
-                          label: const Text('Navigate to Drop Location'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.danger,
-                            foregroundColor: Colors.white,
-                            minimumSize: const Size(double.infinity, 42),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                      ] else ...[
-                        if (task.address != null && task.address!.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Text(
-                              task.address!,
-                              style: const TextStyle(
-                                  color: AppColors.gray,
-                                  fontSize: 13,
-                                  height: 1.4),
-                            ),
-                          ),
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _openNavigation,
-                            icon: const Icon(Icons.navigation_rounded, size: 18),
-                            label: const Text('Navigate to Task Location'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ],
                   ),
                 ),
+                const SizedBox(height: 12),
+              ],
 
-              if (!_isVerifyPending && !_isDone) const SizedBox(height: 12),
-
-              // ── Poster Contact ───────────────────────────────────────
-              _SectionCard(
-                title: 'Task Poster',
-                icon: Icons.person_outline,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+              // ── Enlarged Single-Row Task Poster Card (Top) ───────────
+              Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0F172A).withValues(alpha: 0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
                   children: [
-                    // Poster info row
-                    Row(
-                      children: [
-                        CircleAvatar(
-                          radius: 24,
-                          backgroundColor:
-                              AppColors.primary.withValues(alpha: 0.12),
-                          backgroundImage: (task.posterAvatar != null &&
-                                  task.posterAvatar!.isNotEmpty)
-                              ? NetworkImage(task.posterAvatar!)
-                              : null,
-                          onBackgroundImageError:
-                              (task.posterAvatar != null &&
-                                      task.posterAvatar!.isNotEmpty)
-                                  ? (_, __) {}
-                                  : null,
-                          child: (task.posterAvatar == null ||
-                                  task.posterAvatar!.isEmpty)
-                              ? Text(
-                                  (task.posterName.isNotEmpty &&
-                                          task.posterName != 'Anonymous')
-                                      ? task.posterName[0].toUpperCase()
-                                      : '?',
-                                  style: const TextStyle(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 18),
-                                )
-                              : null,
+                    Container(
+                      padding: const EdgeInsets.all(2.5),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFC7D2FE),
+                          width: 2,
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
+                      ),
+                      child: CircleAvatar(
+                        radius: 26,
+                        backgroundColor: const Color(0xFF5B4BDB),
+                        backgroundImage: (task.posterAvatar != null &&
+                                task.posterAvatar!.isNotEmpty)
+                            ? NetworkImage(task.posterAvatar!)
+                            : null,
+                        onBackgroundImageError: (task.posterAvatar != null &&
+                                task.posterAvatar!.isNotEmpty)
+                            ? (_, __) {}
+                            : null,
+                        child: (task.posterAvatar == null ||
+                                task.posterAvatar!.isEmpty)
+                            ? Text(
                                 (task.posterName.isNotEmpty &&
                                         task.posterName != 'Anonymous')
-                                    ? task.posterName
-                                    : 'Task Poster',
+                                    ? task.posterName[0].toUpperCase()
+                                    : '?',
                                 style: const TextStyle(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 15,
-                                    color: AppColors.dark),
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 20,
+                                ),
+                              )
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            (task.posterName.isNotEmpty &&
+                                    task.posterName != 'Anonymous')
+                                ? task.posterName
+                                : 'Task Poster',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 17.5,
+                              color: Color(0xFF0F172A),
+                              letterSpacing: -0.2,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Text(
+                                'Task Poster',
+                                style: TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                               if (task.posterRating > 0) ...[
-                                const SizedBox(height: 2),
-                                Row(
-                                  children: [
-                                    const Icon(Icons.star,
-                                        size: 13, color: AppColors.warning),
-                                    const SizedBox(width: 2),
-                                    Text(
-                                      task.posterRating.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                          color: AppColors.gray, fontSize: 12),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                              if (hasPhone)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
-                                  child: Text(
-                                    task.posterPhone!.trim(),
-                                    style: const TextStyle(
-                                        color: AppColors.gray, fontSize: 12),
+                                const Text(
+                                  '  •  ',
+                                  style: TextStyle(
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 13,
                                   ),
                                 ),
+                                const Icon(Icons.star_rounded,
+                                    size: 16, color: AppColors.warning),
+                                const SizedBox(width: 2),
+                                Text(
+                                  task.posterRating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    color: Color(0xFF334155),
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ],
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-
-                    const SizedBox(height: 12),
-
-                    // Contact buttons stacked to avoid overflow
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _callPoster,
-                        icon: const Icon(Icons.call, size: 17),
-                        label: Text(
-                          hasPhone ? 'Call Poster' : 'Call (no number)',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor:
-                              hasPhone ? AppColors.success : AppColors.grayLight,
-                          side: BorderSide(
+                    const SizedBox(width: 10),
+                    // Improved Call icon button
+                    Tooltip(
+                      message: hasPhone ? 'Call Poster' : 'Phone not available',
+                      child: Material(
+                        color: hasPhone
+                            ? const Color(0xFF16A34A)
+                            : const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(14),
+                        elevation: hasPhone ? 2 : 0,
+                        shadowColor:
+                            const Color(0xFF16A34A).withValues(alpha: 0.35),
+                        child: InkWell(
+                          onTap: _callPoster,
+                          borderRadius: BorderRadius.circular(14),
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.phone_in_talk_rounded,
+                              size: 23,
                               color: hasPhone
-                                  ? AppColors.success
-                                  : AppColors.grayLight),
-                          minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                                  ? Colors.white
+                                  : const Color(0xFF94A3B8),
+                            ),
+                          ),
                         ),
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: () {
-                          if (_task == null) return;
-                          context.push(
-                            '/chat/' + _task!.id,
-                            extra: {
-                              'taskId': _task!.id,
-                              'taskTitle': _task!.title,
-                              'otherName': _task!.posterName ?? 'Poster',
-                              'otherRole': 'Task Poster',
-                              'otherPhone': _task!.posterPhone,
-                              'category': _task!.category,
-                              'budget': _task!.budget,
-                              'status': _task!.status,
-                              'isPoster': false,
-                            },
-                          );
-                        },
-                        icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
-                        label: const Text(
-                          'Chat with Poster',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF6366F1),
-                          side: const BorderSide(color: Color(0xFF6366F1)),
-                          minimumSize: const Size(double.infinity, 44),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                    const SizedBox(width: 10),
+                    // Improved Message icon button
+                    Tooltip(
+                      message: 'Message Poster',
+                      child: Material(
+                        color: const Color(0xFF4F46E5),
+                        borderRadius: BorderRadius.circular(14),
+                        elevation: 2,
+                        shadowColor:
+                            const Color(0xFF4F46E5).withValues(alpha: 0.35),
+                        child: InkWell(
+                          onTap: () {
+                            if (_task == null) return;
+                            context.push(
+                              '/chat/${_task!.id}',
+                              extra: {
+                                'taskId': _task!.id,
+                                'taskTitle': _task!.title,
+                                'otherName': _task!.posterName,
+                                'otherRole': 'Task Poster',
+                                'otherPhone': _task!.posterPhone,
+                                'category': _task!.category,
+                                'budget': _task!.budget,
+                                'status': _task!.status,
+                                'isPoster': false,
+                              },
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(14),
+                          child: const SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: Icon(
+                              Icons.forum_rounded,
+                              size: 22,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-
-                    if (!hasPhone)
-                      const Padding(
-                        padding: EdgeInsets.only(top: 6),
-                        child: Text(
-                          'Contact number was not provided by the poster.',
-                          style:
-                              TextStyle(color: AppColors.grayLight, fontSize: 11),
-                        ),
-                      ),
                   ],
                 ),
               ),
 
               const SizedBox(height: 12),
 
-              // ── Task Details ─────────────────────────────────────────
-              _SectionCard(
-                title: 'Task Details',
-                icon: Icons.description_outlined,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _DetailRow('Category', task.category),
-                    const Divider(height: 14),
-                    _DetailRow(
-                        'Earning', '₹${task.budget.toStringAsFixed(0)}'),
-                    const Divider(height: 14),
-                    _DetailRow('Status', task.statusLabel),
-                    const Divider(height: 14),
-                    const Text('Description',
-                        style: TextStyle(
-                            color: AppColors.gray, fontSize: 12)),
-                    const SizedBox(height: 4),
-                    Text(
-                      task.description,
-                      style: const TextStyle(
-                          color: AppColors.dark,
-                          fontSize: 13,
-                          height: 1.5),
-                    ),
-                  ],
-                ),
-              ),
+              // ── Concept A Connected Route Timeline Card ──────────────
+              if (!_isVerifyPending && !_isDone)
+                Builder(builder: (context) {
+                  final isGrocery = Task.isGroceryCategory(task.category);
+                  final pickupAddr = GroceryCatalog.unescapeHtml(
+                    task.effectivePickupAddress.isNotEmpty
+                        ? task.effectivePickupAddress
+                        : (task.address ??
+                            (isGrocery ? 'Store location' : 'Pickup location')),
+                  );
+                  final dropAddr = GroceryCatalog.unescapeHtml(
+                    task.effectiveDropAddress ??
+                        (isGrocery
+                            ? 'Delivery location specified by poster'
+                            : 'Drop location specified by poster'),
+                  );
 
-              const SizedBox(height: 20),
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: task.isDeliveryCategory
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // STEP 1 • STORE / PICKUP
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: isGrocery
+                                          ? const Color(0xFFDCFCE7)
+                                          : const Color(0xFFE0E7FF),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      isGrocery
+                                          ? Icons.storefront_rounded
+                                          : Icons.my_location_rounded,
+                                      size: 18,
+                                      color: isGrocery
+                                          ? const Color(0xFF15803D)
+                                          : AppColors.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 11),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          isGrocery
+                                              ? 'STEP 1 • STORE'
+                                              : 'STEP 1 • PICKUP',
+                                          style: const TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.6,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          pickupAddr,
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF0F172A),
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _NavigatePillButton(
+                                    bgColor: isGrocery
+                                        ? const Color(0xFFDCFCE7)
+                                        : const Color(0xFFE0E7FF),
+                                    fgColor: isGrocery
+                                        ? const Color(0xFF15803D)
+                                        : AppColors.primary,
+                                    onTap: () => _openNavigationTo(
+                                      task.latitude,
+                                      task.longitude,
+                                      pickupAddr,
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              // Vertical dotted connector + divider
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 6),
+                                child: Row(
+                                  children: [
+                                    const SizedBox(
+                                      width: 34,
+                                      child: Center(
+                                        child: _DottedVerticalConnector(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 11),
+                                    const Expanded(
+                                      child: Divider(
+                                        height: 1,
+                                        color: Color(0xFFF1F5F9),
+                                        thickness: 1.2,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // STEP 2 • DELIVERY / DROP
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFFEE2E2),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      isGrocery
+                                          ? Icons.location_on_rounded
+                                          : Icons.flag_rounded,
+                                      size: 18,
+                                      color: const Color(0xFFDC2626),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 11),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          isGrocery
+                                              ? 'STEP 2 • DELIVERY'
+                                              : 'STEP 2 • DROP',
+                                          style: const TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.6,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          dropAddr,
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF0F172A),
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _NavigatePillButton(
+                                    bgColor: const Color(0xFFFEE2E2),
+                                    fgColor: const Color(0xFFDC2626),
+                                    onTap: () => _openNavigationTo(
+                                      task.dropLatitude,
+                                      task.dropLongitude,
+                                      task.effectiveDropAddress != null
+                                          ? GroceryCatalog.unescapeHtml(
+                                              task.effectiveDropAddress!)
+                                          : null,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          )
+                        : (Task.isFreelancerCategory(task.category) ||
+                                (task.latitude == 0 && task.longitude == 0))
+                            ? const Row(
+                                children: [
+                                  Icon(Icons.public_rounded,
+                                      color: AppColors.primary, size: 19),
+                                  SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'Remote / Online Service — No physical location needed',
+                                      style: TextStyle(
+                                        color: Color(0xFF475569),
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.35,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : Row(
+                                children: [
+                                  Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFE0E7FF),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.location_on_rounded,
+                                      size: 18,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 11),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'TASK LOCATION',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            letterSpacing: 0.6,
+                                            color: Color(0xFF64748B),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          (task.address != null &&
+                                                  task.address!.isNotEmpty)
+                                              ? GroceryCatalog.unescapeHtml(
+                                                  task.address!)
+                                              : 'Pinned task location',
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF0F172A),
+                                            height: 1.3,
+                                          ),
+                                          maxLines: 3,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  _NavigatePillButton(
+                                    bgColor: const Color(0xFFE0E7FF),
+                                    fgColor: AppColors.primary,
+                                    onTap: _openNavigation,
+                                  ),
+                                ],
+                              ),
+                  );
+                }),
+
+              if (!_isVerifyPending && !_isDone) const SizedBox(height: 12),
+
+              // ── Concept A Interactive Grocery Items Card ─────────────
+              if (Task.isGroceryCategory(task.category))
+                Builder(builder: (context) {
+                  final groceryItems = (task.groceryItems != null &&
+                          task.groceryItems!.isNotEmpty)
+                      ? task.groceryItems!
+                      : GroceryCatalog.parseGroceryItems(
+                          null, task.description);
+                  if (groceryItems.isEmpty) return const SizedBox.shrink();
+                  final pickedCount = _pickedItemIndices
+                      .where((i) => i >= 0 && i < groceryItems.length)
+                      .length;
+                  final allPicked = pickedCount == groceryItems.length;
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.03),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.shopping_bag_outlined,
+                                size: 20, color: Color(0xFF0F172A)),
+                            const SizedBox(width: 8),
+                            const Expanded(
+                              child: Text(
+                                'Grocery Items',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 16,
+                                  color: Color(0xFF0F172A),
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: allPicked
+                                    ? const Color(0xFFDCFCE7)
+                                    : const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                '$pickedCount/${groceryItems.length} Picked',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: allPicked
+                                      ? const Color(0xFF15803D)
+                                      : const Color(0xFF475569),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _InProgressGroceryItemsList(
+                          items: groceryItems,
+                          pickedIndices: _pickedItemIndices,
+                          onTogglePicked: (idx) {
+                            setState(() {
+                              if (_pickedItemIndices.contains(idx)) {
+                                _pickedItemIndices.remove(idx);
+                              } else {
+                                _pickedItemIndices.add(idx);
+                              }
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  );
+                })
+              else
+                // ── Task Details (non-grocery tasks) ─────────────────────
+                _SectionCard(
+                  title: 'Task Details',
+                  icon: Icons.description_outlined,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _DetailRow('Category', task.category),
+                      const Divider(height: 14),
+                      _DetailRow(
+                          'Earning', '₹${task.budget.toStringAsFixed(0)}'),
+                      const Divider(height: 14),
+                      _DetailRow('Status', task.statusLabel),
+                      const Divider(height: 14),
+                      const Text('Description',
+                          style: TextStyle(
+                              color: AppColors.gray, fontSize: 12)),
+                      const SizedBox(height: 4),
+                      Text(
+                        task.description,
+                        style: const TextStyle(
+                            color: AppColors.dark,
+                            fontSize: 13,
+                            height: 1.5),
+                      ),
+                    ],
+                  ),
+                ),
+
+              const SizedBox(height: 14),
 
               // ═══════════════════════════════════════════════════════════
-              // PHASE-BASED ACTION AREA
+              // PHASE-BASED ACTION / PROOF AREA
               // ═══════════════════════════════════════════════════════════
 
               // ── Phase 3: Payment released → Helper clicks Mark Completed
               if (_isPaymentReleased) ...[
                 _buildPaymentReleasedBanner(),
-                const SizedBox(height: 16),
-                GradientButton(
-                  label: 'Mark as Completed',
-                  loading: _completing,
-                  onPressed: busy ? () {} : _finalMarkComplete,
-                  icon: Icons.check_circle_outline,
-                ),
               ]
 
               // ── Phase 2: Waiting for poster to verify ─────────────────
@@ -986,169 +1467,109 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                 _buildWaitingBanner(task),
               ]
 
-              // ── Phase 1: Actively working → Upload proof & submit ─────
+              // ── Phase 1: Actively working → Dashed 4:3 Proof Dropzone ─
               else if (!_isDone && !_proofSubmitted) ...[
-                // Proof upload section
-                const Text('Completion Proof',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 15,
-                        color: AppColors.dark)),
-                const SizedBox(height: 4),
-                const Text(
-                  'Upload a photo as proof of work. The poster will verify it and release your payment.',
-                  style: TextStyle(
-                      color: AppColors.gray, fontSize: 12, height: 1.4),
-                ),
-                const SizedBox(height: 10),
-
-                // Proof preview
                 if (_proofPath != null) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
+                  _buildProofFrame(
                     child: _proofPath!.startsWith('http')
                         ? Image.network(
                             _proofPath!,
-                            height: 200,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            height: double.infinity,
+                            fit: BoxFit.contain,
                             gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           )
                         : Image.file(
                             File(_proofPath!),
-                            height: 200,
                             width: double.infinity,
-                            fit: BoxFit.cover,
+                            height: double.infinity,
+                            fit: BoxFit.contain,
                             gaplessPlayback: true,
                             errorBuilder: (_, __, ___) => _proofErrorWidget(),
                           ),
                   ),
                   const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: busy ? null : _pickProof,
+                      icon: const Icon(Icons.photo_camera_outlined, size: 18),
+                      label: const Text('Retake Proof Photo'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF3B43E6),
+                        side: const BorderSide(color: Color(0xFFC7D2FE)),
+                        minimumSize: const Size(double.infinity, 42),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  InkWell(
+                    onTap: busy ? null : _pickProof,
+                    borderRadius: BorderRadius.circular(14),
+                    child: _DashedBorderBox(
+                      borderRadius: 14,
+                      color: const Color(0xFF94A3B8),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEEF2FF),
+                                borderRadius: BorderRadius.circular(11),
+                              ),
+                              child: const Icon(
+                                Icons.photo_camera_outlined,
+                                size: 22,
+                                color: Color(0xFF3B43E6),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Capture Proof Photo',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: Color(0xFF0F172A),
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Tap to open camera and take a photo',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
-
-                // Add / change photo button
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: busy ? null : _pickProof,
-                    icon: const Icon(Icons.add_a_photo_outlined, size: 18),
-                    label: Text(
-                        _proofPath == null ? 'Add Proof Photo' : 'Change Photo'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.primary,
-                      side: const BorderSide(color: AppColors.primary),
-                      minimumSize: const Size(double.infinity, 44),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 20),
-
-                // Submit for verification
-                GradientButton(
-                  label: 'Submit for Verification',
-                  loading: _submitting,
-                  onPressed: busy ? () {} : _submitForVerification,
-                  icon: Icons.verified_outlined,
-                ),
-                const SizedBox(height: 10),
-
-                // Release task
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: busy ? null : _releaseTask,
-                    icon: _abandoning
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: AppColors.danger),
-                          )
-                        : const Icon(Icons.exit_to_app_outlined, size: 18),
-                    label: const Text('Release Task'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.danger,
-                      side: const BorderSide(color: AppColors.danger),
-                      minimumSize: const Size(double.infinity, 46),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                    ),
-                  ),
-                ),
               ],
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  // ── Builds the top status banner ─────────────────────────────────────────
-  Widget _buildStatusBanner(Task task) {
-    final IconData icon;
-    final String label;
-    final List<Color> colors;
-
-    if (_isDone) {
-      icon = Icons.check_circle;
-      label = 'Task Completed';
-      colors = [AppColors.success, const Color(0xFF059669)];
-    } else if (_isPaymentReleased) {
-      icon = Icons.payments_outlined;
-      label = 'Payment Released – Please Mark Completed';
-      colors = [AppColors.success, const Color(0xFF059669)];
-    } else if (_isVerifyPending) {
-      icon = Icons.hourglass_top_rounded;
-      label = 'Proof Submitted – Awaiting Poster Verification';
-      colors = [AppColors.warning, const Color(0xFFD97706)];
-    } else {
-      icon = Icons.flash_on;
-      label = 'Task Active';
-      colors = AppColors.gradient;
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(colors: colors),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white, size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-                Text(
-                  task.title,
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 12),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          Text(
-            '₹${task.budget.toStringAsFixed(0)}',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.w800),
-          ),
-        ],
       ),
     );
   }
@@ -1205,9 +1626,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
           if (task.completionProof != null &&
               task.completionProof!.isNotEmpty) ...[  // proof stored as base64 data URI or URL
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: _buildProofImage(task.completionProof!, height: 160),
+            _buildProofFrame(
+              child: _buildProofImage(task.completionProof!),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1215,12 +1635,15 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
                     TextStyle(color: AppColors.gray, fontSize: 11)),
           ] else if (_submittedProofPath != null) ...[
             const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(10),
-              child: Image.file(File(_submittedProofPath!),
-                  height: 160, width: double.infinity, fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => _proofErrorWidget()),
+            _buildProofFrame(
+              child: Image.file(
+                File(_submittedProofPath!),
+                width: double.infinity,
+                height: double.infinity,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+                errorBuilder: (_, __, ___) => _proofErrorWidget(),
+              ),
             ),
             const SizedBox(height: 6),
             const Text('Submitted proof photo',
@@ -1280,8 +1703,25 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
     );
   }
 
+  /// Wraps proof photos in a fixed 4:3 frame without cropping the image.
+  Widget _buildProofFrame({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: AspectRatio(
+        aspectRatio: 4 / 3,
+        child: child,
+      ),
+    );
+  }
+
   /// Renders a proof image from either an HTTPS URL or a base64 data URI.
-  Widget _buildProofImage(String proof, {double height = 160}) {
+  Widget _buildProofImage(String proof) {
     final trimmed = proof.trim();
     if (trimmed.startsWith('data:')) {
       if (_cachedProofValue != trimmed) {
@@ -1289,28 +1729,24 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen> {
       }
       if (_cachedProofBytes != null) {
         return Image.memory(_cachedProofBytes!,
-            height: height,
             width: double.infinity,
-            fit: BoxFit.cover,
+            height: double.infinity,
+            fit: BoxFit.contain,
             gaplessPlayback: true,
             errorBuilder: (_, __, ___) => _proofErrorWidget());
       }
       return _proofErrorWidget();
     }
     return Image.network(trimmed,
-        height: height,
         width: double.infinity,
-        fit: BoxFit.cover,
+        height: double.infinity,
+        fit: BoxFit.contain,
         gaplessPlayback: true,
         errorBuilder: (_, __, ___) => _proofErrorWidget());
   }
 
   Widget _proofErrorWidget() => Container(
-        height: 160,
-        decoration: BoxDecoration(
-          color: AppColors.light,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        color: AppColors.light,
         child: const Center(
           child: Icon(Icons.image_not_supported_outlined,
               size: 40, color: AppColors.grayLight),
@@ -1375,24 +1811,314 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 15, color: AppColors.primary),
-                const SizedBox(width: 6),
-                Text(
-                  title,
-                  style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: AppColors.dark),
+                Icon(icon, size: 19, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17.5,
+                      color: Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
             child,
           ],
         ),
       ),
     );
   }
+}
+
+class _InProgressGroceryItemsList extends StatelessWidget {
+  final List<SelectedGroceryItem> items;
+  final Set<int> pickedIndices;
+  final ValueChanged<int> onTogglePicked;
+
+  const _InProgressGroceryItemsList({
+    required this.items,
+    required this.pickedIndices,
+    required this.onTogglePicked,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: List.generate(items.length, (idx) {
+        final item = items[idx];
+        final isPicked = pickedIndices.contains(idx);
+        final pkg = item.package.trim();
+        final qty = item.qty.trim();
+        final kg = item.kg.trim();
+        final gram = item.gram.trim();
+        final litr = item.litr.trim();
+        final brand = item.brand.trim();
+        final rupee = item.rupee.trim();
+
+        final tags = <Widget>[
+          if (pkg.isNotEmpty)
+            _tag(pkg, const Color(0xFFF1F5F9), const Color(0xFF334155)),
+          if (qty.isNotEmpty)
+            _tag('Qty: $qty', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+          if (kg.isNotEmpty)
+            _tag('$kg kg', const Color(0xFFF0FDF4), const Color(0xFF15803D)),
+          if (gram.isNotEmpty)
+            _tag('$gram g', const Color(0xFFF0FDF4), const Color(0xFF15803D)),
+          if (litr.isNotEmpty)
+            _tag('$litr L', const Color(0xFFE0F2FE), const Color(0xFF0284C7)),
+          if (brand.isNotEmpty)
+            _tag(brand, const Color(0xFFFAF5FF), const Color(0xFF7E22CE)),
+          if (rupee.isNotEmpty)
+            _tag('Est. ₹$rupee', const Color(0xFFFFFBEB),
+                const Color(0xFFB45309)),
+        ];
+
+        return GestureDetector(
+          onTap: () => onTogglePicked(idx),
+          child: Container(
+            width: double.infinity,
+            margin: EdgeInsets.only(bottom: idx == items.length - 1 ? 0 : 8),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: isPicked ? const Color(0xFFF0FDF4) : Colors.white,
+              borderRadius: BorderRadius.circular(13),
+              border: Border.all(
+                color: isPicked
+                    ? const Color(0xFF86EFAC)
+                    : const Color(0xFFE2E8F0),
+                width: 1.1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: item.imageUrl.isNotEmpty
+                        ? Image.network(
+                            item.imageUrl,
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Center(
+                              child: Text(item.emoji,
+                                  style: const TextStyle(fontSize: 24)),
+                            ),
+                          )
+                        : Center(
+                            child: Text(item.emoji,
+                                style: const TextStyle(fontSize: 24)),
+                          ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          color: isPicked
+                              ? const Color(0xFF64748B)
+                              : const Color(0xFF0F172A),
+                          decoration: isPicked
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
+                          height: 1.25,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      if (tags.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Wrap(spacing: 5, runSpacing: 4, children: tags),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isPicked
+                        ? const Color(0xFF16A34A)
+                        : Colors.transparent,
+                    border: Border.all(
+                      color: isPicked
+                          ? const Color(0xFF16A34A)
+                          : const Color(0xFF94A3B8),
+                      width: 1.8,
+                    ),
+                  ),
+                  child: isPicked
+                      ? const Icon(Icons.check_rounded,
+                          size: 15, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  static Widget _tag(String text, Color bg, Color textCol) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+            fontSize: 11.5, fontWeight: FontWeight.w700, color: textCol),
+      ),
+    );
+  }
+}
+
+class _NavigatePillButton extends StatelessWidget {
+  final Color bgColor;
+  final Color fgColor;
+  final VoidCallback onTap;
+
+  const _NavigatePillButton({
+    required this.bgColor,
+    required this.fgColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Navigate',
+                style: TextStyle(
+                  color: fgColor,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Icon(Icons.north_east_rounded, size: 14, color: fgColor),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DottedVerticalConnector extends StatelessWidget {
+  const _DottedVerticalConnector();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        4,
+        (i) => Container(
+          width: 3,
+          height: 3,
+          margin: EdgeInsets.only(bottom: i == 3 ? 0 : 3.5),
+          decoration: const BoxDecoration(
+            color: Color(0xFF94A3B8),
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedBorderBox extends StatelessWidget {
+  final Widget child;
+  final double borderRadius;
+  final Color color;
+
+  const _DashedBorderBox({
+    required this.child,
+    this.borderRadius = 14,
+    this.color = const Color(0xFF94A3B8),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _DashedRRectPainter(
+        borderRadius: borderRadius,
+        color: color,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _DashedRRectPainter extends CustomPainter {
+  final double borderRadius;
+  final Color color;
+
+  _DashedRRectPainter({required this.borderRadius, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.4
+      ..style = PaintingStyle.stroke;
+
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(borderRadius),
+    );
+    final path = Path()..addRRect(rrect);
+    const dashWidth = 6.0;
+    const dashSpace = 4.0;
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final end = (distance + dashWidth).clamp(0.0, metric.length);
+        canvas.drawPath(metric.extractPath(distance, end), paint);
+        distance += dashWidth + dashSpace;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRRectPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.borderRadius != borderRadius;
 }
 
 class _DetailRow extends StatelessWidget {

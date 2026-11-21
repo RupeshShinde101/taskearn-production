@@ -1,25 +1,36 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import '../../providers/auth_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
+import '../../models/grocery_item.dart';
+import 'grocery_item_picker_screen.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../services/location_service.dart';
 import '../../services/storage_service.dart';
 import '../../theme/app_theme.dart';
-import 'dart:async';
 import '../../services/location_search_service.dart';
-import '../../widgets/gradient_button.dart';
+import '../../widgets/hero_map_background.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
-import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
+import '../../widgets/task_price_breakdown_card.dart';
+import '../../widgets/task_posted_success_dialog.dart';
+import '../../widgets/vehicle_task_posting_dialog.dart';
 
 class PostTaskScreen extends StatefulWidget {
-  const PostTaskScreen({super.key});
+  final String? initialCategory;
+  final List<SelectedGroceryItem>? initialGroceryItems;
+
+  const PostTaskScreen({
+    super.key,
+    this.initialCategory,
+    this.initialGroceryItems,
+  });
 
   @override
   State<PostTaskScreen> createState() => _PostTaskScreenState();
@@ -30,6 +41,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   final _titleCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
+  final _budgetFieldKey = GlobalKey<FormFieldState<String>>();
 
   // FocusNodes so we can jump cursor to the first invalid field
   final _titleFocus   = FocusNode();
@@ -63,8 +75,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String _selectedCategory = 'delivery';
   String _deliveryVehicle = 'bike'; // 'bike' (₹12/km) or 'rikshaw' (₹18/km)
   int _distCalcSeq = 0;
-  final _categorySearchCtrl = TextEditingController();
-  String _categorySearch = '';
+  String? _lastAutoBudgetText;
   LatLng? _location;
   String? _locationLabel; // reverse-geocoded address from map picker
   bool _loading = false;
@@ -76,6 +87,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   bool _gettingPickupGps = false;
   bool _gettingDropGps = false;
   double? _calculatedDistanceKm;
+  List<SelectedGroceryItem> _selectedGroceryItems = [];
+  String? _selectedGroceryStoreName;
+  final _customStoreCtrl = TextEditingController();
+  final _storeSearchCtrl = TextEditingController();
+  Timer? _storeSearchDebounce;
+  List<Map<String, dynamic>> _storeSearchResults = [];
+  bool _searchingStoresByName = false;
+  bool _hasFetchedNearbyStores = false;
+  bool _showCustomStoreInput = false;
+  bool _isStoreDropdownOpen = false;
+  List<Map<String, dynamic>> _suggestedGroceryStoresList = [];
 
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
@@ -85,29 +107,244 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   final _scrollCtrl = ScrollController();
 
-  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
+  static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
+
+  String _freelancerPricingMode = 'package'; // 'package' | 'hourly'
+  String? _freelancerTierId;
+  int _freelancerUnits = 1;
+  int _freelancerHours = 2;
+  double _freelancerHourlyRate = 500.0;
+  bool _separateChargesClientPaid = true;
+  bool _freelancerManualScope = false;
+  String? _freelancerDetailsReason;
+
+  bool get _isFreelancer => Task.isFreelancerCategory(_selectedCategory);
+  FreelancerPricingConfig? get _freelancerConfig =>
+      Task.freelancerPricingConfigFor(_selectedCategory);
+  FreelancerPriceQuote? get _freelancerQuote => !_isFreelancer
+      ? null
+      : Task.calculateFreelancerQuote(
+          _selectedCategory,
+          mode: _freelancerPricingMode,
+          tierId: _freelancerTierId,
+          units: _freelancerUnits,
+          hourlyRate: _freelancerHourlyRate,
+          hours: _freelancerHours,
+        );
+
+  void _onFreelancerDetailsChanged() {
+    if (!mounted || !_isFreelancer) return;
+    final det = Task.suggestFreelancerFromDetails(
+      _selectedCategory,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
+    );
+    final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    setState(() {
+      _freelancerDetailsReason = det.reason;
+      if (!_freelancerManualScope && det.hasDetailsMatch) {
+        _freelancerPricingMode = det.mode;
+        _freelancerTierId = det.tierId;
+        if (det.units != null) _freelancerUnits = det.units!;
+        _freelancerHours = det.hours;
+        _freelancerHourlyRate = det.hourlyRate;
+        if (wasAutoOrEmpty) {
+          _syncAutoBudget(det.quote.suggestedBudget);
+        }
+      } else if (!_freelancerManualScope && wasAutoOrEmpty) {
+        _syncAutoBudget(det.quote.suggestedBudget);
+      }
+    });
+  }
+
+  double _currentMinBudget() {
+    if (_isDelivery) {
+      if (_calculatedDistanceKm != null) {
+        return Task.calculateDistancePrice(
+          _calculatedDistanceKm!,
+          _selectedCategory,
+          vehicle: _deliveryVehicle,
+        );
+      }
+      return Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+    }
+    if (_isFreelancer) {
+      return _freelancerQuote!.minBudget;
+    }
+    return Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+  }
+
+  String _currentMinBudgetMessage() {
+    if (_isDelivery && _calculatedDistanceKm != null) {
+      final distMin = Task.calculateDistancePrice(
+        _calculatedDistanceKm!,
+        _selectedCategory,
+        vehicle: _deliveryVehicle,
+      );
+      return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
+    }
+    if (_isFreelancer) {
+      final q = _freelancerQuote!;
+      return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} (${q.scopeSummary}) is ₹${q.minBudget.toInt()}';
+    }
+    final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+    return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+  }
+
+  String _currentAreaCandidate() {
+    if (_isDelivery) {
+      final parts = [
+        _dropAreaCtrl.text.trim(),
+        _dropAddrCtrl.text.trim(),
+        _pickupAreaCtrl.text.trim(),
+        _pickupAddrCtrl.text.trim(),
+        (_locationLabel ?? '').trim(),
+      ].where((s) => s.isNotEmpty).toList();
+      return parts.join(', ');
+    }
+    final parts = [
+      _areaCtrl.text.trim(),
+      _addressCtrl.text.trim(),
+      (_locationLabel ?? '').trim(),
+    ].where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
+  void _syncAreaBudgetIfAuto({bool wasAutoOverride = false}) {
+    final wasAutoOrEmpty = wasAutoOverride ||
+        _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null &&
+            _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    if (!wasAutoOrEmpty) return;
+
+    if (Task.isFreelancerCategory(_selectedCategory)) {
+      final q = _freelancerQuote;
+      if (q != null) _syncAutoBudget(q.suggestedBudget);
+      return;
+    }
+    if (_isDelivery) {
+      if (_selectedCategory == 'moving' && _calculatedDistanceKm == null && _budgetCtrl.text.trim().isNotEmpty) {
+        final s = Task.getBudgetSuggestion(
+          _selectedCategory,
+          areaText: _currentAreaCandidate(),
+          vehicle: _deliveryVehicle,
+        );
+        _syncAutoBudget(s.suggestedBudget);
+      }
+      return;
+    }
+    final s = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: _currentAreaCandidate(),
+      vehicle: _deliveryVehicle,
+    );
+    _syncAutoBudget(s.suggestedBudget);
+  }
+
+  void _initGroceryDefaults({bool wasAutoOrEmpty = true}) {
+    if (_dropLocation == null && _location != null) {
+      _dropLocation = _location;
+      if (_dropAddrCtrl.text.isEmpty && _locationLabel != null && _locationLabel!.isNotEmpty) {
+        _dropAddrCtrl.text = _locationLabel!;
+      }
+    }
+    if (_dropLocation != null) {
+      _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+    }
+    final dist = _calculatedDistanceKm ?? 1.5;
+    final travelFare = Task.calculateDistancePrice(dist, 'groceries', vehicle: 'bike');
+    const handlingFee = 30.0;
+    final totalBudget = travelFare + handlingFee;
+    _syncAutoBudget(totalBudget);
+  }
+
+  void _applySelectedCategory(String categoryId) {
+    final wasAutoOrEmpty = _budgetCtrl.text.trim().isEmpty ||
+        (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText);
+    _selectedCategory = categoryId;
+    if (categoryId == 'moving') {
+      if (_deliveryVehicle != 'tempo' && _deliveryVehicle != 'truck') {
+        _deliveryVehicle = 'tempo';
+      }
+    } else if (categoryId == 'delivery') {
+      if (_deliveryVehicle != 'bike' && _deliveryVehicle != 'rikshaw') {
+        _deliveryVehicle = 'bike';
+      }
+    } else if (categoryId == 'groceries' || categoryId == 'grocery') {
+      _deliveryVehicle = 'bike';
+      _initGroceryDefaults(wasAutoOrEmpty: wasAutoOrEmpty);
+    }
+    if (Task.isFreelancerCategory(categoryId)) {
+      _freelancerManualScope = false;
+      final det = Task.suggestFreelancerFromDetails(
+        categoryId,
+        title: _titleCtrl.text,
+        description: _descCtrl.text,
+      );
+      _freelancerPricingMode = det.mode;
+      _freelancerTierId = det.tierId;
+      final cfg = Task.freelancerPricingConfigFor(categoryId)!;
+      _freelancerUnits = det.units ?? cfg.tiers.first.defaultUnits;
+      _freelancerHours = det.hours;
+      _freelancerHourlyRate = det.hourlyRate;
+      _freelancerDetailsReason = det.reason;
+      _separateChargesClientPaid = true;
+      if (wasAutoOrEmpty) {
+        _syncAutoBudget(det.quote.suggestedBudget);
+      }
+    } else if (!_isDelivery) {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
+      _syncAreaBudgetIfAuto(wasAutoOverride: wasAutoOrEmpty);
+    } else if (wasAutoOrEmpty && _selectedCategory == 'moving' && _calculatedDistanceKm == null) {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
+      final s = Task.getBudgetSuggestion(
+        categoryId,
+        areaText: _currentAreaCandidate(),
+        vehicle: _deliveryVehicle,
+      );
+      _syncAutoBudget(s.suggestedBudget);
+    } else {
+      _freelancerManualScope = false;
+      _freelancerDetailsReason = null;
+    }
+    _autoFillDescription();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _budgetCtrl.text.trim().isNotEmpty) {
+        _budgetFieldKey.currentState?.validate();
+      }
+    });
+  }
 
   /// Per-category description prompt chips shown below the description field.
   static const Map<String, List<String>> _prompts = {
-    'delivery':    ['What to deliver?', 'Pickup point?', 'Drop point?', 'Item size/weight?', 'Urgent?'],
+    'delivery':    [],
     'pickup':      ['What to pick up?', 'From where?', 'Fragile?', 'Time constraint?'],
     'transport':   ['How many people/items?', 'From → To?', 'Vehicle type needed?', 'Luggage?'],
-    'moving':      ['How many rooms?', 'Pickup floor?', 'Drop floor?', 'Need packing help?'],
-    'groceries':   ['Which items?', 'Which store/area?', 'Grocery budget?', 'Brand preference?'],
-    'cleaning':    ['How many rooms?', 'Type of cleaning?', 'Time slot?', 'Pets at home?'],
+    'moving':      [],
+    'groceries':   [],
+    'cleaning':    ['Type of cleaning?', 'Time slot?', 'Pets at home?'],
     'cooking':     ['How many people?', 'What cuisine/dishes?', 'Dietary restrictions?', 'Time needed?'],
     'laundry':     ['How many clothes?', 'Wash + fold or just fold?', 'Pick up from home?'],
-    'household':   ['What chores needed?', 'How many rooms?', 'Duration?', 'Supplies provided?'],
+    'household':   ['What chores needed?', 'Duration?', 'Supplies provided?'],
     'shopping':    ['What items to buy?', 'Which store/area?', 'Item budget?', 'Urgent?'],
     'electrician': ['What electrical work?', 'Specific fault/issue?', 'Urgent?'],
     'plumbing':    ['What plumbing issue?', 'Room affected?', 'Urgent?'],
     'repair':      ['What to repair?', 'Brand/model?', 'How long broken?'],
     'vehicle':     ['Vehicle type?', 'Service needed?', 'Make/model?', 'At-home or garage?'],
     'tutoring':    ['Which subject?', 'Grade/level?', 'Hours needed?', 'Online or in-person?'],
-    'freelancer':  ['What service do you need?', 'Skill level required?', 'Deadline?', 'Remote or in-person?', 'Tools/software needed?'],
+    'freelancer':  ['What service do you need?', 'Skill level required?', 'Expected hours or deliverables?', 'Tools/software needed?', 'Deadline?'],
+    'graphic_design':      ['Type of design needed?', 'Number of designs / pages?', 'Brand style / colours?', 'Dimensions / format?', 'Deadline?'],
+    'web_app_tech':        ['Project type (website/app/bug fix)?', 'Number of pages / features?', 'Tech stack / platform?', 'Timeline / deadline?'],
+    'video_audio_editing': ['Type of video/audio edit?', 'How many reels / mins?', 'Raw footage length?', 'Subtitles / music / effects?', 'Deadline?'],
+    'digital_marketing':   ['Service (SEO/Ads/Social Media)?', 'Target audience / niche?', 'Campaign duration?', 'Platforms involved?', 'Goal / KPI?'],
+    'business_admin':      ['Type of work (deck/Excel/admin)?', 'Volume / slides or pages?', 'Software / format needed?', 'Confidentiality / NDA?', 'Deadline?'],
     'carpentry':   ['What carpentry work?', 'Materials needed?', 'Approximate dimensions?'],
     'painting':    ['What to paint?', 'Colour preference?', 'Area size?'],
+    'drawing':     ['What type of drawing/sketch?', 'Medium (pencil/charcoal/digital/canvas)?', 'Reference photo available?', 'Dimensions/size?'],
     'beauty':      ['What treatment/service?', 'At-home or salon?', 'Duration?', 'Gender preference?'],
     'pet_care':    ['Type of pet?', 'Care needed?', 'Duration?', 'Vaccinated?'],
     'child_care':  ['Age of child?', 'Duration?', 'Special needs?'],
@@ -190,6 +427,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _pickupDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_pickupLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _pickupLocation = null;
+          _calculatedDistanceKm = null;
+          _pickupSuggestions = [];
+          _searchingPickup = false;
+        });
+      }
       if (_pickupSuggestions.isNotEmpty || _searchingPickup) {
         setState(() {
           _pickupSuggestions = [];
@@ -231,6 +476,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _dropDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
+      if (q.isEmpty && (_dropLocation != null || _calculatedDistanceKm != null)) {
+        setState(() {
+          _dropLocation = null;
+          _calculatedDistanceKm = null;
+          _dropSuggestions = [];
+          _searchingDrop = false;
+        });
+      }
       if (_dropSuggestions.isNotEmpty || _searchingDrop) {
         setState(() {
           _dropSuggestions = [];
@@ -300,10 +553,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _selectAddressSuggestion(LocationSearchResult s) {
     _addressCtrl.text = s.fullAddress;
     _location = s.toLatLng();
-    _locationLabel = s.title;
+    _locationLabel = s.fullAddress;
     _addressSuggestions = [];
     _searchingAddress = false;
     _addressFocus.unfocus();
+    _syncAreaBudgetIfAuto();
     setState(() {});
   }
 
@@ -319,7 +573,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _checkAndEstimateDistance() {
-    if (!_isDelivery) return;
+    if (!_isDelivery) {
+      if (_calculatedDistanceKm != null && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      if (_dropLocation == null && _dropAddrCtrl.text.trim().isNotEmpty) {
+        final dLoc = _lookupKnownLocality(_dropAddrCtrl.text.trim());
+        if (dLoc != null) {
+          _dropLocation = dLoc;
+        }
+      }
+      if (_pickupLocation != null && _dropLocation != null) {
+        _recalcDistance();
+      }
+      return;
+    }
     if (_pickupLocation == null) {
       final pText = '${_pickupAddrCtrl.text} ${_pickupAreaCtrl.text}'.trim();
       final pLoc = _lookupKnownLocality(pText);
@@ -338,71 +609,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _recalcDistance();
   }
 
+  /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
+  /// then auto-fills budget with category- and vehicle-specific distance fare.
   void _syncAutoBudget(double fare) {
     final formatted = fare.toStringAsFixed(0);
     _budgetCtrl.text = formatted;
+    _lastAutoBudgetText = formatted;
+    _budgetFieldKey.currentState?.validate();
   }
 
-  bool _isTaskUrgent() {
-    final prompts = _prompts[_selectedCategory] ?? _prompts['other'] ?? const [];
-    for (final p in prompts) {
-      final lowerP = p.toLowerCase();
-      if (lowerP.contains('urgent') || lowerP.contains('time constraint')) {
-        final ctrl = _descFormControllers[p];
-        if (ctrl != null) {
-          final text = ctrl.text.trim().toLowerCase();
-          if (text.contains('yes') ||
-              text.contains('urgent') ||
-              text.contains('1 hour') ||
-              text.contains('2 hour')) {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  double? _getItemBudget() {
-    final prompts = _prompts[_selectedCategory] ?? _prompts['other'] ?? const [];
-    for (final p in prompts) {
-      final lowerP = p.toLowerCase();
-      if (lowerP.contains('item budget') || lowerP.contains('budget')) {
-        final ctrl = _descFormControllers[p];
-        if (ctrl != null) {
-          final raw = ctrl.text.replaceAll(RegExp(r'[^\d.]'), '').trim();
-          return double.tryParse(raw);
-        }
-      }
-    }
-    return null;
-  }
-
-  /// Computes the authoritative auto-calculated budget for the current category,
-  /// vehicle selection, distance, urgency, or prompt inputs without requiring manual entry.
-  double _computeEffectiveBudget() {
-    final cat = Task.normalizeCategoryKey(_selectedCategory);
-    final isUrgent = _isTaskUrgent();
-    final urgentExtra = isUrgent ? (cat == 'moving' ? 50.0 : 30.0) : 0.0;
-
-    if (cat == 'moving') {
-      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
-        return Task.calculateDistancePrice(_calculatedDistanceKm!, 'moving', vehicle: _deliveryVehicle) + urgentExtra;
-      }
-      return Task.minBudgetForCategory('moving') + urgentExtra;
-    }
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
-        return Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle) + urgentExtra;
-      }
-      return Task.minBudgetForCategory(_selectedCategory) + urgentExtra;
-    }
-    return Task.minBudgetForCategory(_selectedCategory) + urgentExtra;
-  }
-
-  /// Recalculates exact road distance (km) between pickup and drop matching Google Maps,
-  /// then auto-fills budget with category- and vehicle-specific distance fare.
   Future<void> _recalcDistance() async {
+    if (!_isDelivery) {
+      if (_calculatedDistanceKm != null && mounted) {
+        setState(() => _calculatedDistanceKm = null);
+      }
+      return;
+    }
     if (_pickupLocation != null && _dropLocation != null) {
       final seq = ++_distCalcSeq;
       // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
@@ -410,48 +632,189 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation!,
         _dropLocation!,
       );
-      final immediateKm = (meters / 1000.0) * 1.25;
+      final immediateKm = double.parse(((meters / 1000.0) * 1.25).toStringAsFixed(1));
+      final isGrocery = Task.isGroceryCategory(_selectedCategory);
+      final groceryHandling = isGrocery ? 30.0 : 0.0;
       final immediatePrice = Task.calculateDistancePrice(
         immediateKm,
         _selectedCategory,
         vehicle: _deliveryVehicle,
-      );
-      _syncAutoBudget(immediatePrice);
+      ) + groceryHandling;
+      final current = double.tryParse(_budgetCtrl.text) ?? 0;
+      if (isGrocery || current < immediatePrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+        _syncAutoBudget(immediatePrice);
+      }
       if (mounted) setState(() => _calculatedDistanceKm = immediateKm);
 
       // 2. Fetch exact road driving route via OSRM (Google Maps parity)
       try {
-        final roadKm = await LocationService.calculateRoadDistance(
+        final roadKmRaw = await LocationService.calculateRoadDistance(
           _pickupLocation!,
           _dropLocation!,
         );
+        final roadKm = double.parse(roadKmRaw.toStringAsFixed(1));
         if (seq == _distCalcSeq && mounted) {
           final exactPrice = Task.calculateDistancePrice(
             roadKm,
             _selectedCategory,
             vehicle: _deliveryVehicle,
-          );
-          _syncAutoBudget(exactPrice);
-          setState(() => _calculatedDistanceKm = roadKm);
+          ) + groceryHandling;
+          final currVal = double.tryParse(_budgetCtrl.text) ?? 0;
+          if (isGrocery || currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
+            _syncAutoBudget(exactPrice);
+          }
+          setState(() {
+            _calculatedDistanceKm = roadKm;
+            if (isGrocery && _selectedGroceryStoreName != null) {
+              for (final s in _suggestedGroceryStoresList) {
+                if (s['name'] == _selectedGroceryStoreName) {
+                  s['distanceKm'] = roadKm;
+                  break;
+                }
+              }
+            }
+          });
         }
       } catch (_) {}
     } else {
-      if (mounted) {
+      if (!Task.isGroceryCategory(_selectedCategory) && mounted) {
         setState(() => _calculatedDistanceKm = null);
-        _syncAutoBudget(_computeEffectiveBudget());
       }
     }
   }
 
-  /// Show a bottom sheet with the sub-categories of [group] as square grid boxes.
-  void _showSubCategorySheet(TaskCategoryGroup group) {
+  ({String bgAsset, String badgeAsset, Color c1, Color c2, String footerNote})
+      _categoryPopupTheme(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) {
+    if (parentGroup != null || group.label == 'Freelancer') {
+      return (
+        bgAsset: 'assets/images/cat_professional.jpg',
+        badgeAsset: 'assets/images/cat_3d_professional.png',
+        c1: const Color(0xFF1D4ED8),
+        c2: const Color(0xFF2563EB),
+        footerNote: 'Remote / Online • Price suggested from task details',
+      );
+    }
+    switch (group.label) {
+      case 'Delivery & Moving':
+        return (
+          bgAsset: 'assets/images/cat_delivery.jpg',
+          badgeAsset: 'assets/images/cat_3d_delivery.png',
+          c1: const Color(0xFF1E40AF),
+          c2: const Color(0xFF2563EB),
+          footerNote: 'Live distance-based fair pricing • Verified helpers',
+        );
+      case 'Repair':
+        return (
+          bgAsset: 'assets/images/cat_repair.jpg',
+          badgeAsset: 'assets/images/cat_3d_repair.png',
+          c1: const Color(0xFF1D4ED8),
+          c2: const Color(0xFF3B82F6),
+          footerNote: 'Skilled technicians nearby • Pay only after completion',
+        );
+      case 'Home & Lifestyle':
+        return (
+          bgAsset: 'assets/images/cat_home.jpg',
+          badgeAsset: 'assets/images/cat_3d_home.png',
+          c1: const Color(0xFF0F766E),
+          c2: const Color(0xFF0EA5E9),
+          footerNote: 'Trusted home helpers • Flexible time slots',
+        );
+      case 'Shopping & Errands':
+        return (
+          bgAsset: 'assets/images/cat_shopping.jpg',
+          badgeAsset: 'assets/images/cat_3d_shopping.png',
+          c1: const Color(0xFF4338CA),
+          c2: const Color(0xFF6366F1),
+          footerNote: 'Fast local errands & deliveries around you',
+        );
+      case 'Professional':
+        return (
+          bgAsset: 'assets/images/cat_professional.jpg',
+          badgeAsset: 'assets/images/cat_3d_professional.png',
+          c1: const Color(0xFF1D4ED8),
+          c2: const Color(0xFF4F46E5),
+          footerNote: 'Verified pros & remote freelance specialists',
+        );
+      case 'Care Services':
+        return (
+          bgAsset: 'assets/images/cat_care.jpg',
+          badgeAsset: 'assets/images/cat_3d_care.png',
+          c1: const Color(0xFFBE185D),
+          c2: const Color(0xFFEC4899),
+          footerNote: 'KYC-verified & background-checked caregivers',
+        );
+      default:
+        return (
+          bgAsset: 'assets/images/cat_other.jpg',
+          badgeAsset: 'assets/images/cat_3d_other_skyline.png',
+          c1: const Color(0xFF1E3A8A),
+          c2: const Color(0xFF2563EB),
+          footerNote: 'Post custom tasks & receive offers quickly',
+        );
+    }
+  }
+
+  List<Color> _squircleGradientFor(String categoryId) {
+    switch (categoryId) {
+      case 'graphic_design':
+      case 'drawing':
+      case 'painting':
+      case 'beauty':
+        return const [Color(0xFFA855F7), Color(0xFFEC4899)];
+      case 'web_app_tech':
+      case 'tech_support':
+      case 'electrician':
+        return const [Color(0xFF2563EB), Color(0xFF06B6D4)];
+      case 'video_audio_editing':
+      case 'cooking':
+      case 'photography':
+        return const [Color(0xFFF97316), Color(0xFFEF4444)];
+      case 'digital_marketing':
+      case 'event_help':
+      case 'shopping':
+        return const [Color(0xFF6366F1), Color(0xFF8B5CF6)];
+      case 'business_admin':
+      case 'data_entry':
+      case 'cleaning':
+      case 'gardening':
+        return const [Color(0xFF10B981), Color(0xFF06B6D4)];
+      case 'delivery':
+      case 'moving':
+      case 'vehicle':
+      case 'repair':
+        return const [Color(0xFF0EA5E9), Color(0xFF2563EB)];
+      case 'plumbing':
+      case 'carpentry':
+      case 'laundry':
+      case 'household':
+        return const [Color(0xFF14B8A6), Color(0xFF3B82F6)];
+      case 'child_care':
+      case 'elder_care':
+      case 'pet_care':
+        return const [Color(0xFFEC4899), Color(0xFFF43F5E)];
+      default:
+        return const [Color(0xFF3B82F6), Color(0xFF6366F1)];
+    }
+  }
+
+  /// Show Option 5 centered dialog popup with category-specific illustrated
+  /// banner background and crisp hairline-divided single-line rows.
+  Future<void> _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) async {
     FocusScope.of(context).unfocus();
-    showGeneralDialog(
+    final theme = _categoryPopupTheme(group, parentGroup: parentGroup);
+    final breadcrumb = parentGroup != null
+        ? '${parentGroup.label} › ${group.label}'
+        : 'Workmate4u › ${group.label}';
+    final subtitle = parentGroup != null
+        ? 'Select a freelancer category'
+        : 'Select a specific category';
+
+    final selectedCat = await showGeneralDialog<TaskCategory?>(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Dismiss',
       barrierColor: Colors.black.withValues(alpha: 0.55),
-      transitionDuration: const Duration(milliseconds: 240),
+      transitionDuration: const Duration(milliseconds: 230),
       transitionBuilder: (ctx, anim, _, child) {
         final curved =
             CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
@@ -466,190 +829,448 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       pageBuilder: (ctx, _, __) {
         final maxH = MediaQuery.of(ctx).size.height - 48;
         return Center(
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
-              constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
-              decoration: BoxDecoration(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 24),
+            constraints: BoxConstraints(maxWidth: 440, maxHeight: maxH),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(26),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.22),
+                  blurRadius: 36,
+                  offset: const Offset(0, 14),
+                ),
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(26),
+              child: Material(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.18),
-                    blurRadius: 40,
-                    offset: const Offset(0, 12),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(18, 16, 16, 14),
-                    decoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius:
-                          BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // ── Illustrated Banner Header with Category Background ──
+                    Stack(
                       children: [
-                        Text(group.icon,
-                            style: const TextStyle(fontSize: 26)),
-                        const SizedBox(width: 10),
-                        Expanded(
+                        Positioned.fill(
+                          child: Image.asset(
+                            theme.bgAsset,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                          ),
+                        ),
+                        Positioned.fill(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  theme.c1.withValues(alpha: 0.88),
+                                  theme.c2.withValues(alpha: 0.82),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 14,
+                          bottom: 6,
+                          child: IgnorePointer(
+                            child: Opacity(
+                              opacity: 0.24,
+                              child: Image.asset(
+                                theme.badgeAsset,
+                                width: 88,
+                                height: 88,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 14, 16, 26),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(group.label,
+                              Row(
+                                children: [
+                                  if (parentGroup != null)
+                                    GestureDetector(
+                                      onTap: () {
+                                        Navigator.pop(ctx, null);
+                                        _showSubCategorySheet(parentGroup);
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(7),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white.withValues(alpha: 0.20),
+                                          shape: BoxShape.circle,
+                                        ),
+                                        child: const Icon(
+                                          Icons.arrow_back_rounded,
+                                          color: Colors.white,
+                                          size: 18,
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.20),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        group.icon,
+                                        style: const TextStyle(fontSize: 16),
+                                      ),
+                                    ),
+                                  const Spacer(),
+                                  GestureDetector(
+                                    onTap: () => Navigator.pop(ctx, null),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(7),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withValues(alpha: 0.20),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(
+                                        Icons.close_rounded,
+                                        color: Colors.white,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Colors.white.withValues(alpha: 0.24),
+                                  ),
+                                ),
+                                child: Text(
+                                  breadcrumb,
                                   style: const TextStyle(
-                                      fontSize: 17,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white)),
-                              const Text('Select a specific category',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.white70)),
+                                    color: Colors.white,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                group.label,
+                                style: const TextStyle(
+                                  fontSize: 21,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                subtitle,
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Colors.white.withValues(alpha: 0.88),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(ctx),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.20),
-                              shape: BoxShape.circle,
+                        const Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: SizedBox(
+                            height: 14,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(22)),
+                              ),
                             ),
-                            child: const Icon(Icons.close,
-                                color: Colors.white, size: 18),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                  Flexible(
-                    child: SingleChildScrollView(
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: group.subCategories.length,
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            mainAxisExtent: 68,
-                          ),
-                          itemBuilder: (_, i) {
-                            final c = group.subCategories[i];
-                            final sel = _selectedCategory == c.id;
-                            return GestureDetector(
-                              onTap: () {
-                                setState(() {
-                                  _selectedCategory = c.id;
-                                  _autoFillDescription();
-                                });
-                                _recalcDistance();
-                                _syncAutoBudget(_computeEffectiveBudget());
-                                Navigator.pop(ctx);
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: sel
-                                      ? const Color(0xFFEEF2FF)
-                                      : Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: sel
-                                        ? AppColors.primary
-                                        : const Color(0xFFE2E8F0),
-                                    width: sel ? 2 : 1,
+
+                    // ── White Dialog Body ──
+                    Flexible(
+                      child: Container(
+                        color: Colors.white,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const SizedBox(height: 2),
+                              Flexible(
+                                child: ListView.separated(
+                                  shrinkWrap: true,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 4),
+                                  itemCount: group.subCategories.length,
+                                  separatorBuilder: (_, __) => const Divider(
+                                    height: 1,
+                                    thickness: 1,
+                                    color: Color(0xFFF1F5F9),
+                                    indent: 62,
+                                    endIndent: 12,
                                   ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black
-                                          .withValues(alpha: 0.04),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 1),
-                                    ),
-                                  ],
-                                ),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 38,
-                                      height: 38,
-                                      alignment: Alignment.center,
-                                      decoration: BoxDecoration(
-                                        color: sel
-                                            ? Colors.white
-                                            : const Color(0xFFF8FAFC),
-                                        borderRadius:
-                                            BorderRadius.circular(10),
-                                        border: Border.all(
+                                  itemBuilder: (_, i) {
+                                    final c = group.subCategories[i];
+                                    final isFreelancerEntry = c.id == 'freelancer';
+                                    final sel = isFreelancerEntry
+                                        ? (_selectedCategory == 'freelancer' ||
+                                            TaskCategoryGroup.freelancerChildIds
+                                                .contains(_selectedCategory))
+                                        : _selectedCategory == c.id;
+                                    final grad = _squircleGradientFor(c.id);
+                                    final iconAsset =
+                                        TaskCategory.subcatAssetFor(c.id);
+                                    return InkWell(
+                                      borderRadius: BorderRadius.circular(14),
+                                      onTap: () {
+                                        if (isFreelancerEntry) {
+                                          Navigator.pop(ctx, null);
+                                          _showSubCategorySheet(
+                                            TaskCategoryGroup.freelancerGroup,
+                                            parentGroup: group,
+                                          );
+                                          return;
+                                        }
+                                        Navigator.pop(ctx, c);
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 10),
+                                        decoration: BoxDecoration(
                                           color: sel
-                                              ? AppColors.primary
-                                                  .withValues(alpha: 0.25)
-                                              : const Color(0xFFE2E8F0),
+                                              ? const Color(0xFFEEF2FF)
+                                              : Colors.transparent,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 44,
+                                              height: 44,
+                                              decoration: BoxDecoration(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                                boxShadow: [
+                                                  BoxShadow(
+                                                    color: grad.first
+                                                        .withValues(alpha: 0.24),
+                                                    blurRadius: 8,
+                                                    offset: const Offset(0, 3),
+                                                  ),
+                                                ],
+                                              ),
+                                              child: iconAsset != null
+                                                  ? ClipRRect(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              11),
+                                                      child: Image.asset(
+                                                        iconAsset,
+                                                        width: 44,
+                                                        height: 44,
+                                                        fit: BoxFit.cover,
+                                                        errorBuilder: (_, __,
+                                                                ___) =>
+                                                            Container(
+                                                          alignment:
+                                                              Alignment.center,
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            gradient:
+                                                                LinearGradient(
+                                                              begin: Alignment
+                                                                  .topLeft,
+                                                              end: Alignment
+                                                                  .bottomRight,
+                                                              colors: grad,
+                                                            ),
+                                                            borderRadius:
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        11),
+                                                          ),
+                                                          child: Text(
+                                                            c.icon,
+                                                            style:
+                                                                const TextStyle(
+                                                                    fontSize:
+                                                                        20),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : Container(
+                                                      alignment:
+                                                          Alignment.center,
+                                                      decoration: BoxDecoration(
+                                                        gradient:
+                                                            LinearGradient(
+                                                          begin:
+                                                              Alignment.topLeft,
+                                                          end: Alignment
+                                                              .bottomRight,
+                                                          colors: grad,
+                                                        ),
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(11),
+                                                      ),
+                                                      child: Text(
+                                                        c.icon,
+                                                        style: const TextStyle(
+                                                            fontSize: 20),
+                                                      ),
+                                                    ),
+                                            ),
+                                            const SizedBox(width: 14),
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  alignment:
+                                                      Alignment.centerLeft,
+                                                  child: Text(
+                                                    c.label,
+                                                    style: TextStyle(
+                                                      fontSize: 14.2,
+                                                      fontWeight: sel
+                                                          ? FontWeight.w700
+                                                          : FontWeight.w600,
+                                                      color: sel
+                                                          ? AppColors.primaryDark
+                                                          : const Color(
+                                                              0xFF0F172A),
+                                                      letterSpacing: -0.2,
+                                                      height: 1.15,
+                                                    ),
+                                                    maxLines: 1,
+                                                    softWrap: false,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            if (sel && !isFreelancerEntry)
+                                              const Icon(
+                                                Icons.check_circle_rounded,
+                                                size: 22,
+                                                color: AppColors.primary,
+                                              )
+                                            else
+                                              Container(
+                                                width: 28,
+                                                height: 28,
+                                                decoration: BoxDecoration(
+                                                  color: sel
+                                                      ? AppColors.primary
+                                                          .withValues(
+                                                              alpha: 0.14)
+                                                      : const Color(0xFFF1F5F9),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: Icon(
+                                                  Icons.chevron_right_rounded,
+                                                  size: 18,
+                                                  color: sel
+                                                      ? AppColors.primary
+                                                      : const Color(0xFF64748B),
+                                                ),
+                                              ),
+                                          ],
                                         ),
                                       ),
-                                      child: Text(c.icon,
-                                          style: const TextStyle(
-                                              fontSize: 20)),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        alignment: Alignment.centerLeft,
-                                        child: Text(
-                                          c.label,
-                                          style: TextStyle(
-                                            fontSize: 12.5,
-                                            fontWeight: sel
-                                                ? FontWeight.w700
-                                                : FontWeight.w600,
-                                            color: sel
-                                                ? AppColors.primaryDark
-                                                : AppColors.dark,
-                                            letterSpacing: -0.2,
-                                          ),
-                                          maxLines: 1,
-                                        ),
-                                      ),
-                                    ),
-                                    if (sel) ...[
-                                      const SizedBox(width: 4),
-                                      const Icon(
-                                        Icons.check_circle_rounded,
-                                        size: 16,
-                                        color: AppColors.primary,
-                                      ),
-                                    ],
-                                  ],
+                                    );
+                                  },
                                 ),
                               ),
-                            );
-                          },
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(16, 6, 16, 14),
+                                child: Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        (parentGroup != null ||
+                                                group.label == 'Freelancer')
+                                            ? Icons.public_rounded
+                                            : Icons.verified_user_outlined,
+                                        size: 14,
+                                        color: const Color(0xFF475569),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          theme.footerNote,
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF475569),
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
         );
       },
     );
+
+    if (selectedCat != null && mounted) {
+      setState(() {
+        _applySelectedCategory(selectedCat.id);
+      });
+      _checkAndEstimateDistance();
+      if (_budgetCtrl.text.trim().isNotEmpty) {
+        _budgetFieldKey.currentState?.validate();
+      }
+      if (Task.isGroceryCategory(selectedCat.id)) {
+        // Wait for showGeneralDialog exit transition (230ms) to completely finish
+        // so its ModalBarrier overlay is cleanly unmounted and destroyed before pushing the picker.
+        await Future.delayed(const Duration(milliseconds: 320));
+        if (mounted && _selectedGroceryItems.isEmpty) {
+          await _openGroceryItemPicker();
+        }
+      }
+    }
   }
 
   /// Auto-fill description with category-specific prompts/questions.
@@ -661,21 +1282,34 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   @override
   void initState() {
     super.initState();
-    _budgetCtrl.text = _computeEffectiveBudget().toStringAsFixed(0);
     _savedLocations = StorageService.getSavedLocations();
+    _titleCtrl.addListener(_onFreelancerDetailsChanged);
+    _additionalNotesCtrl.addListener(_compileDescriptionFromForm);
+    _additionalNotesCtrl.addListener(_onFreelancerDetailsChanged);
     _areaCtrl.addListener(_onLocationAreaChanged);
     _pickupAreaCtrl.addListener(_onLocationAreaChanged);
     _dropAreaCtrl.addListener(_onLocationAreaChanged);
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
+    if (widget.initialGroceryItems != null && widget.initialGroceryItems!.isNotEmpty) {
+      _selectedGroceryItems = List.from(widget.initialGroceryItems!);
+    }
+    if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
+      _applySelectedCategory(widget.initialCategory!);
+    } else if (Task.isGroceryCategory(_selectedCategory)) {
+      _initGroceryDefaults();
+    }
+    if (_selectedGroceryItems.isNotEmpty) {
+      _compileDescriptionFromForm();
+    }
     // Auto-fill description with prompts for the default category on first open
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       _autoFillDescription();
       if (!mounted) return;
       // auth reference
       final auth = context.read<AuthProvider>();
-    if (!auth.isPosterMode) {
+      if (!auth.isPosterMode) {
         final switched = await showProfileModeSwitchDialog(
           context,
           targetMode: 'poster',
@@ -686,13 +1320,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         );
         if (switched != true && mounted) {
           Navigator.of(context).pop();
+          return;
         }
+      }
+      if (widget.initialCategory != null &&
+          Task.isGroceryCategory(widget.initialCategory!) &&
+          _selectedGroceryItems.isEmpty &&
+          (widget.initialGroceryItems == null || widget.initialGroceryItems!.isEmpty) &&
+          mounted) {
+        await Future.delayed(const Duration(milliseconds: 350));
+        if (mounted && _selectedGroceryItems.isEmpty) {
+          await _openGroceryItemPicker();
+        }
+      } else if (_selectedGroceryItems.isNotEmpty) {
+        _safeScrollTo(320.0);
       }
     });
   }
 
   @override
   void dispose() {
+    _titleCtrl.removeListener(_onFreelancerDetailsChanged);
+    _additionalNotesCtrl.removeListener(_compileDescriptionFromForm);
+    _additionalNotesCtrl.removeListener(_onFreelancerDetailsChanged);
     _areaCtrl.removeListener(_onLocationAreaChanged);
     _pickupAreaCtrl.removeListener(_onLocationAreaChanged);
     _dropAreaCtrl.removeListener(_onLocationAreaChanged);
@@ -716,6 +1366,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _pickupDebounce?.cancel();
     _dropDebounce?.cancel();
     _addressDebounce?.cancel();
+    _storeSearchDebounce?.cancel();
+    _customStoreCtrl.dispose();
+    _storeSearchCtrl.dispose();
     _pickupFocus.dispose();
     _dropFocus.dispose();
     _addressFocus.dispose();
@@ -780,53 +1433,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           title: const Text('Save Address',
               style:
                   TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Quick labels:',
-                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: ['Home', 'Work', 'Other'].map((t) {
-                  final sel = selectedType == t;
-                  return GestureDetector(
-                    onTap: () => setDlg(() {
-                      selectedType = t;
-                      if (t != 'Other') nameCtrl.text = t;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel
-                            ? AppColors.primary
-                            : AppColors.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: AppColors.primary.withValues(
-                                alpha: sel ? 1.0 : 0.3)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quick labels:',
+                    style: TextStyle(fontSize: 12, color: AppColors.gray)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: ['Home', 'Work', 'Other'].map((t) {
+                    final sel = selectedType == t;
+                    return GestureDetector(
+                      onTap: () => setDlg(() {
+                        selectedType = t;
+                        if (t != 'Other') nameCtrl.text = t;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel
+                              ? AppColors.primary
+                              : AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: AppColors.primary.withValues(
+                                  alpha: sel ? 1.0 : 0.3)),
+                        ),
+                        child: Text(t,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : AppColors.primary)),
                       ),
-                      child: Text(t,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : AppColors.primary)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Address name',
-                  hintText: 'e.g. Home, Office, Mom\'s place',
-                  prefixIcon: Icon(Icons.label_outline),
+                    );
+                  }).toList(),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Address name',
+                    hintText: 'e.g. Home, Office, Mom\'s place',
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -1059,48 +1715,51 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Save Address',
               style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Quick labels:',
-                  style: TextStyle(fontSize: 12, color: AppColors.gray)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: ['Home', 'Work', 'Other'].map((t) {
-                  final sel = selectedType == t;
-                  return GestureDetector(
-                    onTap: () => setDlg(() {
-                      selectedType = t;
-                      if (t != 'Other') nameCtrl.text = t;
-                    }),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Quick labels:',
+                    style: TextStyle(fontSize: 12, color: AppColors.gray)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: ['Home', 'Work', 'Other'].map((t) {
+                    final sel = selectedType == t;
+                    return GestureDetector(
+                      onTap: () => setDlg(() {
+                        selectedType = t;
+                        if (t != 'Other') nameCtrl.text = t;
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: sel ? AppColors.primary : AppColors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
+                        ),
+                        child: Text(t,
+                            style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: sel ? Colors.white : AppColors.primary)),
                       ),
-                      child: Text(t,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: sel ? Colors.white : AppColors.primary)),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Address name',
-                  hintText: 'e.g. Home, Office, Mom\'s place',
-                  prefixIcon: Icon(Icons.label_outline),
+                    );
+                  }).toList(),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Address name',
+                    hintText: 'e.g. Home, Office, Mom\'s place',
+                    prefixIcon: Icon(Icons.label_outline),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -1213,8 +1872,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (!_isDelivery && _addressCtrl.text.isEmpty && addr != null) {
             _addressCtrl.text = addr;
           }
-          // Auto-fill Area field with subLocality + locality
-          // (intentionally removed — area stays empty for user to fill)
+          _syncAreaBudgetIfAuto();
         }
       }
     } catch (_) {}
@@ -1236,6 +1894,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (!_isDelivery && addr != null) _addressCtrl.text = addr;
         _showSavePrompt = true; // offer to save
       });
+      _syncAreaBudgetIfAuto();
     }
   }
 
@@ -1472,7 +2131,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   static String? _checkBannedContent(String title, String description) {
-    final text = '${title.toLowerCase()} ${description.toLowerCase()}';
+    final descClean = description.replaceAll(
+      RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true, caseSensitive: false),
+      ' ',
+    );
+    final text = '${title.toLowerCase()} ${descClean.toLowerCase()}';
     if (text.trim().isEmpty) return null;
 
     final patterns = <(RegExp, String)>[
@@ -1514,12 +2177,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (rx.hasMatch(text)) return reason;
     }
 
+    final scanText = text.replaceAll(RegExp(r'https?://\S+'), ' ');
+
     // Phone number in task content
-    if (RegExp(r'(?:\+?91[\s\-]?)?[6-9]\d{9}').hasMatch(text)) {
+    if (RegExp(r'(?<!\d)(?:\+?91[\s\-]?)?[6-9]\d{9}(?!\d)').hasMatch(scanText)) {
       return 'Sharing phone numbers in the task is not allowed. Helpers can contact you through in-app chat.';
     }
     // Email address in task content
-    if (RegExp(r'[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}', caseSensitive: false).hasMatch(text)) {
+    if (RegExp(r'\b[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}\b', caseSensitive: false).hasMatch(scanText)) {
       return 'Sharing email addresses in the task is not allowed. Helpers can contact you through in-app chat.';
     }
 
@@ -1527,13 +2192,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   Future<void> _submit() async {
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      final dist = _calculatedDistanceKm ?? 0.8;
+      final autoGroceryBudget = Task.calculateDistancePrice(dist, 'groceries') + 30.0;
+      _syncAutoBudget(autoGroceryBudget);
+    }
     _compileDescriptionFromForm();
 
     // Always re-check title on every submit click (not relying on form cache)
     final titleErr = _validateTaskTitle(_titleCtrl.text);
     if (titleErr != null) {
-      _scrollCtrl.animateTo(0,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      _safeScrollToTop();
       WidgetsBinding.instance
           .addPostFrameCallback((_) => _titleFocus.requestFocus());
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1548,8 +2217,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     if (!_formKey.currentState!.validate()) {
       // Scroll to top and jump cursor to the first invalid field
-      _scrollCtrl.animateTo(0,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeOut);
+      _safeScrollToTop();
       final missing = <String>[];
       FocusNode? firstInvalidFocus;
       if (_titleCtrl.text.trim().length < 5) {
@@ -1557,7 +2225,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         firstInvalidFocus ??= _titleFocus;
       }
       if (_descCtrl.text.trim().length < 10) {
-        missing.add('Task Details Form (min 10 characters)');
+        missing.add('Task Details (min 10 characters)');
         final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
         for (final p in prompts) {
           final ctrl = _descFormControllers[p];
@@ -1580,6 +2248,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (_dropAddrCtrl.text.trim().isEmpty) {
           missing.add('Drop Address');
           firstInvalidFocus ??= _dropFocus;
+        }
+        if (_pickupAddrCtrl.text.trim().isNotEmpty &&
+            _dropAddrCtrl.text.trim().isNotEmpty &&
+            _pickupAddrCtrl.text.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
+          _safeScrollToTop();
+          WidgetsBinding.instance.addPostFrameCallback((_) => _dropFocus.requestFocus());
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: const Text('Drop address must be different from pickup address.'),
+            backgroundColor: AppColors.danger,
+            duration: const Duration(seconds: 3),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ));
+          return;
         }
       }
       // Request focus on the first invalid field after next frame
@@ -1616,9 +2298,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
     // ────────────────────────────────────────────────────────────────────────
 
-    final LatLng? taskLocation =
-        _isDelivery ? (_pickupLocation ?? _location) : _location;
-    if (taskLocation == null) {
+    // Grocery weight check: 20kg two-wheeler limit
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      final totalW = GroceryCatalog.calculateTotalWeightKg(_selectedGroceryItems);
+      if (totalW > GroceryCatalog.maxTwoWheelerWeightKg) {
+        _showGroceryWeightLimitDialog(totalW);
+        return;
+      }
+    }
+
+    final LatLng? taskLocation = _isFreelancer
+        ? null
+        : (_isDelivery ? (_pickupLocation ?? _location) : _location);
+    if (!_isFreelancer && taskLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -1676,39 +2368,40 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       return;
     }
 
-    final autoBudget = _computeEffectiveBudget();
-    final rawBudget = double.tryParse(_budgetCtrl.text) ?? 0;
-    final budget = rawBudget > 0 ? rawBudget : autoBudget;
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null) {
-        final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
-        if (budget < distMin) {
+    final budget = double.tryParse(_budgetCtrl.text) ?? 0;
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
+    if (!isGrocery) {
+      if (_isDelivery) {
+        if (_calculatedDistanceKm != null) {
+          final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+          if (budget < distMin) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
+            );
+            return;
+          }
+        } else {
+          final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+          if (catMin > 0 && budget < catMin) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
+            );
+            return;
+          }
+        }
+      } else {
+        final minAllowed = _currentMinBudget();
+        if (budget < minAllowed) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_calculatedDistanceKm!.toStringAsFixed(1)} km is ₹${distMin.toInt()}')),
+            SnackBar(content: Text(_currentMinBudgetMessage())),
           );
           return;
         }
-      } else if (_selectedCategory != 'delivery') {
-        final catMin = Task.minBudgetForCategory(_selectedCategory);
-        if (catMin > 0 && budget < catMin) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
-          );
-          return;
-        }
-      }
-    } else {
-      final catMin = Task.minBudgetForCategory(_selectedCategory);
-      if (budget < catMin) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}')),
-        );
-        return;
       }
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-    final posterFee = budget * 0.20;
+    final posterFee = isGrocery ? 12.0 : (budget * 0.20);
     final total  = budget + charge + posterFee;
 
     // Confirm posting — payment is collected AFTER the helper completes the task
@@ -1743,20 +2436,22 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         color: Colors.white, size: 22),
                   ),
                   const SizedBox(width: 14),
-                  const Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Post Your Task',
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1E293B),
-                              letterSpacing: -0.4)),
-                      Text('Review before posting',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: Color(0xFF94A3B8))),
-                    ],
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Post Your Task',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF1E293B),
+                                letterSpacing: -0.4)),
+                        Text('Review before posting',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF94A3B8))),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -1795,35 +2490,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 posterFee: posterFee,
                 totalCost: total,
                 isRepair: Task.isRepairCategory(_selectedCategory),
+                isGrocery: Task.isGroceryCategory(_selectedCategory),
                 distanceKm: _calculatedDistanceKm,
-                category: _selectedCategory,
-                vehicle: _deliveryVehicle,
-                isUrgent: _isTaskUrgent(),
-                itemBudget: _getItemBudget(),
               ),
               const SizedBox(height: 24),
               // Action buttons
               Row(
                 children: [
                   Expanded(
+                    flex: 2,
                     child: TextButton(
                       onPressed: () => Navigator.of(ctx).pop(false),
                       style: TextButton.styleFrom(
                         foregroundColor: const Color(0xFF64748B),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                           side: const BorderSide(color: Color(0xFFE2E8F0)),
                         ),
                       ),
-                      child: const Text('Cancel',
-                          style: TextStyle(
-                              fontWeight: FontWeight.w600, fontSize: 14)),
+                      child: const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text('Cancel',
+                            maxLines: 1,
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
-                    flex: 2,
+                    flex: 3,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         gradient: const LinearGradient(
@@ -1843,9 +2540,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       child: ElevatedButton.icon(
                         onPressed: () => Navigator.of(ctx).pop(true),
                         icon: const Icon(Icons.rocket_launch_rounded, size: 16),
-                        label: const Text('Post Task',
-                            style: TextStyle(
-                                fontWeight: FontWeight.w700, fontSize: 14)),
+                        label: const FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('Post Task',
+                              maxLines: 1,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 14)),
+                        ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           foregroundColor: Colors.white,
@@ -1869,14 +2570,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     setState(() => _loading = true);
 
-    // Build the address field: for delivery categories combine pickup + drop.
+    // Build the address field: for freelancer tasks remote/online; for delivery combine pickup + drop.
     final String? combinedAddress;
-    if (_isDelivery) {
+    if (_isFreelancer) {
+      combinedAddress = 'Remote / Online';
+    } else if (_isDelivery) {
       final pickup = _pickupAddrCtrl.text.trim();
       final drop   = _dropAddrCtrl.text.trim();
-      combinedAddress = (pickup.isNotEmpty || drop.isNotEmpty)
-          ? 'Pickup: $pickup\nDrop: $drop'
-          : _locationLabel;
+      combinedAddress = pickup.isNotEmpty ? pickup : (drop.isNotEmpty ? drop : _locationLabel);
     } else {
       final typed    = _addressCtrl.text.trim();
       final flatName  = _flatNameCtrl.text.trim();
@@ -1897,21 +2598,48 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'category': _selectedCategory,
       'price': double.tryParse(_budgetCtrl.text) ?? 0,
       'budget': double.tryParse(_budgetCtrl.text) ?? 0,
-      if (charge > 0) 'service_charge': charge,
-      // Nested location object expected by the backend
+      'service_charge': charge,
+      'serviceCharge': charge,
+      // Nested location object expected by the backend (null coords for remote freelancer services)
       'location': {
-        'lat': taskLocation.latitude,
-        'lng': taskLocation.longitude,
+        'lat': taskLocation?.latitude,
+        'lng': taskLocation?.longitude,
         'address': combinedAddress ?? '',
       },
+      if (_isFreelancer) ...{
+        'is_remote': true,
+        'pricing_model': _freelancerPricingMode,
+        'pricing_scope': _freelancerQuote?.scopeSummary,
+        if (_freelancerPricingMode == 'hourly') ...{
+          'hourly_rate': _freelancerHourlyRate,
+          'estimated_hours': _freelancerHours,
+        } else ...{
+          'pricing_tier': _freelancerQuote?.tier?.id,
+          if (_freelancerQuote?.units != null) 'unit_count': _freelancerQuote!.units,
+        },
+        'separate_costs': _freelancerQuote?.separateCostsTitle,
+      },
+      if (Task.isRepairCategory(_selectedCategory)) ...{
+        'separate_costs': 'Materials & spare parts required for service (paid separately by poster)',
+      },
+      if (Task.isGroceryCategory(_selectedCategory)) ...{
+        'separate_costs': 'Grocery items cost (paid separately by poster directly to helper/store)',
+      },
       if (_isDelivery) ...{
-        'vehicle': _selectedCategory == 'delivery' ? _deliveryVehicle : 'auto',
-        if (_pickupAddrCtrl.text.trim().isNotEmpty)
+        'vehicle': _selectedCategory == 'delivery'
+            ? _deliveryVehicle
+            : (_selectedCategory == 'moving'
+                ? (_deliveryVehicle == 'truck' ? 'truck' : 'tempo')
+                : (Task.isGroceryCategory(_selectedCategory) ? 'bike' : 'auto')),
+        if (_pickupAddrCtrl.text.trim().isNotEmpty) ...{
           'pickup_address': _pickupAddrCtrl.text.trim(),
+          'pickupAddress': _pickupAddrCtrl.text.trim(),
+        },
         if (_dropAddrCtrl.text.trim().isNotEmpty) ...{
           'delivery_address': _dropAddrCtrl.text.trim(),
           'drop_location_address': _dropAddrCtrl.text.trim(),
           'drop_address': _dropAddrCtrl.text.trim(),
+          'dropAddress': _dropAddrCtrl.text.trim(),
         },
         'drop_location': {
           'lat': _dropLocation?.latitude,
@@ -1924,7 +2652,64 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           'address': _dropAddrCtrl.text.trim(),
         },
       },
+      if (_selectedGroceryItems.isNotEmpty) ...{
+        'grocery_items': _selectedGroceryItems.map((e) => e.toJson()).toList(),
+        'groceryItems': _selectedGroceryItems.map((e) => e.toJson()).toList(),
+      },
     };
+
+    final isVehicleCategory = _isDelivery ||
+        _selectedCategory == 'moving' ||
+        _selectedCategory == 'transport' ||
+        _selectedCategory == 'pickup';
+
+    if (isVehicleCategory) {
+      final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
+      final String vehicleType;
+      if (_selectedCategory == 'moving') {
+        vehicleType = _deliveryVehicle == 'truck' ? 'truck' : 'tempo';
+      } else if (_selectedCategory == 'transport') {
+        vehicleType = 'car';
+      } else if (_selectedCategory == 'pickup') {
+        vehicleType = _deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'rikshaw';
+      } else {
+        vehicleType = _deliveryVehicle.isNotEmpty ? _deliveryVehicle : 'bike';
+      }
+
+      final postedOk = await VehicleTaskPostingDialog.show(
+        context: context,
+        category: _selectedCategory,
+        vehicleType: vehicleType,
+        budget: postedBudget,
+        distanceKm: _calculatedDistanceKm,
+        customTitle: _titleCtrl.text.trim(),
+        onPostTask: () => context.read<TaskProvider>().postTask(taskData),
+        onTrackInMyTasks: () {
+          if (mounted) context.go('/my-tasks');
+        },
+        onBackToHome: () {
+          if (mounted) context.go('/home');
+        },
+      );
+
+      if (!mounted) return;
+      setState(() => _loading = false);
+
+      if (postedOk == true) {
+        if (mounted) {
+          context.go('/my-tasks');
+        }
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              context.read<TaskProvider>().error ?? 'Failed to post task',
+            ),
+          ),
+        );
+      }
+      return;
+    }
 
     final ok = await context.read<TaskProvider>().postTask(taskData);
 
@@ -1932,10 +2717,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() => _loading = false);
 
     if (ok) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task posted successfully!')),
+      final provider = context.read<TaskProvider>();
+      final createdTaskId = provider.lastCreatedTaskId;
+      final postedTitle = _titleCtrl.text.trim().isNotEmpty
+          ? _titleCtrl.text.trim()
+          : 'New Task';
+      final postedBudget = double.tryParse(_budgetCtrl.text) ?? 0.0;
+
+      await TaskPostedSuccessDialog.show(
+        context: context,
+        title: postedTitle,
+        category: _selectedCategory,
+        budget: postedBudget,
+        taskId: createdTaskId,
+        onViewTasks: () {
+          if (mounted) context.go('/my-tasks');
+        },
+        onGoHome: () {
+          if (mounted) context.go('/home');
+        },
       );
-      context.go('/my-tasks');
+
+      if (mounted) {
+        context.go('/my-tasks');
+      }
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1961,7 +2766,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       () => TextEditingController()
         ..addListener(() {
           _compileDescriptionFromForm();
-          _syncAutoBudget(_computeEffectiveBudget());
+          _onFreelancerDetailsChanged();
         }),
     );
   }
@@ -1996,6 +2801,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (lower.contains('how many clothes')) return 'e.g. Around 15-20 clothes (daily wear)';
     if (lower.contains('subject')) return 'e.g. Mathematics, Class 10 CBSE';
     if (lower.contains('service do you need')) return 'e.g. WordPress website customization, logo design';
+    if (lower.contains('design needed')) return 'e.g. Logo, Instagram post pack, brochure, menu';
+    if (lower.contains('project type') || lower.contains('tech stack')) return 'e.g. WordPress site, React landing page, Flutter/bug fix';
+    if (lower.contains('video/audio edit')) return 'e.g. Instagram Reel edit, YouTube video, podcast cleanup';
+    if (lower.contains('seo/ads/social media')) return 'e.g. Meta/Google Ads setup, Google Business SEO, social posts';
+    if (lower.contains('deck/excel/admin')) return 'e.g. Pitch deck, Excel dashboard, resume formatting';
     if (lower.contains('materials needed')) return 'e.g. Plywood provided / helper to bring screws';
     if (lower.contains('colour')) return 'e.g. Off-white emulsion, 1 bedroom wall';
     if (lower.contains('garden')) return 'e.g. Lawn mowing, trimming bushes, watering';
@@ -2005,6 +2815,41 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _compileDescriptionFromForm() {
     final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
     final lines = <String>[];
+    if (_isFreelancer && _freelancerQuote != null) {
+      final q = _freelancerQuote!;
+      lines.add('• Pricing Scope: ${q.scopeSummary}');
+      if (_selectedCategory == 'web_app_tech') {
+        lines.add(_separateChargesClientPaid
+            ? '• Domain & Hosting: Paid separately by client (excluded from budget)'
+            : '• Domain & Hosting: Client already owns domain & hosting');
+      } else {
+        lines.add('• Excluded Costs: ${q.separateCostsTitle} (separate from fee)');
+      }
+    }
+    if (Task.isRepairCategory(_selectedCategory)) {
+      lines.add('• Materials/Parts: Paid separately by task poster (excluded from budget)');
+    }
+    if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
+      final totalWeight = GroceryCatalog.calculateTotalWeightKg(_selectedGroceryItems);
+      lines.add('• Vehicle: Bike / Scooty (Max Weight: 20kg, Cart: ${totalWeight.toStringAsFixed(1)}kg)');
+      if (_selectedGroceryStoreName != null) {
+        lines.add('• Store / Supermarket: $_selectedGroceryStoreName');
+      }
+      lines.add('• Handling & Shopping Charge: ₹30 included in delivery budget');
+      lines.add('• Grocery Items Cost: Paid separately by task poster on actual bill (excluded from delivery budget)');
+      if (_selectedGroceryItems.isNotEmpty) {
+        lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
+        for (final item in _selectedGroceryItems) {
+          lines.add('  - ${item.formattedDescription}');
+        }
+        lines.add(GroceryCatalog.encodeGroceryItemsJson(_selectedGroceryItems));
+      }
+    } else if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') {
+      final cap = _currentVehicleCapacity;
+      if (cap.isNotEmpty) {
+        lines.add('• Vehicle: ${cap['vehicle']} (Max Weight: ${cap['maxWeight']}, Size: ${cap['maxSize']})');
+      }
+    }
     for (final p in prompts) {
       final ctrl = _descFormControllers[p];
       final val = ctrl?.text.trim() ?? '';
@@ -2019,48 +2864,264 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _descCtrl.text = lines.join('\n');
   }
 
-  Widget _buildDescriptionFormSection() {
-    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
-    final categoryLabel = TaskCategory.all
-        .firstWhere((c) => c.id == _selectedCategory,
-            orElse: () => TaskCategory(id: _selectedCategory, label: _selectedCategory, icon: '📋'))
-        .label;
+  Map<String, String> get _currentVehicleCapacity {
+    if (_selectedCategory == 'delivery') {
+      if (_deliveryVehicle == 'bike') {
+        return {
+          'vehicle': '2 Wheeler',
+          'maxWeight': '20kg',
+          'maxSize': '40*40cm',
+        };
+      } else {
+        return {
+          'vehicle': 'Rikshaw',
+          'maxWeight': '85kg',
+          'maxSize': '4*3ft',
+        };
+      }
+    } else if (_selectedCategory == 'moving') {
+      if (_deliveryVehicle == 'truck') {
+        return {
+          'vehicle': 'Truck',
+          'maxWeight': '4000kg',
+          'maxSize': '7*6ft',
+        };
+      } else {
+        return {
+          'vehicle': 'Tempo',
+          'maxWeight': '400kg',
+          'maxSize': '6*5ft',
+        };
+      }
+    } else if (_selectedCategory == 'groceries' || _selectedCategory == 'grocery') {
+      return {
+        'vehicle': 'Bike / Scooty',
+        'maxWeight': '20kg',
+        'maxSize': 'Standard Bags',
+      };
+    }
+    return const {};
+  }
+
+  Widget _buildVehicleCapacityBanner() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.scale_rounded, size: 20, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '${_currentVehicleCapacity['vehicle']} Capacity Limits',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 16,
+                    color: Color(0xFF1E3A8A),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Max Weight',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _currentVehicleCapacity['maxWeight'] ?? '',
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFDBEAFE)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Max Size',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                      ),
+                      const SizedBox(height: 2),
+                      FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          _currentVehicleCapacity['maxSize'] ?? '',
+                          maxLines: 1,
+                          style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF1E293B)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _safeScrollTo(double offset) {
+    if (!mounted) return;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted || !_scrollCtrl.hasClients) return;
+      try {
+        final pos = _scrollCtrl.position;
+        if (!pos.hasContentDimensions) return;
+        final minE = pos.minScrollExtent;
+        final maxE = pos.maxScrollExtent;
+        if (minE >= maxE) return;
+        final target = offset.clamp(minE, maxE);
+        if ((pos.pixels - target).abs() < 5) return;
+        _scrollCtrl.animateTo(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+        );
+      } catch (e) {
+        debugPrint('[PostTask] Safe scroll ignored: $e');
+      }
+    });
+  }
+
+  void _safeScrollToTop() {
+    if (!mounted) return;
+    try {
+      if (!_scrollCtrl.hasClients) return;
+      final pos = _scrollCtrl.position;
+      if (!pos.hasContentDimensions) return;
+      _scrollCtrl.animateTo(
+        0.0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } catch (_) {}
+  }
+
+  bool _isOpeningGroceryPicker = false;
+  Future<void> _openGroceryItemPicker() async {
+    if (_isOpeningGroceryPicker || !mounted) return;
+    _isOpeningGroceryPicker = true;
+    try {
+      final result = await Navigator.of(context).push<List<SelectedGroceryItem>>(
+        MaterialPageRoute(
+          builder: (_) => GroceryItemPickerScreen(
+            initialSelected: _selectedGroceryItems,
+          ),
+        ),
+      );
+      if (result != null && mounted) {
+        setState(() {
+          _selectedGroceryItems = result;
+        });
+        _compileDescriptionFromForm();
+        if (_dropLocation != null && _dropAddrCtrl.text.isNotEmpty) {
+          _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+        } else {
+          _initGroceryDefaults();
+        }
+        _safeScrollTo(320.0);
+      }
+    } catch (e) {
+      debugPrint('[PostTask] _openGroceryItemPicker error: $e');
+    } finally {
+      _isOpeningGroceryPicker = false;
+    }
+  }
+
+  Widget _buildGroceryItemsSelectionSection() {
+    final hasItems = _selectedGroceryItems.isNotEmpty;
+    final totalWeight = GroceryCatalog.calculateTotalWeightKg(_selectedGroceryItems);
+    final isOverWeight = totalWeight > GroceryCatalog.maxTwoWheelerWeightKg;
+    double totalEstCost = 0;
+    for (final item in _selectedGroceryItems) {
+      final r = double.tryParse(item.rupee.trim());
+      if (r != null) {
+        final q = double.tryParse(item.qty.trim()) ?? 1.0;
+        totalEstCost += r * (q > 0 ? q : 1.0);
+      }
+    }
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header bar
+          // Header Bar
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
+              color: Color(0xFFF6F9FF),
               borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              border: Border(bottom: BorderSide(color: Color(0xFFE5EDF7))),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(7),
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.12),
+                    color: const Color(0xFFDCFCE7),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.assignment_outlined,
-                      size: 18, color: AppColors.primary),
+                  child: const Icon(Icons.shopping_basket_rounded,
+                      size: 20, color: Color(0xFF15803D)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -2071,29 +3132,403 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         children: [
                           const Flexible(
                             child: Text(
-                              'Task Details Form',
+                              'Grocery Items',
                               style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                                color: AppColors.dark,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 18.5,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
                               ),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: hasItems ? const Color(0xFFDCFCE7) : const Color(0xFFEAF2FF),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              hasItems ? '${_selectedGroceryItems.length} Added' : 'Required',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: hasItems ? const Color(0xFF166534) : const Color(0xFF2563EB),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (!hasItems) ...[
+                  // Empty state banner
+                  InkWell(
+                    borderRadius: BorderRadius.circular(14),
+                    onTap: _openGroceryItemPicker,
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        children: [
+                          Container(
+                            width: 52,
+                            height: 52,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFEFF6FF),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.add_shopping_cart_rounded, size: 28, color: Color(0xFF2563EB)),
+                          ),
+                          const SizedBox(height: 12),
+                          const Text(
+                            'No grocery items selected',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Browse complete market items with images and specify your quantity, weights, and brand preferences.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF64748B),
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 46,
+                            child: ElevatedButton.icon(
+                              onPressed: _openGroceryItemPicker,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                              ),
+                              icon: const Icon(Icons.playlist_add_rounded, size: 20),
+                              label: const Text(
+                                'Select Items from Catalog',
+                                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  // List of selected items
+                  ..._selectedGroceryItems.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: _openGroceryItemPicker,
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(9),
+                                  child: item.imageUrl.isNotEmpty
+                                      ? Image.network(
+                                          item.imageUrl,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Center(
+                                            child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                          ),
+                                        )
+                                      : Center(
+                                          child: Text(item.emoji, style: const TextStyle(fontSize: 20)),
+                                        ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item.name,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: Color(0xFF102A56),
+                                      ),
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      item.requirementSummary,
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF2563EB),
+                                      ),
+                                      maxLines: 2,
+                                      softWrap: true,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF2563EB)),
+                                    tooltip: 'Edit item',
+                                    onPressed: _openGroceryItemPicker,
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
+                                    tooltip: 'Remove item',
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedGroceryItems.removeAt(index);
+                                      });
+                                      _compileDescriptionFromForm();
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(height: 6),
+
+                  // Total estimated cost if any
+                  if (totalEstCost > 0)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF0FDF4),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFBBF7D0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Estimated Items Total (Approx):',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF166534),
+                            ),
+                          ),
+                          Text(
+                            '₹${totalEstCost.toStringAsFixed(0)}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF15803D),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Two-Wheeler Vehicle Weight Capacity Banner
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: isOverWeight ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isOverWeight ? const Color(0xFFFCA5A5) : const Color(0xFFBBF7D0),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Text(isOverWeight ? '⚠️' : '🛵', style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(
+                                  isOverWeight ? 'Weight Exceeds 20 kg Limit!' : 'Two-Wheeler Capacity:',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isOverWeight ? const Color(0xFF991B1B) : const Color(0xFF166534),
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${totalWeight.toStringAsFixed(1)} / 20.0 kg',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: isOverWeight ? const Color(0xFFDC2626) : const Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Add more / Edit items button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton.icon(
+                      onPressed: _openGroceryItemPicker,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF2563EB),
+                        side: const BorderSide(color: Color(0xFFBFDBFE), width: 1.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text(
+                        'Add More / Edit Grocery Items',
+                        style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionFormSection() {
+    if (_selectedCategory == 'delivery' ||
+        _selectedCategory == 'moving' ||
+        _selectedCategory == 'groceries' ||
+        _selectedCategory == 'grocery') {
+      return const SizedBox.shrink();
+    }
+
+    final prompts = _prompts[_selectedCategory] ?? _prompts['other']!;
+    final categoryLabel = TaskCategory.all
+        .firstWhere((c) => c.id == _selectedCategory,
+            orElse: () => TaskCategory(id: _selectedCategory, label: _selectedCategory, icon: '📋'))
+        .label;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header bar
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF6F9FF),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE5EDF7))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.assignment_outlined,
+                      size: 19, color: Color(0xFF2563EB)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              categoryLabel,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
                           Flexible(
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(6),
+                                color: const Color(0xFFDCEBFF),
+                                borderRadius: BorderRadius.circular(10),
                               ),
-                              child: Text(
-                                categoryLabel,
-                                style: const TextStyle(
-                                  fontSize: 10,
+                              child: const Text(
+                                'Guided',
+                                style: TextStyle(
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
+                                  color: Color(0xFF2563EB),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -2104,7 +3539,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       const SizedBox(height: 2),
                       const Text(
                         'Answer these questions so helpers understand your task',
-                        style: TextStyle(fontSize: 11, color: AppColors.gray),
+                        style: TextStyle(fontSize: 12, color: Color(0xFF52627A), fontWeight: FontWeight.w500),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
@@ -2158,8 +3593,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               child: Text(
                                 q,
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14.5,
                                   color: AppColors.dark,
                                 ),
                               ),
@@ -2201,15 +3636,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               final isSelected = ctrl.text == chipText;
                               return InkWell(
                                 onTap: () {
-                                    setState(() {
-                                      if (ctrl.text == chipText) {
-                                        ctrl.clear();
-                                      } else {
-                                        ctrl.text = chipText;
-                                      }
-                                      _compileDescriptionFromForm();
-                                      _syncAutoBudget(_computeEffectiveBudget());
-                                    });
+                                  setState(() {
+                                    if (ctrl.text == chipText) {
+                                      ctrl.clear();
+                                    } else {
+                                      ctrl.text = chipText;
+                                    }
+                                    _compileDescriptionFromForm();
+                                  });
                                 },
                                 borderRadius: BorderRadius.circular(14),
                                 child: Container(
@@ -2242,52 +3676,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                   );
                 }),
-
-                // Additional notes / special instructions
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Row(
-                      children: [
-                        Icon(Icons.notes_rounded, size: 16, color: AppColors.gray),
-                        SizedBox(width: 6),
-                        Text(
-                          'Special Instructions / Other Notes (Optional)',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 12,
-                            color: AppColors.dark,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    TextFormField(
-                      controller: _additionalNotesCtrl,
-                      focusNode: _additionalNotesFocus,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        hintText: 'Any specific instructions, parking info, access codes, etc.',
-                        hintStyle: const TextStyle(fontSize: 12, color: AppColors.grayLight),
-                        contentPadding: const EdgeInsets.all(12),
-                        filled: true,
-                        fillColor: const Color(0xFFF8FAFC),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -2299,99 +3687,164 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   void _onLocationAreaChanged() {
     if (_isDelivery) {
       _checkAndEstimateDistance();
+    } else {
+      _syncAreaBudgetIfAuto();
     }
     if (mounted) setState(() {});
   }
 
   Widget _buildDeliveryVehicleSelector() {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.delivery_dining, size: 18, color: AppColors.primary),
-              const SizedBox(width: 8),
-              const Text(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.two_wheeler_rounded, color: Color(0xFF2563EB), size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Flexible(
+              child: Text(
                 'Delivery Vehicle Option',
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: AppColors.dark,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16.5,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12,
-                    color: AppColors.primary,
-                  ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Bike',
+                imageAsset: 'assets/images/popup_delivery_scooter_3d.png',
+                isSelected: _deliveryVehicle == 'bike',
+                onTap: () {
+                  if (_deliveryVehicle != 'bike') {
+                    setState(() => _deliveryVehicle = 'bike');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Rikshaw',
+                imageAsset: 'assets/images/popup_rikshaw_3d.png',
+                isSelected: _deliveryVehicle == 'rikshaw',
+                onTap: () {
+                  if (_deliveryVehicle != 'rikshaw') {
+                    setState(() => _deliveryVehicle = 'rikshaw');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMovingVehicleSelector() {
+    final isTruck = _deliveryVehicle == 'truck';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.local_shipping_rounded, color: Color(0xFF2563EB), size: 18),
+            ),
+            const SizedBox(width: 10),
+            const Flexible(
+              child: Text(
+                'Moving Vehicle Option',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16.5,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Bike',
-                  rate: '₹12 / km',
-                  desc: 'Small items / docs',
-                  icon: Icons.two_wheeler_rounded,
-                  isSelected: _deliveryVehicle == 'bike',
-                  onTap: () {
-                    if (_deliveryVehicle != 'bike') {
-                      setState(() => _deliveryVehicle = 'bike');
-                      _recalcDistance();
-                      _syncAutoBudget(_computeEffectiveBudget());
-                    }
-                  },
-                ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Tempo',
+                imageAsset: 'assets/images/popup_delivery_tempo_3d.png',
+                isSelected: !isTruck,
+                onTap: () {
+                  if (_deliveryVehicle != 'tempo') {
+                    setState(() => _deliveryVehicle = 'tempo');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _buildVehicleTile(
-                  title: 'Rikshaw',
-                  rate: '₹18 / km',
-                  desc: 'Auto / medium items',
-                  icon: Icons.electric_rickshaw_rounded,
-                  isSelected: _deliveryVehicle == 'rikshaw',
-                  onTap: () {
-                    if (_deliveryVehicle != 'rikshaw') {
-                      setState(() => _deliveryVehicle = 'rikshaw');
-                      _recalcDistance();
-                      _syncAutoBudget(_computeEffectiveBudget());
-                    }
-                  },
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildVehicleTile(
+                title: 'Truck',
+                imageAsset: 'assets/images/popup_moving_truck_3d.png',
+                isSelected: isTruck,
+                onTap: () {
+                  if (_deliveryVehicle != 'truck') {
+                    setState(() => _deliveryVehicle = 'truck');
+                    _compileDescriptionFromForm();
+                    _checkAndEstimateDistance();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (_budgetCtrl.text.trim().isNotEmpty) _budgetFieldKey.currentState?.validate();
+                    });
+                  }
+                },
               ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildVehicleTile({
     required String title,
-    required String rate,
-    required String desc,
-    required IconData icon,
+    required String imageAsset,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
@@ -2399,50 +3852,66 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary.withValues(alpha: 0.08) : AppColors.light,
-          borderRadius: BorderRadius.circular(12),
+          color: isSelected ? const Color(0xFFEFF6FF) : Colors.white,
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: isSelected ? AppColors.primary : AppColors.border,
-            width: isSelected ? 2 : 1,
+            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE5EDF7),
+            width: isSelected ? 1.8 : 1.2,
           ),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF2563EB).withValues(alpha: 0.10)
+                  : const Color(0xFF102A56).withValues(alpha: 0.03),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
           children: [
-            Row(
-              children: [
-                Icon(icon, size: 22, color: isSelected ? AppColors.primary : AppColors.gray),
-                const Spacer(),
-                if (isSelected)
-                  const Icon(Icons.check_circle, size: 16, color: AppColors.primary),
-              ],
+            Positioned(
+              top: 0,
+              right: 0,
+              child: isSelected
+                  ? const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF2563EB))
+                  : Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: const Color(0xFFCBD5E1), width: 1.4),
+                      ),
+                    ),
             ),
-            const SizedBox(height: 6),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: isSelected ? AppColors.primary : AppColors.dark,
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    imageAsset,
+                    width: 76,
+                    height: 72,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.directions_car_rounded, size: 48, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: isSelected ? const Color(0xFF1D4ED8) : const Color(0xFF102A56),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              rate,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 12,
-                color: isSelected ? AppColors.primary : AppColors.dark,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              desc,
-              style: const TextStyle(fontSize: 11, color: AppColors.gray),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -2470,234 +3939,1906 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
+  Widget _buildSuggestedBudgetCard() {
+    if (Task.isGroceryCategory(_selectedCategory)) return const SizedBox.shrink();
+    if (!_isLocationSet && !_isFreelancer) return const SizedBox.shrink();
+    final areaCandidate = _currentAreaCandidate();
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Post a Task')),
-      body: SingleChildScrollView(
-        controller: _scrollCtrl,
-        padding: const EdgeInsets.all(16),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final suggestion = Task.getBudgetSuggestion(
+      _selectedCategory,
+      areaText: _isFreelancer ? null : areaCandidate,
+      distanceKm: _calculatedDistanceKm,
+      vehicle: _deliveryVehicle,
+      freelancerMode: _isFreelancer ? _freelancerPricingMode : null,
+      tierId: _freelancerTierId,
+      units: _freelancerUnits,
+      hourlyRate: _freelancerHourlyRate,
+      hours: _freelancerHours,
+      title: _titleCtrl.text,
+      description: _descCtrl.text,
+    );
+    final headerText = _isFreelancer
+        ? (_freelancerManualScope
+            ? 'Suggested for Selected Scope'
+            : 'Suggested by Task Details')
+        : 'Suggested in ${suggestion.localityName}';
+    final badgeText = _isFreelancer && !_freelancerManualScope && (_freelancerDetailsReason ?? '').isNotEmpty
+        ? _freelancerDetailsReason!
+        : suggestion.localityTier;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEEF2FF),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFC7D2FE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              // Title
-              TextFormField(
-                controller: _titleCtrl,
-                focusNode: _titleFocus,
-                decoration: const InputDecoration(
-                  labelText: 'Task Title',
-                  hintText: 'e.g. Pick up parcel from Bandra',
-                  prefixIcon: Icon(Icons.title),
+              Container(
+                padding: const EdgeInsets.all(5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                validator: _validateTaskTitle,
+                child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  headerText,
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF1E293B)),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E7FF),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF4338CA)),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          '₹${suggestion.suggestedBudget.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF4338CA),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            '(Typical: ₹${suggestion.minBudget.toInt()}–₹${suggestion.maxBudget.toInt()})',
+                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B), fontWeight: FontWeight.w600),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isFreelancer && _freelancerQuote != null
+                          ? '${_freelancerQuote!.scopeSummary} · ${_freelancerQuote!.separateCostsTitle}'
+                          : 'Average value users in this area pay for ${_selectedCategory.replaceAll('_', ' ')}',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  final suggestedText = suggestion.suggestedBudget.toInt().toString();
+                  _budgetCtrl.text = suggestedText;
+                  _lastAutoBudgetText = suggestedText;
+                  _budgetFieldKey.currentState?.validate();
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+                child: const Text('Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
-  // ── Category picker (hierarchical) ──────────────────────
-              const Text('Category',
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600, color: AppColors.dark)),
-              const SizedBox(height: 4),
-              // Selected category pill
-              if (_selectedCategory.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
+  Widget _buildTopHeader() {
+    final userGender =
+        context.watch<AuthProvider>().user?.gender ?? StorageService.getGender();
+    final avatarAsset = heroAvatarAssetForGender(userGender);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        const Positioned.fill(
+          child: IgnorePointer(
+            child: CustomPaint(
+              painter: HeroMapBackgroundPainter(),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.check_circle, color: AppColors.primary, size: 16),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Selected: ${TaskCategory.all.firstWhere((c) => c.id == _selectedCategory, orElse: () => TaskCategory(id: '', label: _selectedCategory, icon: '')).label}',
-                        style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600),
+                      GestureDetector(
+                        onTap: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          } else {
+                            context.go('/tasks');
+                          }
+                        },
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFEAF2FF),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.arrow_back,
+                            color: Color(0xFF2563EB),
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      const FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Post a Task',
+                          style: TextStyle(
+                            fontSize: 32,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF102A56),
+                            letterSpacing: -0.6,
+                          ),
+                          maxLines: 1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Tell us what you need. We\'ll help you find the right person.',
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          color: Color(0xFF52627A),
+                          height: 1.35,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              // Category search bar
-              TextField(
-                controller: _categorySearchCtrl,
-                decoration: InputDecoration(
-                  hintText: 'Search category\u2026',
-                  prefixIcon: const Icon(Icons.search, size: 20),
-                  suffixIcon: _categorySearch.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.clear, size: 18),
-                          onPressed: () => setState(() {
-                            _categorySearchCtrl.clear();
-                            _categorySearch = '';
-                          }),
-                        )
-                      : null,
-                  isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.border),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                onChanged: (v) => setState(() {
-                  _categorySearch = v.trim().toLowerCase();
-                }),
               ),
-              const SizedBox(height: 10),
-              // Show search results OR parent category groups
-              if (_categorySearch.isNotEmpty) ...[
-                // ── Flat search results ───────────────────────────────
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: TaskCategory.all
-                      .where((c) => c.label.toLowerCase().contains(_categorySearch) ||
-                                    c.id.contains(_categorySearch))
-                      .map((c) {
-                    final sel = _selectedCategory == c.id;
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _selectedCategory = c.id;
-                          _categorySearchCtrl.clear();
-                          _categorySearch = '';
-                          _autoFillDescription();
-                        });
-                        _recalcDistance();
-                        _syncAutoBudget(_computeEffectiveBudget());
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 180),
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 146,
+                height: 152,
+                child: Image.asset(
+                  avatarAsset,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.bottomCenter,
+                  errorBuilder: (_, __, ___) =>
+                      const SizedBox(width: 146, height: 152),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTaskTitleInput() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 32,
+              height: 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.edit_note_rounded, color: Color(0xFF2563EB), size: 19),
+            ),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Task Title',
+                style: TextStyle(
+                  fontSize: 18.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        AnimatedBuilder(
+          animation: _titleFocus,
+          builder: (context, child) {
+            final hasFocus = _titleFocus.hasFocus;
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: hasFocus
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFFE5EDF7),
+                  width: hasFocus ? 1.5 : 1.2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: hasFocus
+                        ? const Color(0xFF2563EB).withValues(alpha: 0.08)
+                        : const Color(0xFF102A56).withValues(alpha: 0.04),
+                    blurRadius: hasFocus ? 14 : 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              child: child,
+            );
+          },
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCEBFF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  'T',
+                  style: TextStyle(
+                    color: Color(0xFF2563EB),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 17,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: TextFormField(
+                  controller: _titleCtrl,
+                  focusNode: _titleFocus,
+                  textCapitalization: TextCapitalization.sentences,
+                  textInputAction: TextInputAction.next,
+                  style: const TextStyle(
+                    color: Color(0xFF102A56),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  decoration: const InputDecoration(
+                    filled: false,
+                    isDense: true,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    hintText: 'Task Title',
+                    hintStyle: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    errorStyle: TextStyle(
+                      color: AppColors.danger,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  validator: _validateTaskTitle,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCategoryCard({
+    required String label,
+    required String groupName,
+    required String defaultId,
+    required String image,
+  }) {
+    final group = TaskCategoryGroup.all.firstWhere(
+      (g) => g.label == groupName,
+      orElse: () => TaskCategoryGroup(label: groupName, icon: '📋', categoryIds: [defaultId]),
+    );
+    final isSelected = group.containsCategory(_selectedCategory);
+
+    return GestureDetector(
+      onTap: () {
+        if (group.subCategories.length <= 1) {
+          setState(() {
+            _applySelectedCategory(defaultId);
+          });
+          _checkAndEstimateDistance();
+          if (defaultId == 'groceries' || defaultId == 'grocery') {
+            Future.delayed(const Duration(milliseconds: 300), () {
+              if (mounted && _selectedGroceryItems.isEmpty) _openGroceryItemPicker();
+            });
+          }
+        } else {
+          _showSubCategorySheet(group);
+        }
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        height: 82,
+        padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
+        decoration: BoxDecoration(
+          gradient: isSelected
+              ? const LinearGradient(
+                  colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                )
+              : null,
+          color: isSelected ? null : Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: isSelected
+              ? null
+              : Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? const Color(0xFF0B63F6).withValues(alpha: 0.28)
+                  : const Color(0xFF102A56).withValues(alpha: 0.03),
+              blurRadius: isSelected ? 10 : 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Image.asset(
+              image,
+              width: 42,
+              height: 42,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 34, color: Color(0xFF2563EB)),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 12.0,
+                      fontWeight: FontWeight.w700,
+                      color: isSelected ? Colors.white : const Color(0xFF102A56),
+                      letterSpacing: -0.2,
+                      height: 1.15,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  if (isSelected && _selectedCategory != defaultId) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      TaskCategory.all.firstWhere(
+                        (c) => c.id == _selectedCategory,
+                        orElse: () => const TaskCategory(id: '', label: '', icon: ''),
+                      ).label,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white70,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 2),
+            if (isSelected)
+              Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    width: 18,
+                    height: 18,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.check, size: 12, color: Color(0xFF0B63F6)),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
+                ],
+              )
+            else
+              const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCategorySection() {
+    final categories = [
+      (
+        label: 'Delivery & Moving',
+        groupName: 'Delivery & Moving',
+        defaultId: 'delivery',
+        image: 'assets/images/cat_3d_delivery.png',
+      ),
+      (
+        label: 'Repair',
+        groupName: 'Repair',
+        defaultId: 'repair',
+        image: 'assets/images/cat_3d_repair.png',
+      ),
+      (
+        label: 'Home & Lifestyle',
+        groupName: 'Home & Lifestyle',
+        defaultId: 'cleaning',
+        image: 'assets/images/cat_3d_home.png',
+      ),
+      (
+        label: 'Shopping & Errands',
+        groupName: 'Shopping & Errands',
+        defaultId: 'shopping',
+        image: 'assets/images/cat_3d_shopping.png',
+      ),
+      (
+        label: 'Professional',
+        groupName: 'Professional',
+        defaultId: 'freelancer',
+        image: 'assets/images/cat_3d_professional.png',
+      ),
+      (
+        label: 'Care Services',
+        groupName: 'Care Services',
+        defaultId: 'child_care',
+        image: 'assets/images/cat_3d_care.png',
+      ),
+    ];
+
+    final otherGroup = TaskCategoryGroup.all.firstWhere(
+      (g) => g.label == 'Other',
+      orElse: () => const TaskCategoryGroup(label: 'Other', icon: '📋', categoryIds: ['other']),
+    );
+    final isOtherSelected = otherGroup.categoryIds.contains(_selectedCategory);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEAF2FF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.grid_view_rounded, color: Color(0xFF2563EB), size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Select Category',
+                style: TextStyle(
+                  fontSize: 18.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[0].label,
+                    groupName: categories[0].groupName,
+                    defaultId: categories[0].defaultId,
+                    image: categories[0].image,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[1].label,
+                    groupName: categories[1].groupName,
+                    defaultId: categories[1].defaultId,
+                    image: categories[1].image,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[2].label,
+                    groupName: categories[2].groupName,
+                    defaultId: categories[2].defaultId,
+                    image: categories[2].image,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[3].label,
+                    groupName: categories[3].groupName,
+                    defaultId: categories[3].defaultId,
+                    image: categories[3].image,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[4].label,
+                    groupName: categories[4].groupName,
+                    defaultId: categories[4].defaultId,
+                    image: categories[4].image,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildCategoryCard(
+                    label: categories[5].label,
+                    groupName: categories[5].groupName,
+                    defaultId: categories[5].defaultId,
+                    image: categories[5].image,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        GestureDetector(
+          onTap: () {
+            if (!isOtherSelected) {
+              setState(() {
+                _applySelectedCategory('other');
+              });
+              _checkAndEstimateDistance();
+            } else {
+              _showSubCategorySheet(otherGroup);
+            }
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 52,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFFE5EDF7),
+                width: isOtherSelected ? 1.8 : 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: isOtherSelected
+                      ? const Color(0xFF0B63F6).withValues(alpha: 0.15)
+                      : const Color(0xFF102A56).withValues(alpha: 0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEAF2FF),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.more_horiz_rounded, color: Color(0xFF2563EB), size: 20),
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'Other',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF102A56),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.bottomRight,
+                    child: Image.asset(
+                      'assets/images/cat_3d_other_skyline.png',
+                      height: 42,
+                      fit: BoxFit.contain,
+                      alignment: Alignment.bottomRight,
+                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFF94A3B8),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBudgetField() {
+    if (Task.isGroceryCategory(_selectedCategory)) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Prominent Section Header for Budget & Price Breakdown
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEEF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: Color(0xFF4F46E5),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Budget & Price Breakdown',
+                      style: TextStyle(
+                        fontSize: 17.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF102A56),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Set your offer and view detailed price breakdown',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF52627A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Budget',
+          style: TextStyle(
+            fontWeight: FontWeight.w800,
+            fontSize: 15,
+            color: Color(0xFF102A56),
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextFormField(
+          key: _budgetFieldKey,
+          controller: _budgetCtrl,
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          focusNode: _budgetFocus,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Budget (₹)',
+            hintText: _isDelivery
+                ? (_calculatedDistanceKm != null
+                    ? 'Min ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km · ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})'
+                    : (_selectedCategory == 'delivery'
+                        ? 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_deliveryVehicle == 'bike' ? '₹12/km Bike' : '₹18/km Rikshaw'})'
+                        : 'Set locations to calculate (Min ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()})'))
+                : (_isFreelancer && _freelancerQuote != null
+                    ? 'Minimum ₹${_freelancerQuote!.minBudget.toInt()} (${_freelancerQuote!.scopeSummary})'
+                    : 'Minimum ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}'),
+            helperText: _isDelivery
+                ? (_selectedCategory == 'delivery'
+                    ? (_calculatedDistanceKm != null
+                        ? 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike)' : '₹18/km (Rikshaw)'} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                        : 'Rate: ${_deliveryVehicle == 'bike' ? '₹12/km (Bike · Min ₹24)' : '₹18/km (Rikshaw · Min ₹30)'}')
+                    : (_calculatedDistanceKm != null
+                        ? 'Rate: ${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)} · Fare: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${_calculatedDistanceKm!.toStringAsFixed(1)} km)'
+                        : 'Rate: ${Task.distancePriceDescription(1.0, _selectedCategory, vehicle: _deliveryVehicle)}'))
+                : (_isFreelancer && _freelancerQuote != null
+                    ? 'Min ₹${_freelancerQuote!.minBudget.toInt()} · ${_freelancerQuote!.scopeSummary} (${_freelancerQuote!.separateCostsTitle})'
+                    : 'Market minimum for ${_selectedCategory.replaceAll('_', ' ')} is ₹${Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle).toInt()}'),
+            helperMaxLines: 2,
+            prefixIcon: const Icon(Icons.currency_rupee, color: Color(0xFF2563EB)),
+            filled: true,
+            fillColor: Colors.white,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE5EDF7)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFFE5EDF7)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(14),
+              borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
+            ),
+          ),
+          validator: (v) {
+            final n = double.tryParse(v ?? '');
+            if (n == null || n <= 0) return 'Please enter a budget';
+            if (_isDelivery) {
+              if (_calculatedDistanceKm != null) {
+                final distMin = Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+                if (n < distMin) {
+                  return 'Minimum ₹${distMin.toInt()} for ${_calculatedDistanceKm!.toStringAsFixed(1)} km (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})';
+                }
+              } else {
+                final catMin = Task.minBudgetForCategory(_selectedCategory, vehicle: _deliveryVehicle);
+                if (catMin > 0 && n < catMin) {
+                  return 'Minimum budget for ${_selectedCategory.replaceAll('_', ' ')} is ₹${catMin.toInt()}';
+                }
+              }
+            } else {
+              final minAllowed = _currentMinBudget();
+              if (n < minAllowed) {
+                return _currentMinBudgetMessage();
+              }
+            }
+            return null;
+          },
+        ),
+      ],
+    );
+  }
+
+  int _storeFetchSeq = 0;
+  bool _loadingNearbyStores = false;
+  bool _userPickedStoreManually = false;
+
+  String _extractAreaName(String dropAddr) {
+    if (dropAddr.trim().isEmpty) return 'Nearby Area';
+    final parts = dropAddr.split(',');
+    var area = parts.first.trim();
+    if (area.length > 25 && parts.length > 1) {
+      area = parts[1].trim();
+    }
+    return area.isEmpty ? 'Nearby Area' : area;
+  }
+
+  void _updateSuggestedStoresForDrop(String dropAddr, LatLng? dropLoc) {
+    final area = _extractAreaName(dropAddr);
+    if (dropLoc == null) {
+      if (mounted) {
+        setState(() {
+          _loadingNearbyStores = false;
+          _hasFetchedNearbyStores = false;
+          if (!_userPickedStoreManually) {
+            _suggestedGroceryStoresList = [];
+            _selectedGroceryStoreName = null;
+          }
+        });
+      }
+      return;
+    }
+
+    final seq = ++_storeFetchSeq;
+    if (mounted) {
+      setState(() {
+        _loadingNearbyStores = true;
+        _storeSearchResults = [];
+        _storeSearchCtrl.clear();
+        if (!_userPickedStoreManually) {
+          _suggestedGroceryStoresList = [];
+          _selectedGroceryStoreName = null;
+        }
+      });
+    }
+
+    // Fetch 100% REAL map-verified stores within 10 km (Photon + Nominatim + Overpass)
+    LocationSearchService.searchNearbyGroceryStores(
+      dropLoc,
+      radiusKm: 10.0,
+      areaFallback: area,
+    ).then((realStores) {
+      if (!mounted || seq != _storeFetchSeq) return;
+      setState(() {
+        _loadingNearbyStores = false;
+        _hasFetchedNearbyStores = true;
+        _suggestedGroceryStoresList = realStores;
+        if (realStores.isNotEmpty &&
+            (!_userPickedStoreManually ||
+                _selectedGroceryStoreName == null ||
+                _selectedGroceryStoreName!.trim().isEmpty)) {
+          final chosen = realStores.first;
+          _selectedGroceryStoreName = chosen['name'] as String;
+          _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
+          _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
+          if (chosen['lat'] != null && chosen['lng'] != null) {
+            _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
+          }
+          final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries');
+          const handlingFee = 30.0;
+          _syncAutoBudget(travelFare + handlingFee);
+        }
+      });
+      if (realStores.isNotEmpty && !_userPickedStoreManually) {
+        _recalcDistance();
+      }
+    }).catchError((_) {
+      if (mounted && seq == _storeFetchSeq) {
+        setState(() {
+          _loadingNearbyStores = false;
+          _hasFetchedNearbyStores = true;
+        });
+      }
+    });
+  }
+
+  void _onStoreSearchChanged(String raw) {
+    _storeSearchDebounce?.cancel();
+    final q = raw.trim();
+    if (q.length < 2) {
+      if (_storeSearchResults.isNotEmpty || _searchingStoresByName) {
+        setState(() {
+          _storeSearchResults = [];
+          _searchingStoresByName = false;
+        });
+      }
+      return;
+    }
+    final center = _dropLocation ?? _location;
+    if (center == null) return;
+
+    setState(() => _searchingStoresByName = true);
+    _storeSearchDebounce = Timer(const Duration(milliseconds: 350), () async {
+      final area = _extractAreaName(_dropAddrCtrl.text);
+      final matches = await LocationSearchService.searchStoresByName(
+        q,
+        center,
+        radiusKm: 10.0,
+        areaFallback: area,
+      );
+      if (!mounted) return;
+      if (_storeSearchCtrl.text.trim() != q) return;
+      setState(() {
+        _storeSearchResults = matches;
+        _searchingStoresByName = false;
+      });
+    });
+  }
+
+  Future<void> _pickStoreFromGoogleMap() async {
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => MapLocationPicker(
+          initialLocation: _pickupLocation ?? _dropLocation ?? _location,
+        ),
+        fullscreenDialog: true,
+      ),
+    );
+    if (result != null && mounted) {
+      final picked = result['location'] as LatLng?;
+      final addr = (result['address'] as String?)?.trim() ?? '';
+      if (picked == null) return;
+
+      String storeName = addr.split(',').first.trim();
+      if (storeName.isEmpty) storeName = 'Selected Grocery Store';
+
+      double distKm = 1.5;
+      if (_dropLocation != null) {
+        final m = Geolocator.distanceBetween(
+          picked.latitude,
+          picked.longitude,
+          _dropLocation!.latitude,
+          _dropLocation!.longitude,
+        );
+        distKm = double.parse(((m / 1000.0) * 1.25).clamp(0.2, 50.0).toStringAsFixed(1));
+      }
+
+      final customStore = {
+        'name': storeName,
+        'tag': 'Selected on Map',
+        'distanceKm': distKm,
+        'address': addr.isNotEmpty ? addr : 'Selected Map Location',
+        'icon': Icons.pin_drop_rounded,
+        'color': const Color(0xFF16A34A),
+        'lat': picked.latitude,
+        'lng': picked.longitude,
+      };
+
+      setState(() {
+        _userPickedStoreManually = true;
+        _pickupLocation = picked;
+        _pickupAddrCtrl.text = '$storeName, $addr';
+        _selectedGroceryStoreName = storeName;
+        _calculatedDistanceKm = distKm;
+        _suggestedGroceryStoresList.removeWhere((s) => s['name'] == storeName);
+        _suggestedGroceryStoresList.insert(0, customStore);
+        _isStoreDropdownOpen = false;
+      });
+
+      final travelFare = Task.calculateDistancePrice(distKm, 'groceries');
+      const handlingFee = 30.0;
+      final totalBudget = travelFare + handlingFee;
+      _syncAutoBudget(totalBudget);
+      _compileDescriptionFromForm();
+      _recalcDistance();
+    }
+  }
+
+  void _selectGroceryStore(Map<String, dynamic> store) {
+    final dist = (store['distanceKm'] as num).toDouble();
+    setState(() {
+      _userPickedStoreManually = true;
+      _selectedGroceryStoreName = store['name'] as String;
+      _calculatedDistanceKm = dist;
+      _pickupAddrCtrl.text = '${store['name']}, ${store['address']}';
+      if (store['lat'] != null && store['lng'] != null) {
+        _pickupLocation = LatLng(store['lat'] as double, store['lng'] as double);
+      } else if (_dropLocation != null) {
+        _pickupLocation = LatLng(
+          _dropLocation!.latitude + (dist / 111.0) * 0.6,
+          _dropLocation!.longitude + (dist / 111.0) * 0.8,
+        );
+      }
+      _isStoreDropdownOpen = false;
+    });
+    // Base minimum ₹50 + ₹12/km + ₹30 handling
+    final travelFare = Task.calculateDistancePrice(dist, 'groceries');
+    const handlingFee = 30.0;
+    final totalBudget = travelFare + handlingFee;
+    _syncAutoBudget(totalBudget);
+    _compileDescriptionFromForm();
+    if (_dropLocation != null && _pickupLocation != null) {
+      _recalcDistance();
+    }
+  }
+
+  Future<void> _setCustomGroceryStore(String storeName) async {
+    final trimmed = storeName.trim();
+    if (trimmed.isEmpty) return;
+
+    // Try to geocode the real store near delivery location first
+    final center = _dropLocation ?? _location;
+    if (center != null) {
+      final matches = await LocationSearchService.searchStoresByName(
+        trimmed,
+        center,
+        radiusKm: 10.0,
+        areaFallback: _extractAreaName(_dropAddrCtrl.text),
+      );
+      if (mounted && matches.isNotEmpty) {
+        final best = matches.first;
+        if (!_suggestedGroceryStoresList.any((s) => s['name'] == best['name'])) {
+          _suggestedGroceryStoresList.insert(0, best);
+        }
+        _selectGroceryStore(best);
+        setState(() => _showCustomStoreInput = false);
+        return;
+      }
+    }
+
+    if (!mounted) return;
+    const dist = 2.0;
+    setState(() {
+      _userPickedStoreManually = true;
+      _selectedGroceryStoreName = trimmed;
+      _calculatedDistanceKm = dist;
+      _pickupAddrCtrl.text = trimmed;
+      _pickupLocation = null;
+      _isStoreDropdownOpen = false;
+      _showCustomStoreInput = false;
+    });
+    final travelFare = Task.calculateDistancePrice(dist, 'groceries');
+    const handlingFee = 30.0;
+    final totalBudget = travelFare + handlingFee;
+    _syncAutoBudget(totalBudget);
+    _compileDescriptionFromForm();
+  }
+
+  void _showGroceryWeightLimitDialog(double currentWeight) {
+    showDialog(
+      context: context,
+      builder: (alertCtx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFDC2626), size: 26),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Text(
+                'Weight Limit Exceeded',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Two-wheeler (Bike / Scooty) delivery has a strict maximum capacity of 20 kg for road safety.',
+              style: TextStyle(fontSize: 13, color: Color(0xFF334155), height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Column(
+                children: [
+                  const Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Max Allowed Weight:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                      Text('20.0 kg', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: Color(0xFF102A56))),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Current Items Total:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Color(0xFFDC2626))),
+                      Text('${currentWeight.toStringAsFixed(1)} kg', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Please manage weight or reduce item quantities in your list so that total weight stays within 20 kg.',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+            ),
+          ],
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(alertCtx);
+              _openGroceryItemPicker();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Manage Weight & Items', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroceryLocationSection() {
+    if (_selectedGroceryStoreName == null && _suggestedGroceryStoresList.isNotEmpty) {
+      _selectedGroceryStoreName = _suggestedGroceryStoresList.first['name'] as String;
+    }
+
+    final hasSelectedStore = _selectedGroceryStoreName != null &&
+        _selectedGroceryStoreName!.trim().isNotEmpty;
+
+    final currentStore = _suggestedGroceryStoresList.firstWhere(
+      (s) => s['name'] == _selectedGroceryStoreName,
+      orElse: () => {
+        'name': hasSelectedStore
+            ? _selectedGroceryStoreName!
+            : (_dropLocation == null
+                ? 'Set Delivery Address first'
+                : (_loadingNearbyStores
+                    ? 'Finding real stores within 10 km...'
+                    : 'Search or Pick a Store')),
+        'tag': 'Grocery Store',
+        'distanceKm': _calculatedDistanceKm ?? 0.0,
+        'address': hasSelectedStore
+            ? (_pickupAddrCtrl.text.trim().isNotEmpty
+                ? _pickupAddrCtrl.text.trim()
+                : 'Selected Store')
+            : (_dropLocation == null
+                ? 'Real nearby stores load automatically once you set Delivery Address'
+                : (_loadingNearbyStores
+                    ? 'Fetching verified map stores near your delivery location'
+                    : 'Tap Select to search by store name or pick on map')),
+        'icon': Icons.storefront_rounded,
+        'color': const Color(0xFF2563EB),
+      },
+    );
+
+    final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
+    final isSearchingQuery = _storeSearchCtrl.text.trim().length >= 2;
+    final displayedStores = isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Separate Delivery Address Header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFEE2E2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.home_rounded, color: AppColors.danger, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Delivery Address',
+                  style: TextStyle(
+                    fontSize: 18.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Delivery Address Input Field
+        TextFormField(
+          controller: _dropAddrCtrl,
+          focusNode: _dropFocus,
+          onChanged: _onDropAddrChanged,
+          decoration: InputDecoration(
+            labelText: 'Delivery Address *',
+            prefixIcon: const Icon(Icons.home_rounded, color: AppColors.danger),
+            suffixIcon: _AddressActionButtons(
+              isLoading: _gettingDropGps,
+              accentColor: AppColors.danger,
+              onGps: () async {
+                await _getGpsForDrop();
+                if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                  _userPickedStoreManually = false;
+                  _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+                }
+              },
+              onMap: () async {
+                await _pickMapForDrop();
+                if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                  _userPickedStoreManually = false;
+                  _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+                }
+              },
+            ),
+            suffixIconConstraints: const BoxConstraints(maxHeight: 48),
+          ),
+          validator: (v) {
+            if (v == null || v.trim().isEmpty) {
+              return 'Delivery address is required';
+            }
+            return null;
+          },
+        ),
+        LocationSuggestionsDropdown(
+          suggestions: _dropSuggestions,
+          isLoading: _searchingDrop,
+          accentColor: AppColors.danger,
+          onSelect: (s) {
+            _selectDropSuggestion(s);
+            _userPickedStoreManually = false;
+            _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
+          },
+          onDismiss: () => setState(() => _dropSuggestions = []),
+        ),
+
+        const SizedBox(height: 18),
+
+        // 2. Separate Store Address Header
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFDCFCE7),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.storefront_rounded, color: Color(0xFF15803D), size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Store Address',
+                  style: TextStyle(
+                    fontSize: 18.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF102A56),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+              if (_loadingNearbyStores)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF15803D)),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: const Text(
+                    '10 km Radius',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF15803D),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // Store Selection Card
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Collapsed view: selected store with Change button
+              if (!_isStoreDropdownOpen) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFF2563EB), width: 1.4),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 42,
+                        height: 42,
                         decoration: BoxDecoration(
-                          color: sel ? AppColors.primary : Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                            color: AppColors.primary,
-                            width: sel ? 2 : 1.5,
-                          ),
+                          color: (currentStore['color'] as Color? ?? const Color(0xFF2563EB)).withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(c.icon, style: const TextStyle(fontSize: 16)),
-                            const SizedBox(width: 6),
-                            Text(c.label,
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: sel ? Colors.white : AppColors.dark)),
-                          ],
+                        child: Icon(
+                          currentStore['icon'] as IconData? ?? Icons.storefront_rounded,
+                          size: 22,
+                          color: currentStore['color'] as Color? ?? const Color(0xFF2563EB),
                         ),
                       ),
-                    );
-                  }).toList(),
-                ),
-              ] else ...[
-                // ── Parent category grid ──────────────────────────────
-                GridView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: TaskCategoryGroup.all.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisSpacing: 10,
-                    crossAxisSpacing: 10,
-                    childAspectRatio: 1.0,
-                  ),
-                  itemBuilder: (ctx, i) {
-                    final group = TaskCategoryGroup.all[i];
-                    // Check if current selection belongs to this group
-                    final groupActive = group.categoryIds.contains(_selectedCategory);
-                    return GestureDetector(
-                      onTap: () {
-                        FocusScope.of(context).unfocus();
-                        _showSubCategorySheet(group);
-                      },
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        decoration: BoxDecoration(
-                          color: groupActive ? AppColors.primary : Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                            color: groupActive ? AppColors.primary : AppColors.border,
-                            width: groupActive ? 2 : 1,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: groupActive
-                                  ? AppColors.primary.withValues(alpha: 0.2)
-                                  : Colors.black.withValues(alpha: 0.04),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
+                      const SizedBox(width: 10),
+                      Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(group.icon, style: const TextStyle(fontSize: 26)),
-                            const SizedBox(height: 6),
                             Text(
-                              group.label,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: groupActive ? Colors.white : AppColors.dark,
+                              currentStore['name'] as String,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 13.5,
+                                color: Color(0xFF102A56),
                               ),
-                              textAlign: TextAlign.center,
                               maxLines: 2,
+                              softWrap: true,
                               overflow: TextOverflow.ellipsis,
                             ),
-                            if (groupActive) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                TaskCategory.all.firstWhere(
-                                  (c) => c.id == _selectedCategory,
-                                  orElse: () => const TaskCategory(id: '', label: '', icon: ''),
-                                ).label,
-                                style: const TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white70,
-                                    fontWeight: FontWeight.w500),
-                                textAlign: TextAlign.center,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
+                            const SizedBox(height: 4),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                if (hasSelectedStore && dist > 0)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFDCFCE7),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Text(
+                                      '${dist.toStringAsFixed(1)} km',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF15803D),
+                                      ),
+                                    ),
+                                  ),
+                                Text(
+                                  currentStore['address'] as String? ?? 'Store Address',
+                                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                  maxLines: 2,
+                                  softWrap: true,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                       ),
-                    );
-                  },
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 36,
+                        child: OutlinedButton.icon(
+                          onPressed: () => setState(() => _isStoreDropdownOpen = true),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: Size.zero,
+                            foregroundColor: const Color(0xFF2563EB),
+                            side: const BorderSide(color: Color(0xFF93C5FD)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                            visualDensity: VisualDensity.compact,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                          icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
+                          label: Text(
+                            hasSelectedStore ? 'Change' : 'Select',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else ...[
+                // Expanded dropdown view
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFCBD5E1), width: 1.2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Expanded(
+                            child: Text(
+                              'Nearby Stores (10 km Radius)',
+                              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
+                            ),
+                          ),
+                          if (_dropLocation != null && !_loadingNearbyStores)
+                            IconButton(
+                              onPressed: () => _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation),
+                              tooltip: 'Refresh nearby stores',
+                              icon: const Icon(Icons.refresh_rounded, size: 19, color: Color(0xFF2563EB)),
+                              padding: const EdgeInsets.only(right: 6),
+                              constraints: const BoxConstraints(),
+                            ),
+                          IconButton(
+                            onPressed: () => setState(() => _isStoreDropdownOpen = false),
+                            icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Live real-store search bar (searches within 10 km of Delivery Location)
+                      TextField(
+                        controller: _storeSearchCtrl,
+                        onChanged: _onStoreSearchChanged,
+                        decoration: InputDecoration(
+                          hintText: 'Search real store (DMart, Reliance, Kirana...)',
+                          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
+                          suffixIcon: _searchingStoresByName
+                              ? const Padding(
+                                  padding: EdgeInsets.all(10),
+                                  child: SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                )
+                              : (_storeSearchCtrl.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
+                                      onPressed: () {
+                                        _storeSearchCtrl.clear();
+                                        setState(() {
+                                          _storeSearchResults = [];
+                                          _searchingStoresByName = false;
+                                        });
+                                      },
+                                    )
+                                  : null),
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // Manual Store Address from Map Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _pickStoreFromGoogleMap,
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: Size.zero,
+                            foregroundColor: const Color(0xFF15803D),
+                            side: const BorderSide(color: Color(0xFF86EFAC), width: 1.2),
+                            backgroundColor: const Color(0xFFF0FDF4),
+                            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          icon: const Icon(Icons.map_rounded, size: 18, color: Color(0xFF15803D)),
+                          label: const Text('Pick Store on Map', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      if (_dropLocation == null)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Set your Delivery Address above to automatically load real nearby stores within 10 km.',
+                            style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        )
+                      else if ((!isSearchingQuery && _loadingNearbyStores && displayedStores.isEmpty) ||
+                          (isSearchingQuery && _searchingStoresByName && displayedStores.isEmpty))
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 14),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                              ),
+                              SizedBox(width: 10),
+                              Text(
+                                'Searching verified stores within 10 km...',
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                              ),
+                            ],
+                          ),
+                        )
+                      else if (displayedStores.isEmpty && (_hasFetchedNearbyStores || isSearchingQuery))
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          child: Text(
+                            isSearchingQuery
+                                ? 'No matching mapped store found within 10 km for "${_storeSearchCtrl.text.trim()}". Try another keyword or Pick Store on Map.'
+                                : 'No mapped stores found within 10 km of this address. Search by store name above or tap Pick Store on Map.',
+                            style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          ),
+                        ),
+
+                      // Store Options List (100% Real Verified Map Stores within 10 km)
+                      ...displayedStores.map((store) {
+                        final isSel = _selectedGroceryStoreName == store['name'];
+                        final sDist = (store['distanceKm'] as num).toDouble();
+                        final addrText = (store['address'] as String? ?? '').trim();
+                        final tagText = (store['tag'] as String? ?? '').trim();
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          decoration: BoxDecoration(
+                            color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                              width: isSel ? 1.4 : 1.0,
+                            ),
+                          ),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(10),
+                            onTap: () {
+                              if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                _suggestedGroceryStoresList.insert(0, store);
+                              }
+                              _selectGroceryStore(store);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Container(
+                                    width: 34,
+                                    height: 34,
+                                    decoration: BoxDecoration(
+                                      color: (store['color'] as Color? ?? const Color(0xFF2563EB)).withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      store['icon'] as IconData? ?? Icons.storefront_rounded,
+                                      size: 18,
+                                      color: store['color'] as Color? ?? const Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          store['name'] as String,
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w700,
+                                            color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                          ),
+                                          maxLines: 2,
+                                          softWrap: true,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Wrap(
+                                          spacing: 6,
+                                          runSpacing: 3,
+                                          crossAxisAlignment: WrapCrossAlignment.center,
+                                          children: [
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFDCFCE7),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                '${sDist.toStringAsFixed(1)} km',
+                                                style: const TextStyle(
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Color(0xFF15803D),
+                                                ),
+                                              ),
+                                            ),
+                                            if (tagText.isNotEmpty)
+                                              Text(
+                                                tagText,
+                                                style: const TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: Color(0xFF475569),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        if (addrText.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            addrText,
+                                            style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                            maxLines: 2,
+                                            softWrap: true,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Icon(
+                                    isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                    color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+
+                      // Custom Store Name Input
+                      if (!_showCustomStoreInput) ...[
+                        TextButton.icon(
+                          onPressed: () => setState(() => _showCustomStoreInput = true),
+                          icon: const Icon(Icons.add_location_alt_outlined, size: 16),
+                          label: const Text('Enter another store name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _customStoreCtrl,
+                                decoration: InputDecoration(
+                                  hintText: 'Store name',
+                                  hintStyle: const TextStyle(fontSize: 12),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            SizedBox(
+                              height: 36,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  if (_customStoreCtrl.text.trim().isNotEmpty) {
+                                    _setCustomGroceryStore(_customStoreCtrl.text.trim());
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  minimumSize: Size.zero,
+                                  backgroundColor: const Color(0xFF2563EB),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                                child: const Text('Select', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
               ],
-              const SizedBox(height: 14),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-              // ── Delivery Vehicle Selector (Bike vs Rikshaw) ──
-              if (_selectedCategory == 'delivery') ...[
-                _buildDeliveryVehicleSelector(),
-                const SizedBox(height: 14),
-              ],
-
-              // Description Form (replaces single raw textarea)
-              _buildDescriptionFormSection(),
-              const SizedBox(height: 14),
-
-
-              // ── Address fields (each with GPS + Map inline buttons) ──────
+  Widget _buildLocationFieldsSection() {
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
+    if (isGrocery) {
+      return _buildGroceryLocationSection();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Prominent Section Header for Location
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF102A56).withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  isGrocery
+                      ? Icons.shopping_basket_rounded
+                      : (_isDelivery ? Icons.local_shipping_rounded : Icons.location_on_rounded),
+                  color: const Color(0xFF2563EB),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isGrocery
+                          ? 'Store & Drop Location'
+                          : (_isDelivery ? 'Pickup & Delivery Location' : 'Task Location'),
+                      style: const TextStyle(
+                        fontSize: 17.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF102A56),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isGrocery
+                          ? 'Enter store and delivery addresses (must be different)'
+                          : (_isDelivery
+                              ? 'Enter pickup and drop addresses (must be different)'
+                              : 'Set where the task needs to be performed'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF52627A),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+// ── Address fields (each with GPS + Map inline buttons) ──────
               if (_isDelivery) ...[
                 // ── Pickup ─────────────────────────────────────────────
                 // Saved chips for pickup
@@ -2743,10 +5884,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   focusNode: _pickupFocus,
                   onChanged: _onPickupAddrChanged,
                   decoration: InputDecoration(
-                    labelText: 'Pickup Address *',
-                    hintText: 'Where to pick up from',
+                    labelText: isGrocery ? 'Store / Supermarket Address *' : 'Pickup Address *',
+                    hintText: isGrocery ? 'Where to buy groceries from (Store / Supermarket)' : 'Where to pick up from',
                     prefixIcon:
-                        const Icon(Icons.location_on, color: AppColors.primary),
+                        Icon(isGrocery ? Icons.store_mall_directory_rounded : Icons.location_on, color: AppColors.primary),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingPickupGps,
                       accentColor: AppColors.primary,
@@ -2756,9 +5897,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     suffixIconConstraints:
                         const BoxConstraints(maxHeight: 48),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Pickup address is required'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return isGrocery ? 'Store address is required' : 'Pickup address is required';
+                    }
+                    if (_dropAddrCtrl.text.trim().isNotEmpty &&
+                        v.trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase()) {
+                      return isGrocery
+                          ? 'Store address must be different from delivery address'
+                          : 'Pickup address must be different from drop address';
+                    }
+                    return null;
+                  },
                 ),
                 LocationSuggestionsDropdown(
                   suggestions: _pickupSuggestions,
@@ -2879,9 +6029,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   focusNode: _dropFocus,
                   onChanged: _onDropAddrChanged,
                   decoration: InputDecoration(
-                    labelText: 'Drop / Delivery Address *',
-                    hintText: 'Where to deliver / drop off',
-                    prefixIcon: const Icon(Icons.flag, color: AppColors.danger),
+                    labelText: isGrocery ? 'Delivery Address *' : 'Drop / Delivery Address *',
+                    hintText: isGrocery ? 'Where to deliver groceries' : 'Where to deliver / drop off',
+                    prefixIcon: Icon(isGrocery ? Icons.home_rounded : Icons.flag, color: AppColors.danger),
                     suffixIcon: _AddressActionButtons(
                       isLoading: _gettingDropGps,
                       accentColor: AppColors.danger,
@@ -2890,9 +6040,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     ),
                     suffixIconConstraints: const BoxConstraints(maxHeight: 48),
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty)
-                      ? 'Drop address is required'
-                      : null,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return isGrocery ? 'Delivery address is required' : 'Drop address is required';
+                    }
+                    if (_pickupAddrCtrl.text.trim().isNotEmpty &&
+                        v.trim().toLowerCase() == _pickupAddrCtrl.text.trim().toLowerCase()) {
+                      return isGrocery
+                          ? 'Delivery address must be different from store address'
+                          : 'Drop address must be different from pickup address';
+                    }
+                    return null;
+                  },
                 ),
                 LocationSuggestionsDropdown(
                   suggestions: _dropSuggestions,
@@ -3002,7 +6161,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                'Calculated price: ₹${Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle).toInt()} (${Task.distancePriceDescription(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle)})',
+                                Task.distanceFareSummary(
+                                  _calculatedDistanceKm!,
+                                  _selectedCategory,
+                                  vehicle: _deliveryVehicle,
+                                ),
                                 style: const TextStyle(
                                     fontSize: 12, color: AppColors.gray),
                               ),
@@ -3180,43 +6343,1043 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ],
+      ],
+    );
+  }
 
-              const SizedBox(height: 14),
+  Widget _buildFreelancerPricingCard() {
+    final cfg = _freelancerConfig;
+    final quote = _freelancerQuote;
+    if (cfg == null || quote == null) return const SizedBox.shrink();
 
-              // ── Price breakdown — real-time via ValueListenableBuilder ──
-              ValueListenableBuilder<TextEditingValue>(
-                valueListenable: _budgetCtrl,
-                builder: (_, value, __) {
-                  final rawBudget = double.tryParse(value.text) ?? 0;
-                  final budget = rawBudget > 0 ? rawBudget : _computeEffectiveBudget();
-                  final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
-                  final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-                  final posterFee = budget * 0.20;
-                  final total = budget + charge + posterFee;
-                  return TaskPriceBreakdownCard(
-                    budget: budget,
-                    serviceCharge: charge,
-                    posterFee: posterFee,
-                    totalCost: total,
-                    isRepair: Task.isRepairCategory(_selectedCategory),
-                    distanceKm: _calculatedDistanceKm,
-                    category: _selectedCategory,
-                    vehicle: _deliveryVehicle,
-                    isUrgent: _isTaskUrgent(),
-                    itemBudget: _getItemBudget(),
-                  );
-                },
+    final isHourly = _freelancerPricingMode == 'hourly';
+    final tier = cfg.tierById(_freelancerTierId);
+
+    void updateQuoteAndSync(VoidCallback mutate) {
+      setState(() {
+        _freelancerManualScope = true;
+        mutate();
+        final updated = _freelancerQuote!;
+        _syncAutoBudget(updated.suggestedBudget);
+        _compileDescriptionFromForm();
+      });
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.calculate_rounded,
+                  color: Color(0xFF2563EB),
+                  size: 19,
+                ),
               ),
-
-              const SizedBox(height: 16),
-
-              GradientButton(
-                label: 'Post Task',
-                loading: _loading,
-                onPressed: _submit,
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Freelancer Pricing Model',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                        color: Color(0xFF102A56),
+                      ),
+                    ),
+                    Text(
+                      'Choose Per Project / Unit or Hourly rate',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF52627A)),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isHourly
+                      ? '₹${_freelancerHourlyRate.toInt()}/hr'
+                      : 'Min ₹${quote.minBudget.toInt()}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 11,
+                    color: Color(0xFF2563EB),
+                  ),
+                ),
+              ),
             ],
+          ),
+          const SizedBox(height: 12),
+
+          // Dual Mode Segmented Switcher
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('freelancer_mode_package'),
+                    onTap: () {
+                      if (_freelancerPricingMode != 'package') {
+                        updateQuoteAndSync(() => _freelancerPricingMode = 'package');
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: !isHourly ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        boxShadow: !isHourly
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.layers_outlined,
+                            size: 15,
+                            color: !isHourly ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Per Project',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: !isHourly ? FontWeight.w700 : FontWeight.w600,
+                                color: !isHourly ? const Color(0xFF102A56) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    key: const Key('freelancer_mode_hourly'),
+                    onTap: () {
+                      if (_freelancerPricingMode != 'hourly') {
+                        updateQuoteAndSync(() => _freelancerPricingMode = 'hourly');
+                      }
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: isHourly ? Colors.white : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        boxShadow: isHourly
+                            ? [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 15,
+                            color: isHourly ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Hourly Rate',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: isHourly ? FontWeight.w700 : FontWeight.w600,
+                                color: isHourly ? const Color(0xFF102A56) : const Color(0xFF64748B),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          if (!isHourly) ...[
+            // Package / Unit Tiers
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: cfg.tiers.map((t) {
+                final selectedTier = t.id == tier.id;
+                return GestureDetector(
+                  onTap: () {
+                    if (t.id != _freelancerTierId) {
+                      updateQuoteAndSync(() {
+                        _freelancerTierId = t.id;
+                        _freelancerUnits = t.defaultUnits;
+                      });
+                    }
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: selectedTier ? const Color(0xFFEAF2FF) : const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: selectedTier ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                        width: selectedTier ? 1.4 : 1.0,
+                      ),
+                    ),
+                    child: Text(
+                      t.label,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: selectedTier ? FontWeight.w700 : FontWeight.w600,
+                        color: selectedTier ? const Color(0xFF1D4ED8) : const Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 10),
+            if (tier.usesUnits) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Number of ${tier.unitPlural}',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF102A56),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            tier.baseMin > 0
+                                ? 'Base ₹${tier.baseSuggested.toInt()} + ₹${tier.perUnitSuggested.toInt()}/${tier.unitLabel}'
+                                : '₹${tier.perUnitSuggested.toInt()} suggested / ${tier.unitLabel} (min ₹${tier.perUnitMin.toInt()})',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFF52627A),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _buildStepperButton(
+                          key: const Key('freelancer_unit_dec'),
+                          icon: Icons.remove_rounded,
+                          enabled: _freelancerUnits > tier.minUnits,
+                          onTap: () => updateQuoteAndSync(() => _freelancerUnits--),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            '$_freelancerUnits',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF102A56),
+                            ),
+                          ),
+                        ),
+                        _buildStepperButton(
+                          key: const Key('freelancer_unit_inc'),
+                          icon: Icons.add_rounded,
+                          enabled: _freelancerUnits < tier.maxUnits,
+                          onTap: () => updateQuoteAndSync(() => _freelancerUnits++),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tier.summaryHint,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'Market suggested: ₹${quote.suggestedBudget.toInt()} (Min ₹${quote.minBudget.toInt()})',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ] else ...[
+            // Hourly Rate & Estimated Hours Steppers
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Hourly Rate',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF52627A),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStepperButton(
+                              key: const Key('freelancer_rate_dec'),
+                              icon: Icons.remove_rounded,
+                              enabled: _freelancerHourlyRate - 50 >= cfg.minHourlyRate,
+                              onTap: () => updateQuoteAndSync(
+                                () => _freelancerHourlyRate = (_freelancerHourlyRate - 50)
+                                    .clamp(cfg.minHourlyRate, 10000.0),
+                              ),
+                            ),
+                            Flexible(
+                              child: Text(
+                                '₹${_freelancerHourlyRate.toInt()}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF102A56),
+                                ),
+                              ),
+                            ),
+                            _buildStepperButton(
+                              key: const Key('freelancer_rate_inc'),
+                              icon: Icons.add_rounded,
+                              enabled: (_freelancerHourlyRate + 50) * _freelancerHours <= 50000,
+                              onTap: () => updateQuoteAndSync(
+                                () => _freelancerHourlyRate += 50,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Min ₹${cfg.minHourlyRate.toInt()}/hr',
+                          style: const TextStyle(fontSize: 10, color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Estimated Hours',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF52627A),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            _buildStepperButton(
+                              key: const Key('freelancer_hours_dec'),
+                              icon: Icons.remove_rounded,
+                              enabled: _freelancerHours > cfg.minHours,
+                              onTap: () => updateQuoteAndSync(() => _freelancerHours--),
+                            ),
+                            Flexible(
+                              child: Text(
+                                '$_freelancerHours ${_freelancerHours == 1 ? 'hr' : 'hrs'}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF102A56),
+                                ),
+                              ),
+                            ),
+                            _buildStepperButton(
+                              key: const Key('freelancer_hours_inc'),
+                              icon: Icons.add_rounded,
+                              enabled: _freelancerHours < cfg.maxHours &&
+                                  (_freelancerHourlyRate * (_freelancerHours + 1)) <= 50000,
+                              onTap: () => updateQuoteAndSync(() => _freelancerHours++),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Calc ₹${quote.suggestedBudget.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF2563EB),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 10),
+
+          // Separate Pass-Through Charges Disclosure / Toggle
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBEB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline_rounded, size: 15, color: Color(0xFFB45309)),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        cfg.separateCostsTitle,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  cfg.separateCostsDescription,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    color: Color(0xFF78350F),
+                    height: 1.3,
+                  ),
+                ),
+                if (_selectedCategory == 'web_app_tech') ...[
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _separateChargesClientPaid = true;
+                            _compileDescriptionFromForm();
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _separateChargesClientPaid ? const Color(0xFFD97706) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF59E0B)),
+                          ),
+                          child: Text(
+                            'I pay Domain/Hosting directly',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: _separateChargesClientPaid ? Colors.white : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _separateChargesClientPaid = false;
+                            _compileDescriptionFromForm();
+                          });
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: !_separateChargesClientPaid ? const Color(0xFFD97706) : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFF59E0B)),
+                          ),
+                          child: Text(
+                            'Already own Domain & Hosting',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: !_separateChargesClientPaid ? Colors.white : const Color(0xFF92400E),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStepperButton({
+    Key? key,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      key: key,
+      onTap: enabled ? onTap : null,
+      child: Container(
+        width: 28,
+        height: 28,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: enabled ? Colors.white : const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: enabled ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+          ),
+        ),
+        child: Icon(
+          icon,
+          size: 16,
+          color: enabled ? const Color(0xFF102A56) : const Color(0xFFCBD5E1),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPriceBreakdownSection() {
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: _budgetCtrl,
+      builder: (_, value, __) {
+        final isGrocery = Task.isGroceryCategory(_selectedCategory);
+        final rawBudget = double.tryParse(value.text) ?? 0;
+        final budget = isGrocery && rawBudget <= 0
+            ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+            : rawBudget;
+        final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
+        final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+        final posterFee = isGrocery ? 12.0 : (budget * 0.20);
+        final total = budget + charge + posterFee;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TaskPriceBreakdownCard(
+              budget: budget,
+              serviceCharge: charge,
+              posterFee: posterFee,
+              totalCost: total,
+              isRepair: Task.isRepairCategory(_selectedCategory),
+              isGrocery: isGrocery,
+              distanceKm: _calculatedDistanceKm,
+            ),
+            if (_isFreelancer && _freelancerQuote != null) ...[
+              const SizedBox(height: 6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  'Excluded from 20% fee: ${_freelancerQuote!.separateCostsTitle} (client-paid direct).',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildRepairMaterialsBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFFDE68A), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFB45309).withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+            ),
+            child: const Icon(Icons.handyman_rounded, color: Color(0xFFD97706), size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Service Materials Policy',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Materials and spare parts required for repair services are paid directly by the task poster and will NOT be included in this budget value.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF78350F),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroceryItemsBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF16A34A).withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: const BoxDecoration(
+              color: Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.all(Radius.circular(10)),
+            ),
+            child: const Icon(Icons.shopping_basket_rounded, color: Color(0xFF16A34A), size: 20),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Grocery Items Policy',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13.5,
+                    color: Color(0xFF15803D),
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'Cost of grocery items is paid separately by the task poster directly to the helper/store and is NOT included in this delivery budget value.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF166534),
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistanceCategoryRateBanner() {
+    final isGrocery = Task.isGroceryCategory(_selectedCategory);
+    final isMoving = _selectedCategory == 'moving';
+    final isPickup = _selectedCategory == 'pickup';
+    final title = isGrocery
+        ? 'Grocery Delivery Rate'
+        : (isMoving
+            ? 'Moving & Packing Rate'
+            : (isPickup ? 'Pick & Drop Rate' : 'Transport Rate'));
+    final rateBadge = isGrocery
+        ? '₹50 base + ₹12 / km'
+        : (isMoving
+            ? '₹400 base + ₹35 / km'
+            : (isPickup ? 'Min ₹30 · ₹18 / km' : 'Min ₹50 · ₹18 / km'));
+    final icon = isGrocery
+        ? Icons.two_wheeler_rounded
+        : (isMoving
+            ? Icons.local_shipping_rounded
+            : (isPickup
+                ? Icons.electric_rickshaw_rounded
+                : Icons.directions_car_rounded));
+    final subtitle = isGrocery
+        ? 'Store to drop distance fare (₹50 base + ₹12/km · Bike/Scooty up to 20kg)'
+        : 'Distance fare is included in your budget (₹0 extra service charge)';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF102A56).withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEAF2FF),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: const Color(0xFF2563EB), size: 20),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13.5,
+                        color: Color(0xFF102A56),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEAF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        rateBadge,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 11,
+                          color: Color(0xFF2563EB),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF52627A),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBottomContinueButton() {
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          height: 52,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF0B63F6).withValues(alpha: 0.35),
+                blurRadius: 14,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: ElevatedButton(
+            onPressed: _loading ? null : _submit,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shadowColor: Colors.transparent,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            ),
+            child: _loading
+                ? const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2.5),
+                  )
+                : const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Continue',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      Icon(Icons.arrow_forward_rounded, size: 20, color: Colors.white),
+                    ],
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F8FF),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          controller: _scrollCtrl,
+          padding: const EdgeInsets.only(bottom: 24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTopHeader(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTaskTitleInput(),
+                      const SizedBox(height: 18),
+                      _buildCategorySection(),
+                      if (_selectedCategory == 'delivery') ...[
+                        const SizedBox(height: 16),
+                        _buildDeliveryVehicleSelector(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
+                      ] else if (_selectedCategory == 'moving') ...[
+                        const SizedBox(height: 16),
+                        _buildMovingVehicleSelector(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
+                      ] else if (Task.isRepairCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildRepairMaterialsBanner(),
+                      ] else if (Task.isGroceryCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildGroceryItemsBanner(),
+                        const SizedBox(height: 12),
+                        _buildVehicleCapacityBanner(),
+                        const SizedBox(height: 16),
+                        _buildGroceryItemsSelectionSection(),
+                      ] else if (_isDelivery) ...[
+                        const SizedBox(height: 16),
+                        _buildDistanceCategoryRateBanner(),
+                      ] else if (_isFreelancer) ...[
+                        const SizedBox(height: 16),
+                        _buildFreelancerPricingCard(),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildDescriptionFormSection(),
+                      if (!_isFreelancer) ...[
+                        const SizedBox(height: 16),
+                        _buildLocationFieldsSection(),
+                      ] else ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          key: const Key('freelancer_remote_badge'),
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.public_rounded, size: 18, color: Color(0xFF2563EB)),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Remote Freelancer Service — No location needed. Price is suggested from your task details & scope.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1E3A8A),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      if (!Task.isGroceryCategory(_selectedCategory)) ...[
+                        const SizedBox(height: 16),
+                        _buildSuggestedBudgetCard(),
+                        _buildBudgetField(),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildPriceBreakdownSection(),
+                      const SizedBox(height: 24),
+                      _buildBottomContinueButton(),
+                      const SizedBox(height: 12),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -3256,15 +7419,15 @@ class _AddressActionButtons extends StatelessWidget {
             icon: Icon(Icons.my_location, size: 20, color: accentColor),
             tooltip: 'Use GPS',
             onPressed: onGps,
-            padding: const EdgeInsets.all(10),
-            constraints: const BoxConstraints(),
+            padding: const EdgeInsets.all(8),
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
           ),
         IconButton(
           icon: Icon(Icons.map_outlined, size: 20, color: accentColor),
           tooltip: 'Pick on map',
           onPressed: onMap,
-          padding: const EdgeInsets.all(10),
-          constraints: const BoxConstraints(),
+          padding: const EdgeInsets.all(8),
+          constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
         ),
       ],
     );

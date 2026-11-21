@@ -780,13 +780,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _MenuItem(
                     icon: Icons.policy_outlined,
                     title: 'Privacy Policy',
-                    onTap: () => _launch('https://workmate4u.com/privacy'),
+                    onTap: () => context.push('/privacy'),
                   ),
                   const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
                     icon: Icons.description_outlined,
-                    title: 'Terms of Service',
-                    onTap: () => _launch('https://workmate4u.com/terms'),
+                    title: 'Terms of Service & Conditions',
+                    onTap: () => context.push('/terms'),
                   ),
                 ],
               ),

@@ -32,6 +32,23 @@ void _onBackgroundNotificationResponse(NotificationResponse response) {
   // Intentionally minimal — navigation is handled when the app resumes.
 }
 
+final Map<String, int> _bgRecentNotifications = {};
+bool _shouldSuppressBgDuplicate(String type, String? taskId) {
+  if (type != 'skill_matched' && type != 'nearby_task') return false;
+  final key = '${type}_${taskId ?? ''}';
+  final now = DateTime.now().millisecondsSinceEpoch;
+  final last = _bgRecentNotifications[key];
+  if (last != null && (now - last) < 15000) {
+    debugPrint('[FCM bg] Suppressed duplicate notification for key=$key');
+    return true;
+  }
+  _bgRecentNotifications[key] = now;
+  if (_bgRecentNotifications.length > 500) {
+    _bgRecentNotifications.clear();
+  }
+  return false;
+}
+
 @pragma('vm:entry-point')
 Future<void> _bgMessageHandler(RemoteMessage message) async {
   // Guard against [core/duplicate-app] if the isolate already has Firebase.
@@ -45,6 +62,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
   final data = message.data;
   final type = data['type']?.toString() ?? '';
   if (type.isEmpty) return;
+
+  final String? bgTaskId = data['task_id']?.toString() ?? data['taskId']?.toString();
+  if (_shouldSuppressBgDuplicate(type, bgTaskId)) {
+    return;
+  }
 
   if (_isHelperTaskNotification(type)) {
     try {
@@ -122,10 +144,10 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     case 'task_matched':
     case 'matched_task':
       title = data['title'] ?? '🎯 New task near you!';
-      body = data['body'] ?? 'A task within 10 km matches your profile. Tap to view.';
+      body = data['body'] ?? 'A task within 2 km matches your profile. Tap to view.';
       channelId = 'workmate4u_matched';
       channelName = 'Matched Tasks';
-      channelDesc = 'Tasks near you that match your skills profile';
+      channelDesc = 'Tasks near you (within 2 km) that match your skills profile';
       importance = Importance.max;
       break;
 
@@ -139,13 +161,13 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
       importance = Importance.max;
       break;
 
-    // ── Nearby task (all users within 10 km, any task category) ────────────
+    // ── Nearby task (all users within 2 km, any task category) ────────────
     case 'nearby_task':
       title = data['title'] ?? '📍 New Task Near You!';
-      body = data['body'] ?? 'A new task is available near you. Tap to view.';
+      body = data['body'] ?? 'A new task is available within 2 km of you. Tap to view.';
       channelId = 'workmate4u_matched';
       channelName = 'Matched Tasks';
-      channelDesc = 'Tasks near you that match your skills profile';
+      channelDesc = 'Tasks near you (within 2 km) that match your skills profile';
       importance = Importance.max;
       break;
 
@@ -388,8 +410,11 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
     playSound: true,
   );
 
-  // Use type+task_id as the ID so skill_matched and nearby_task never collide.
-  final notifId = (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs();
+  // Use unique ID for chat messages so Android never silently merges/mutes
+  // subsequent messages from the same task chat.
+  final notifId = (type == 'chat' || type == 'new_message')
+      ? DateTime.now().millisecondsSinceEpoch & 0x7fffffff
+      : (type + (data['task_id'] ?? data['taskId'] ?? '')).hashCode.abs() % 2147483647;
   await local.show(
     id: notifId,
     title: title,
@@ -405,6 +430,24 @@ Future<void> _bgMessageHandler(RemoteMessage message) async {
 class NotificationService {
   static final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
+
+  static final Map<String, int> _recentNotifications = {};
+
+  static bool _shouldSuppressDuplicate(String type, String? taskId) {
+    if (type != 'skill_matched' && type != 'nearby_task') return false;
+    final key = '${type}_${taskId ?? ''}';
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final last = _recentNotifications[key];
+    if (last != null && (now - last) < 15000) {
+      debugPrint('[FCM fg] Suppressed duplicate notification for key=$key');
+      return true;
+    }
+    _recentNotifications[key] = now;
+    if (_recentNotifications.length > 500) {
+      _recentNotifications.clear();
+    }
+    return false;
+  }
 
   /// When user is currently inside a ChatScreen, this holds the active taskId.
   /// Foreground notifications for this taskId are suppressed to prevent spamming
@@ -423,6 +466,10 @@ class NotificationService {
 
   // Broadcast stream for foreground task_completed events (poster's in-app popup).
   static final StreamController<Map<String, dynamic>> onTaskCompleted =
+      StreamController.broadcast();
+
+  // Broadcast stream for foreground task_accepted events (auto-redirect poster to live tracking).
+  static final StreamController<Map<String, dynamic>> onTaskAccepted =
       StreamController.broadcast();
 
   /// Holds the data from getInitialMessage() / getNotificationAppLaunchDetails()
@@ -546,6 +593,10 @@ class NotificationService {
       final String? msgTaskId = message.data['task_id']?.toString()
           ?? message.data['taskId']?.toString();
 
+      if (_shouldSuppressDuplicate(type, msgTaskId)) {
+        return;
+      }
+
       // If the user is currently on the chat screen for this task, suppress the popup banner
       if (isChat && activeChatTaskId != null && activeChatTaskId == msgTaskId) {
         debugPrint('[FCM fg] Chat message for task $msgTaskId suppressed because user is viewing chat screen');
@@ -606,12 +657,12 @@ class NotificationService {
               break;
             case 'nearby_task':
               msgTitle ??= '📍 New Task Near You!';
-              msgBody ??= 'A new task is available near you. Tap to view.';
+              msgBody ??= 'A new task is available within 2 km of you. Tap to view.';
               break;
             case 'task_matched':
             case 'matched_task':
               msgTitle ??= '🎯 New task near you!';
-              msgBody ??= 'A task within 10 km matches your profile. Tap to view.';
+              msgBody ??= 'A task within 2 km matches your profile. Tap to view.';
               break;
             case 'task_assigned':
               msgTitle ??= 'Task Assigned! 📌';
@@ -708,6 +759,20 @@ class NotificationService {
             isAdmin: isAdmin,
             isChat: isChat,
           );
+        }
+      }
+
+      // Notify the app to auto-redirect the poster to live tracking when a helper accepts.
+      if (type == 'task_accepted') {
+        final taskId = message.data['task_id']?.toString() ??
+            message.data['taskId']?.toString() ??
+            '';
+        if (taskId.isNotEmpty) {
+          onTaskAccepted.add({
+            'task_id': taskId,
+            'title': notification?.title ?? message.data['title'] ?? 'Task Accepted',
+            'body': notification?.body ?? message.data['body'] ?? '',
+          });
         }
       }
 
@@ -906,8 +971,11 @@ class NotificationService {
     final details =
         NotificationDetails(android: androidDetails, iOS: iosDetails);
 
+    final notifId = isChat
+        ? (DateTime.now().millisecondsSinceEpoch & 0x7fffffff)
+        : (((notificationType ?? '') + (taskId ?? '')).hashCode.abs() % 2147483647);
     await _local.show(
-      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      id: notifId,
       title: title,
       body: body,
       notificationDetails: details,

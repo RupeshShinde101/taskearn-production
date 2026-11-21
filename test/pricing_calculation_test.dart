@@ -1,0 +1,970 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:workmate4u/models/task.dart';
+import 'package:workmate4u/models/grocery_item.dart';
+import 'package:workmate4u/providers/auth_provider.dart';
+import 'package:workmate4u/providers/task_provider.dart';
+import 'package:workmate4u/screens/tasks/post_task_screen.dart';
+import 'package:workmate4u/services/storage_service.dart';
+import 'package:workmate4u/widgets/task_price_breakdown_card.dart';
+
+void main() {
+  group('Task distance pricing & service charge', () {
+    test('moving uses ₹400 base + ₹35/km for full distance (4.7 km -> ₹565)', () {
+      expect(Task.calculateDistancePrice(4.7, 'moving'), 565.0);
+      expect(Task.calculateDistancePrice(1.0, 'moving'), 435.0);
+      expect(Task.calculateDistancePrice(0.0, 'moving'), 0.0);
+    });
+
+    test('moving itemized fare summary explains base + distance component', () {
+      final summary = Task.distanceFareSummary(4.7, 'moving');
+      expect(summary, contains('₹565'));
+      expect(summary, contains('₹400 base'));
+      expect(summary, contains('₹165'));
+      expect(summary, contains('4.7 km @ ₹35/km'));
+    });
+
+    test('extra service charge is removed (₹0) across all categories', () {
+      expect(Task.serviceChargeForCategory('moving'), 0);
+      expect(Task.serviceChargeForCategory('delivery'), 0);
+      expect(Task.serviceChargeForCategory('pickup'), 0);
+      expect(Task.serviceChargeForCategory('transport'), 0);
+      expect(Task.serviceChargeForCategory('cleaning'), 0);
+    });
+
+    test('moving budget suggestion aligns minBudget and suggestedBudget with 4.7 km fare', () {
+      final std = Task.getBudgetSuggestion('moving', distanceKm: 4.7);
+      expect(std.minBudget, 565.0);
+      expect(std.suggestedBudget, 565.0);
+
+      final kothrud = Task.getBudgetSuggestion(
+        'moving',
+        areaText: 'Kothrud',
+        distanceKm: 4.7,
+      );
+      expect(kothrud.minBudget, 565.0);
+      expect(kothrud.suggestedBudget, greaterThanOrEqualTo(565.0));
+    });
+
+    test('delivery pricing supports bike (₹12/km, min ₹24) and rikshaw (₹18/km, min ₹30)', () {
+      expect(Task.minBudgetForCategory('delivery'), 24.0);
+      expect(Task.minBudgetForCategory('delivery', vehicle: 'rikshaw'), 30.0);
+      expect(Task.minBudgetForCategory('pickup'), 30.0);
+      expect(Task.minBudgetForCategory('transport'), 50.0);
+
+      expect(Task.calculateDistancePrice(4.7, 'delivery', vehicle: 'bike'), 56.0);
+      expect(Task.calculateDistancePrice(4.7, 'delivery', vehicle: 'rikshaw'), 85.0);
+      expect(Task.calculateDistancePrice(1.0, 'delivery', vehicle: 'bike'), 24.0);
+      expect(Task.calculateDistancePrice(1.0, 'delivery', vehicle: 'rikshaw'), 30.0);
+
+      expect(Task.distanceFareSummary(4.7, 'delivery', vehicle: 'bike'),
+          'Min fare: ₹56 (4.7 km @ ₹12/km (Bike))');
+      expect(Task.distanceFareSummary(1.0, 'delivery', vehicle: 'bike'),
+          'Min fare: ₹24 (1.0 km @ ₹12/km — ₹24 min (Bike))');
+      expect(Task.distanceFareSummary(4.7, 'delivery', vehicle: 'rikshaw'),
+          'Min fare: ₹85 (4.7 km @ ₹18/km (Rikshaw))');
+      expect(Task.distanceFareSummary(1.0, 'delivery', vehicle: 'rikshaw'),
+          'Min fare: ₹30 (1.0 km @ ₹18/km — ₹30 min (Rikshaw))');
+
+      final bikeNoDist = Task.getBudgetSuggestion('delivery', vehicle: 'bike');
+      expect(bikeNoDist.minBudget, 24.0);
+      expect(bikeNoDist.suggestedBudget, greaterThanOrEqualTo(24.0));
+
+      final autoNoDist = Task.getBudgetSuggestion('delivery', vehicle: 'rikshaw');
+      expect(autoNoDist.minBudget, 30.0);
+      expect(autoNoDist.suggestedBudget, greaterThanOrEqualTo(30.0));
+
+      final bike47 = Task.getBudgetSuggestion('delivery', distanceKm: 4.7, vehicle: 'bike');
+      expect(bike47.minBudget, 56.0);
+      expect(bike47.suggestedBudget, 56.0);
+
+      final auto47 = Task.getBudgetSuggestion('delivery', distanceKm: 4.7, vehicle: 'rikshaw');
+      expect(auto47.minBudget, 85.0);
+      expect(auto47.suggestedBudget, 85.0);
+    });
+  });
+
+  group('Pricing UI widgets', () {
+    testWidgets('TaskPriceBreakdownCard renders 565 + 20% fee = 678 with zero service charge',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(16),
+              child: TaskPriceBreakdownCard(
+                budget: 565,
+                serviceCharge: 0,
+                posterFee: 113,
+                totalCost: 678,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('₹565'), findsOneWidget);
+      expect(find.text('₹113'), findsOneWidget);
+      expect(find.text('₹678'), findsOneWidget);
+      expect(find.text('Service Charge'), findsNothing);
+      expect(find.text('Distance / Service Charge'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PostTaskScreen Delivery enforces ₹24 Bike / ₹30 Rikshaw minimum and zero extra service charge',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Default category is delivery -> Bike selected
+      expect(find.text('Delivery Vehicle Option'), findsOneWidget);
+      expect(find.text('Bike'), findsOneWidget);
+      expect(find.text('Rikshaw'), findsOneWidget);
+
+      // Task Details Form label removed; Capacity limits and Budget directly visible
+      expect(find.text('Task Details Form'), findsNothing);
+      expect(find.text('2 Wheeler Capacity Limits'), findsOneWidget);
+      expect(find.text('Budget'), findsOneWidget);
+
+      // Verify Task Title field disables inherited inner OutlineInputBorder
+      final titleField = tester.widget<TextField>(
+        find.descendant(
+          of: find.widgetWithText(TextFormField, 'Task Title'),
+          matching: find.byType(TextField),
+        ),
+      );
+      expect(titleField.decoration?.border, InputBorder.none);
+      expect(titleField.decoration?.enabledBorder, InputBorder.none);
+      expect(titleField.decoration?.focusedBorder, InputBorder.none);
+      expect(titleField.decoration?.filled, isFalse);
+
+      // Enter ₹20 without coordinates -> below ₹24 Bike min
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '20');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for delivery is ₹24'), findsOneWidget);
+
+      // Enter ₹25 -> valid for Bike (>= ₹24)
+      await tester.enterText(budgetField, '25');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for'), findsNothing);
+
+      // Switch to Rikshaw -> ₹25 is now below ₹30 Rikshaw min!
+      await tester.ensureVisible(find.text('Rikshaw'));
+      await tester.tap(find.text('Rikshaw'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for delivery is ₹30'), findsOneWidget);
+
+      // Set Pickup & Drop localities -> computes distance fare and updates breakdown cleanly
+      await tester.ensureVisible(find.text('Pickup Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Pickup Address *'), 'Baner');
+      await tester.ensureVisible(find.text('Drop / Delivery Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Drop / Delivery Address *'),
+          'Kothrud');
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('₹18/km (Rikshaw)'), findsWidgets);
+      expect(find.text('Service Charge'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('PostTaskScreen hides Bike/Rikshaw selector on Moving and shows Moving Vehicle Option',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Default category is delivery -> Bike / Rikshaw selector & hero map badge are visible
+      expect(find.text('Near you'), findsNothing);
+      expect(find.text('Delivery Vehicle Option'), findsOneWidget);
+
+      // Tapping an unselected parent category opens Option 5 illustrated bottom sheet with single-line rows
+      await tester.tap(find.text('Repair'));
+      await tester.pumpAndSettle();
+      expect(find.text('Workmate4u › Repair'), findsOneWidget);
+      expect(find.text('Select a specific category'), findsOneWidget);
+      expect(find.text('Electrician'), findsOneWidget);
+      expect(find.text('Carpentry'), findsOneWidget);
+      final elecText = tester.widget<Text>(find.text('Electrician'));
+      expect(elecText.maxLines, 1);
+      expect(elecText.softWrap, isFalse);
+      expect(TaskCategory.iconFor('carpentry'), isNot('\u{1FA9A}'));
+      expect(
+        TaskCategory.subcatAssetFor('carpentry'),
+        'assets/images/subcats/carpentry.png',
+      );
+      expect(
+        find.byWidgetPredicate((w) =>
+            w is Image &&
+            w.image is AssetImage &&
+            (w.image as AssetImage).assetName ==
+                'assets/images/subcats/carpentry.png'),
+        findsOneWidget,
+      );
+      expect(find.text('Tech Support'), findsNothing);
+      expect(
+        TaskCategoryGroup.all
+            .firstWhere((g) => g.label == 'Professional')
+            .categoryIds,
+        contains('tech_support'),
+      );
+      await tester.tap(find.text('Electrician'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsNothing);
+      expect(find.text('Delivery Vehicle Option'), findsNothing);
+
+      // Tapping Delivery & Moving opens its child category sheet on the FIRST tap even when unselected
+      await tester.tap(find.text('Delivery & Moving'));
+      await tester.pumpAndSettle();
+
+      // Pick 'Moving'
+      await tester.tap(find.text('Moving'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delivery Vehicle Option'), findsNothing);
+      expect(find.text('Moving Vehicle Option'), findsOneWidget);
+      expect(find.text('Tempo'), findsOneWidget);
+      expect(find.text('Truck'), findsOneWidget);
+
+      // Task Details Form label removed; Moving Capacity limits and Budget directly visible
+      expect(find.text('Task Details Form'), findsNothing);
+      expect(find.text('Tempo Capacity Limits'), findsOneWidget);
+
+      expect(find.text('Budget'), findsOneWidget);
+      expect(find.text('Price Breakdown'), findsOneWidget);
+
+      // Fill Pickup & Drop with known localities -> triggers instant distance & auto-budget
+      await tester.ensureVisible(find.text('Pickup Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Pickup Address *'), 'Baner');
+      await tester.ensureVisible(find.text('Drop / Delivery Address *'));
+      await tester.enterText(
+          find.widgetWithText(TextFormField, 'Drop / Delivery Address *'),
+          'Kothrud');
+      await tester.pumpAndSettle();
+
+      // Distance summary + Suggested card should now show ₹400 base + ₹35/km
+      expect(find.textContaining('₹400 base'), findsWidgets);
+
+      // Typing ₹400 for Moving (below distance min) shows inline warning immediately
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '400');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum ₹'), findsOneWidget);
+
+      // Tapping Apply sets suggested budget and clears the inline warning
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum ₹'), findsNothing);
+      expect(find.text('Service Charge'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('freelancer child categories enforce real-world market pricing', () {
+      expect(TaskCategoryGroup.freelancerChildIds, hasLength(5));
+      expect(Task.minBudgetForCategory('business_admin'), 300.0);
+      expect(Task.minBudgetForCategory('graphic_design'), 350.0);
+      expect(Task.minBudgetForCategory('video_audio_editing'), 400.0);
+      expect(Task.minBudgetForCategory('digital_marketing'), 500.0);
+      expect(Task.minBudgetForCategory('web_app_tech'), 800.0);
+
+      final gfx = Task.getBudgetSuggestion('graphic_design');
+      expect(gfx.minBudget, 350.0);
+      expect(gfx.suggestedBudget, 600.0);
+      expect(gfx.maxBudget, 1200.0);
+
+      final web = Task.getBudgetSuggestion('web_app_tech');
+      expect(web.minBudget, 800.0);
+      expect(web.suggestedBudget, 1500.0);
+      expect(web.maxBudget, 3000.0);
+
+      final webAreaIgnored = Task.getBudgetSuggestion('web_app_tech', areaText: 'Hinjewadi');
+      expect(webAreaIgnored.suggestedBudget, 1500.0);
+      expect(webAreaIgnored.maxBudget, 3000.0);
+      expect(webAreaIgnored.localityName, 'Remote Service');
+
+      final vid = Task.getBudgetSuggestion('video_audio_editing');
+      expect(vid.minBudget, 400.0);
+      expect(vid.suggestedBudget, 750.0);
+      expect(vid.maxBudget, 1500.0);
+
+      final mkt = Task.getBudgetSuggestion('digital_marketing');
+      expect(mkt.minBudget, 500.0);
+      expect(mkt.suggestedBudget, 1000.0);
+      expect(mkt.maxBudget, 2500.0);
+
+      final biz = Task.getBudgetSuggestion('business_admin');
+      expect(biz.minBudget, 300.0);
+      expect(biz.suggestedBudget, 500.0);
+      expect(biz.maxBudget, greaterThanOrEqualTo(500.0));
+    });
+
+    test('freelancer dual pricing calculates package/unit & hourly quotes across all categories', () {
+      // Web Website (/page): ₹800 min / ₹1500 sug per page + Domain & Hosting separate
+      final web1 = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'website_pages', units: 1);
+      expect(web1.minBudget, 800.0);
+      expect(web1.suggestedBudget, 1500.0);
+      expect(web1.separateCostsTitle, 'Domain & Hosting Separate');
+
+      final web5 = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'website_pages', units: 5);
+      expect(web5.minBudget, 4000.0);
+      expect(web5.suggestedBudget, 7500.0);
+      expect(web5.scopeSummary, 'Website (/page) (5 pages)');
+
+      final webLanding = Task.calculateFreelancerQuote('web_app_tech', mode: 'package', tierId: 'landing_page');
+      expect(webLanding.minBudget, 2000.0);
+      expect(webLanding.suggestedBudget, 3000.0);
+
+      // Web Hourly: min ₹400/hr, custom rate * hours
+      final webHourly = Task.calculateFreelancerQuote('web_app_tech', mode: 'hourly', hourlyRate: 700, hours: 4);
+      expect(webHourly.minBudget, 1600.0);
+      expect(webHourly.suggestedBudget, 2800.0);
+      expect(webHourly.scopeSummary, 'Hourly (₹700/hr × 4 hrs)');
+
+      // Video Long Video (/min): base + per min
+      final vid5 = Task.calculateFreelancerQuote('video_audio_editing', mode: 'package', tierId: 'long_video_mins', units: 5);
+      expect(vid5.minBudget, 2600.0);
+      expect(vid5.suggestedBudget, 4000.0);
+
+      // Pitch Deck (/slide) & Ads Campaign
+      final deck10 = Task.calculateFreelancerQuote('business_admin', mode: 'package', tierId: 'slides', units: 10);
+      expect(deck10.minBudget, 1500.0);
+      expect(deck10.suggestedBudget, 2500.0);
+
+      final mktHourly = Task.calculateFreelancerQuote('digital_marketing', mode: 'hourly', hourlyRate: 900, hours: 2);
+      expect(mktHourly.minBudget, 1000.0);
+      expect(mktHourly.suggestedBudget, 1800.0);
+      expect(mktHourly.separateCostsTitle, 'Ad Wallet Spend Separate');
+    });
+
+    testWidgets('Professional -> Freelancer -> Dual Pricing (Per Project pages & Hourly) sets market pricing',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Step 1: Tap Professional -> opens Professional subcategory popup
+      await tester.ensureVisible(find.text('Professional'));
+      await tester.tap(find.text('Professional'));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsOneWidget);
+      expect(find.text('Freelancer'), findsOneWidget);
+
+      // Step 2: Tap Freelancer -> opens nested Option 5 Freelancer bottom sheet (breadcrumb + single-line labels, no price tags)
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Professional › Freelancer'), findsOneWidget);
+      expect(find.text('Select a freelancer category'), findsOneWidget);
+      expect(find.text('Remote / Online • Price suggested from task details'), findsOneWidget);
+      expect(find.text('Graphic Design & Branding'), findsOneWidget);
+      expect(find.text('Web, App & Tech Projects'), findsOneWidget);
+      expect(find.text('Video & Audio Editing'), findsOneWidget);
+      expect(find.text('Digital Marketing'), findsOneWidget);
+      expect(find.text('Business, Office & Admin'), findsOneWidget);
+      expect(find.textContaining('From ₹'), findsNothing);
+      expect(find.textContaining('/hr'), findsNothing);
+      final webText = tester.widget<Text>(find.text('Web, App & Tech Projects'));
+      expect(webText.maxLines, 1);
+      expect(webText.softWrap, isFalse);
+
+      // Verify back arrow returns cleanly to Professional popup, then re-open Freelancer
+      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('Select a specific category'), findsOneWidget);
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+
+      // Step 3: Select 'Web, App & Tech Projects'
+      await tester.tap(find.text('Web, App & Tech Projects'));
+      await tester.pumpAndSettle();
+
+      // Dual Pricing card & Domain/Hosting Separate disclosure appear immediately
+      expect(find.text('Freelancer Pricing Model'), findsOneWidget);
+      expect(find.text('Per Project'), findsOneWidget);
+      expect(find.text('Hourly Rate'), findsOneWidget);
+      expect(find.text('Website (/page)'), findsOneWidget);
+      expect(find.text('Domain & Hosting Separate'), findsOneWidget);
+
+      // Step 4: Increase website pages from 1 -> 3 via '+' stepper -> min ₹2400, auto-budget ₹4500
+      final unitInc = find.byKey(const Key('freelancer_unit_inc'));
+      await tester.ensureVisible(unitInc);
+      await tester.tap(unitInc);
+      await tester.pumpAndSettle();
+      await tester.tap(unitInc);
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      final budgetWidget = tester.widget<TextFormField>(budgetField);
+      expect(budgetWidget.controller?.text, '4500');
+      expect(find.text('Min ₹2400'), findsOneWidget);
+
+      // Enter ₹2000 -> inline validation warns minimum ₹2400 for 3 pages
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '2000');
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Minimum budget for web app tech (Website (/page) (3 pages)) is ₹2400'),
+          findsOneWidget);
+
+      // Step 5: Switch to Hourly Rate mode -> defaults ₹600/hr × 3 hrs = ₹1800, then +₹50 & +1h = 650 × 4 = ₹2600
+      final hourlyTab = find.byKey(const Key('freelancer_mode_hourly'));
+      await tester.ensureVisible(hourlyTab);
+      await tester.tap(hourlyTab);
+      await tester.pumpAndSettle();
+
+      expect(find.text('₹600'), findsOneWidget);
+      expect(find.text('3 hrs'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('freelancer_rate_inc')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('freelancer_hours_inc')));
+      await tester.pumpAndSettle();
+
+      final updatedBudget = tester.widget<TextFormField>(budgetField);
+      expect(updatedBudget.controller?.text, '2600');
+      expect(find.text('Minimum budget for'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('other task categories enforce market minimums, normalized aliases, and pan-India area suggestions', () {
+      // Category minimums & web/legacy alias parity
+      expect(Task.minBudgetForCategory('electrician'), 150.0);
+      expect(Task.minBudgetForCategory('cleaning'), 300.0);
+      expect(Task.minBudgetForCategory('painting'), 500.0);
+      expect(Task.minBudgetForCategory('photography'), 1500.0);
+      expect(Task.minBudgetForCategory('elder_care'), 500.0);
+      expect(Task.minBudgetForCategory('eldercare'), 500.0);
+      expect(Task.minBudgetForCategory('eventhelp'), 400.0);
+      expect(Task.minBudgetForCategory('techsupport'), 250.0);
+      expect(Task.minBudgetForCategory('freelance'), 300.0);
+      expect(Task.minBudgetForCategory('catering'), 500.0);
+      expect(Task.minBudgetForCategory('fitness'), 250.0);
+      expect(Task.minBudgetForCategory('tailoring'), 150.0);
+
+      // Area multipliers across Indian cities & hubs (Electrician base=200, min=150)
+      final std = Task.getBudgetSuggestion('electrician', areaText: 'Pimpri');
+      expect(std.suggestedBudget, 200.0);
+      expect(std.localityName, 'Pimpri');
+      expect(std.localityTier, 'Suburban Hub');
+
+      final kothrud = Task.getBudgetSuggestion('electrician', areaText: 'Kothrud, Pune');
+      expect(kothrud.suggestedBudget, 220.0);
+      expect(kothrud.localityName, 'Kothrud');
+      expect(kothrud.localityTier, 'Central Pune');
+
+      final baner = Task.getBudgetSuggestion('electrician', areaText: 'Baner, Pune');
+      expect(baner.suggestedBudget, 250.0);
+      expect(baner.localityName, 'Baner');
+      expect(baner.localityTier, 'IT & High-Demand Hub');
+
+      final bandra = Task.getBudgetSuggestion('cleaning', areaText: 'Bandra, Mumbai');
+      expect(bandra.suggestedBudget, 500.0);
+      expect(bandra.localityName, 'Bandra');
+      expect(bandra.localityTier, 'Metro High-Demand Hub');
+
+      final koramangala = Task.getBudgetSuggestion('painting', areaText: 'Koramangala, Bengaluru');
+      expect(koramangala.suggestedBudget, 875.0);
+      expect(koramangala.localityName, 'Koramangala');
+
+      final andheri = Task.getBudgetSuggestion('cleaning', areaText: 'Andheri East, Mumbai');
+      expect(andheri.suggestedBudget, 440.0);
+      expect(andheri.localityName, 'Andheri');
+      expect(andheri.localityTier, 'Metro City Area');
+
+      // Fallback locality skips house/flat prefixes & Campus does not falsely match Camp
+      final fallback = Task.getBudgetSuggestion('plumbing', areaText: 'Flat 4B, Campus Colony, Nashik');
+      expect(fallback.suggestedBudget, 200.0);
+      expect(fallback.localityName, 'Campus Colony');
+      expect(fallback.localityTier, 'Suburban Hub');
+    });
+
+    testWidgets('PostTaskScreen auto-syncs budget and breakdown for other categories when category or area changes',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Switch to Repair -> Electrician while budget is empty -> auto-fills ₹200 + 20% fee = ₹240
+      await tester.ensureVisible(find.text('Repair'));
+      await tester.tap(find.text('Repair'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Electrician'));
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '200');
+      expect(find.text('₹200'), findsOneWidget);
+      expect(find.text('₹40'), findsOneWidget);
+      expect(find.text('₹240'), findsOneWidget);
+      expect(find.text('Service Charge'), findsNothing);
+
+      // Type 'Baner, Pune' in Area / Sector / Locality -> auto-updates suggested budget to ₹250 & breakdown to ₹300
+      final areaField = find.widgetWithText(TextFormField, 'Area / Sector / Locality');
+      await tester.ensureVisible(areaField);
+      await tester.enterText(areaField, 'Baner, Pune');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '250');
+      expect(find.text('Suggested in Baner'), findsOneWidget);
+      expect(find.text('IT & High-Demand Hub'), findsOneWidget);
+      expect(find.text('₹250'), findsWidgets);
+      expect(find.text('₹50'), findsOneWidget);
+      expect(find.text('₹300'), findsOneWidget);
+
+      // Switch area to 'Kothrud' -> auto-updates suggested budget to ₹220 (220 + 44 = 264)
+      await tester.enterText(areaField, 'Kothrud');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '220');
+      expect(find.text('Suggested in Kothrud'), findsOneWidget);
+      expect(find.text('₹264'), findsOneWidget);
+
+      // Manual custom budget override (₹350) should NOT be overwritten when area changes again
+      await tester.ensureVisible(budgetField);
+      await tester.enterText(budgetField, '350');
+      await tester.pumpAndSettle();
+
+      await tester.ensureVisible(areaField);
+      await tester.enterText(areaField, 'Hinjewadi');
+      await tester.pumpAndSettle();
+
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '350');
+      expect(find.text('Suggested in Hinjewadi'), findsOneWidget);
+      expect(find.text('₹250'), findsOneWidget); // shown in Suggested card
+      expect(find.text('₹420'), findsOneWidget); // 350 + 20% = 420
+      expect(tester.takeException(), isNull);
+    });
+
+    test('freelancer pricing ignores area and suggests prices from task details', () {
+      expect(Task.isFreelancerCategory('web_app_tech'), isTrue);
+      expect(Task.isFreelancerCategory('graphic_design'), isTrue);
+      expect(Task.isFreelancerCategory('video-audio-editing'), isTrue);
+      expect(Task.isFreelancerCategory('digital_marketing'), isTrue);
+      expect(Task.isFreelancerCategory('business_admin'), isTrue);
+      expect(Task.isFreelancerCategory('freelance'), isTrue);
+      expect(Task.isFreelancerCategory('electrician'), isFalse);
+
+      // 5-page website from title -> ₹7500 suggested, ₹4000 min, ignores Hinjewadi area
+      final web5 = Task.getBudgetSuggestion(
+        'web_app_tech',
+        areaText: 'Hinjewadi',
+        title: 'Build 5 page WordPress website',
+      );
+      expect(web5.minBudget, 4000.0);
+      expect(web5.suggestedBudget, 7500.0);
+      expect(web5.localityName, 'Task Details');
+
+      // Brand identity kit -> ₹5500 suggested
+      final brandKit = Task.getBudgetSuggestion(
+        'graphic_design',
+        title: 'Full brand kit and logo design',
+      );
+      expect(brandKit.minBudget, 3500.0);
+      expect(brandKit.suggestedBudget, 5500.0);
+
+      // 3 Instagram reels with urgent priority uplift
+      final reelsUrgent = Task.suggestFreelancerFromDetails(
+        'video_audio_editing',
+        title: 'Edit 3 Instagram reels urgent',
+      );
+      expect(reelsUrgent.quote.minBudget, 1200.0);
+      expect(reelsUrgent.quote.suggestedBudget, 2700.0); // 2250 * 1.2
+
+      // 10 slide pitch deck -> ₹2500 suggested
+      final deck = Task.suggestFreelancerFromDetails(
+        'business_admin',
+        description: 'Need a 10 slide investor pitch deck in PowerPoint',
+      );
+      expect(deck.quote.suggestedBudget, 2500.0);
+    });
+
+    testWidgets('PostTaskScreen hides location fields for freelancer services and updates budget from task details',
+        (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(
+            home: PostTaskScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Pick Professional -> Freelancer -> Web, App & Tech Projects
+      await tester.ensureVisible(find.text('Professional'));
+      await tester.tap(find.text('Professional'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Freelancer'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Web, App & Tech Projects'));
+      await tester.pumpAndSettle();
+
+      // Location inputs are hidden and Remote badge is visible
+      expect(find.byKey(const Key('freelancer_remote_badge')), findsOneWidget);
+      expect(find.text('Area / Sector / Locality'), findsNothing);
+      expect(find.text('Address / Landmark (optional)'), findsNothing);
+      expect(find.text('Suggested by Task Details'), findsOneWidget);
+
+      // Typing task details updates suggested budget automatically without needing location
+      final titleField = find.widgetWithText(TextFormField, 'Task Title');
+      await tester.ensureVisible(titleField);
+      await tester.enterText(titleField, 'Build 5 page website');
+      await tester.pumpAndSettle();
+
+      final budgetField = find.widgetWithText(TextFormField, 'Budget (₹)');
+      expect(tester.widget<TextFormField>(budgetField).controller?.text, '7500');
+      expect(find.textContaining('5 pages'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('Repair category contains painting, and Professional contains drawing', () {
+      final repairGroup = TaskCategoryGroup.all.firstWhere((g) => g.label == 'Repair');
+      expect(repairGroup.categoryIds, contains('painting'));
+      expect(repairGroup.categoryIds, contains('electrician'));
+      expect(repairGroup.categoryIds, contains('plumbing'));
+      expect(repairGroup.categoryIds, contains('carpentry'));
+      expect(repairGroup.categoryIds, contains('vehicle'));
+
+      final proGroup = TaskCategoryGroup.all.firstWhere((g) => g.label == 'Professional');
+      expect(proGroup.categoryIds, contains('drawing'));
+      expect(proGroup.categoryIds, contains('freelancer'));
+      expect(proGroup.categoryIds, contains('data_entry'));
+      expect(proGroup.categoryIds, contains('photography'));
+      expect(proGroup.categoryIds, contains('tutoring'));
+      expect(proGroup.categoryIds, contains('tech_support'));
+      expect(proGroup.categoryIds, isNot(contains('painting')));
+
+      expect(TaskCategory.subcatAssetFor('drawing'), 'assets/images/subcats/drawing.png');
+      expect(TaskCategory.subcatAssetFor('painting'), 'assets/images/subcats/painting.png');
+    });
+
+    test('drawing category supports market pricing and dual package/hourly tiers', () {
+      expect(Task.isFreelancerCategory('drawing'), isTrue);
+      expect(Task.minBudgetForCategory('drawing'), 300.0);
+
+      // Package: Pencil sketch (2 sketches @ ₹500 suggested = ₹1000)
+      final sketch2 = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'package',
+        tierId: 'pencil_sketch',
+        units: 2,
+      );
+      expect(sketch2.minBudget, 600.0);
+      expect(sketch2.suggestedBudget, 1000.0);
+      expect(sketch2.scopeSummary, 'Pencil Sketch (2 sketches)');
+
+      // Package: Portrait / Caricature
+      final portrait1 = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'package',
+        tierId: 'portrait_artwork',
+        units: 1,
+      );
+      expect(portrait1.minBudget, 600.0);
+      expect(portrait1.suggestedBudget, 1000.0);
+
+      // Hourly: 3 hours @ ₹400/hr = ₹1200
+      final drawingHourly = Task.calculateFreelancerQuote(
+        'drawing',
+        mode: 'hourly',
+        hourlyRate: 400.0,
+        hours: 3,
+      );
+      expect(drawingHourly.suggestedBudget, 1200.0);
+      expect(drawingHourly.scopeSummary, 'Hourly (₹400/hr × 3 hrs)');
+    });
+
+    test('moving category offers Tempo and Truck with market pricing', () {
+      // Tempo (₹400 base + ₹35/km)
+      expect(Task.minBudgetForCategory('moving', vehicle: 'tempo'), 400.0);
+      expect(Task.ratePerKmForCategory('moving', vehicle: 'tempo'), 35.0);
+      expect(Task.calculateDistancePrice(10.0, 'moving', vehicle: 'tempo'), 750.0);
+      expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'tempo'), '₹400 base + ₹35 per km (Tempo)');
+
+      // Truck (₹950 base + ₹55/km)
+      expect(Task.minBudgetForCategory('moving', vehicle: 'truck'), 950.0);
+      expect(Task.ratePerKmForCategory('moving', vehicle: 'truck'), 55.0);
+      expect(Task.calculateDistancePrice(10.0, 'moving', vehicle: 'truck'), 1500.0);
+      expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'truck'), '₹950 base + ₹55 per km (Truck)');
+    });
+
+    test('grocery category enforces Bike/Scooty vehicle, 20kg weight limit, ₹12/km rate, min ₹100, and separate items policy', () {
+      expect(Task.isGroceryCategory('groceries'), isTrue);
+      expect(Task.isGroceryCategory('grocery'), isTrue);
+      expect(Task.minBudgetForCategory('groceries'), 100.0);
+      expect(Task.ratePerKmForCategory('groceries'), 12.0);
+
+      // Short distance (< 8.33 km) gets base min ₹100
+      expect(Task.calculateDistancePrice(5.0, 'groceries'), 100.0);
+
+      // 10 km @ ₹12/km = ₹120
+      expect(Task.calculateDistancePrice(10.0, 'groceries'), 120.0);
+
+      // 15 km @ ₹12/km = ₹180
+      expect(Task.calculateDistancePrice(15.0, 'groceries'), 180.0);
+
+      // Description & itemized summaries
+      expect(Task.distancePriceDescription(5.0, 'groceries'), '₹12 per km (Bike / Scooty · Min ₹100)');
+      expect(Task.distanceFareSummary(5.0, 'groceries'), contains('₹100 min · Bike/Scooty'));
+      expect(Task.distanceFareSummary(10.0, 'groceries'), contains('10.0 km @ ₹12/km · Bike/Scooty'));
+    });
+
+    test('grocery catalog items, custom requirements, and JSON roundtrip', () {
+      expect(GroceryCatalog.allItems.length, greaterThan(20));
+      final milk = GroceryCatalog.allItems.firstWhere((i) => i.id == 'milk');
+      expect(milk.name, contains('Milk'));
+      expect(milk.popularBrands, contains('Amul'));
+
+      final selected = SelectedGroceryItem(
+        id: 'milk',
+        name: 'Fresh Milk',
+        category: 'Dairy & Breakfast',
+        imageUrl: milk.imageUrl,
+        emoji: milk.emoji,
+        qty: '2',
+        litr: '1',
+        brand: 'Amul',
+        rupee: '66',
+      );
+      expect(selected.requirementSummary, contains('2 Qty'));
+      expect(selected.requirementSummary, contains('1 L'));
+      expect(selected.requirementSummary, contains('Amul'));
+      expect(selected.requirementSummary, contains('₹66'));
+
+      final json = selected.toJson();
+      final roundtrip = SelectedGroceryItem.fromJson(json);
+      expect(roundtrip.id, 'milk');
+      expect(roundtrip.qty, '2');
+      expect(roundtrip.litr, '1');
+      expect(roundtrip.brand, 'Amul');
+      expect(roundtrip.rupee, '66');
+
+      final encoded = GroceryCatalog.encodeGroceryItemsJson([selected]);
+      expect(encoded, startsWith('[GROCERY_ITEMS]'));
+      expect(encoded, endsWith('[/GROCERY_ITEMS]'));
+
+      final parsed = GroceryCatalog.parseGroceryItems(null, encoded);
+      expect(parsed.length, 1);
+      expect(parsed.first.name, 'Fresh Milk');
+      expect(parsed.first.brand, 'Amul');
+    });
+
+    test('grocery catalog includes fresh leafy vegetables and enforces <= 20kg package limits', () {
+      final methi = GroceryCatalog.allItems.firstWhere((i) => i.id == 'methi');
+      expect(methi.name, contains('Methi'));
+      expect(methi.category, 'Vegetables & Fruits');
+      expect(methi.prefilledPackages, contains('1 Bunch (Gaddi)'));
+
+      final palak = GroceryCatalog.allItems.firstWhere((i) => i.id == 'palak');
+      expect(palak.name, contains('Palak'));
+      expect(palak.category, 'Vegetables & Fruits');
+
+      final coriander = GroceryCatalog.allItems.firstWhere((i) => i.id == 'coriander');
+      expect(coriander.name, contains('Coriander'));
+
+      // Verify every catalog package is <= 20kg
+      for (final item in GroceryCatalog.allItems) {
+        for (final pkg in item.effectivePackages) {
+          final testItem = SelectedGroceryItem(
+            id: item.id,
+            name: item.name,
+            category: item.category,
+            imageUrl: item.imageUrl,
+            emoji: item.emoji,
+            package: pkg,
+          );
+          expect(testItem.estimatedWeightKg, lessThanOrEqualTo(20.0),
+              reason: '${item.name} package "$pkg" exceeds 20kg vehicle limit');
+        }
+      }
+
+      // Check estimated weight calculation and cart summing
+      final item1 = SelectedGroceryItem(
+        id: 'methi',
+        name: 'Fresh Methi',
+        category: 'Vegetables & Fruits',
+        imageUrl: '',
+        emoji: '🌿',
+        package: '500g',
+      );
+      final item2 = SelectedGroceryItem(
+        id: 'atta',
+        name: 'Atta',
+        category: 'Staples & Dals',
+        imageUrl: '',
+        emoji: '🌾',
+        package: '5kg',
+      );
+      final item3 = SelectedGroceryItem(
+        id: 'milk',
+        name: 'Milk',
+        category: 'Dairy & Breakfast',
+        imageUrl: '',
+        emoji: '🥛',
+        package: '1L',
+      );
+
+      expect(item1.estimatedWeightKg, 0.5);
+      expect(item2.estimatedWeightKg, 5.0);
+      expect(item3.estimatedWeightKg, 1.0);
+
+      final totalW = GroceryCatalog.calculateTotalWeightKg([item1, item2, item3]);
+      expect(totalW, 6.5);
+      expect(totalW, lessThanOrEqualTo(GroceryCatalog.maxTwoWheelerWeightKg));
+    });
+
+    testWidgets('TaskPriceBreakdownCard for grocery tasks displays ₹50 handling charge and distance fare',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      // Grocery budget with travel fare ₹100 + handling ₹50 = ₹150 budget
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(16),
+              child: TaskPriceBreakdownCard(
+                budget: 150.0,
+                serviceCharge: 0.0,
+                posterFee: 30.0,
+                totalCost: 180.0,
+                isGrocery: true,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Distance Travel Fare (₹12/km)'), findsOneWidget);
+      expect(find.text('₹100'), findsOneWidget);
+      expect(find.text('Handling & Shopping Charge'), findsOneWidget);
+      expect(find.text('₹50'), findsOneWidget);
+      expect(find.text('Task Delivery Budget'), findsOneWidget);
+      expect(find.text('₹150'), findsOneWidget);
+      expect(find.textContaining('Grocery Items Policy:'), findsOneWidget);
+    });
+
+    testWidgets('PostTaskScreen smoothly switches to grocery category without freezing',
+        (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      SharedPreferences.setMockInitialValues({'profile_mode': 'poster'});
+      await StorageService.init();
+
+      await tester.pumpWidget(
+        MultiProvider(
+          providers: [
+            ChangeNotifierProvider(create: (_) => AuthProvider()),
+            ChangeNotifierProvider(create: (_) => TaskProvider()),
+          ],
+          child: const MaterialApp(home: PostTaskScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final shoppingFinder = find.text('Shopping & Errands');
+      expect(shoppingFinder, findsOneWidget);
+      await tester.tap(shoppingFinder);
+      await tester.pumpAndSettle();
+
+      final groceryFinder = find.text('Groceries');
+      expect(groceryFinder, findsOneWidget);
+      await tester.tap(groceryFinder);
+      await tester.pumpAndSettle();
+
+      // Opening groceries auto-opens the GroceryItemPickerScreen catalog
+      expect(find.text('Select Grocery Items'), findsOneWidget);
+      expect(find.text('Save & Continue'), findsOneWidget);
+
+      // Return back to PostTaskScreen by tapping Save & Continue
+      await tester.tap(find.text('Save & Continue'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Delivery Address & Store'), findsOneWidget);
+      expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
+      expect(find.text('Grocery Items Policy'), findsOneWidget);
+      expect(find.text('Select Items from Catalog'), findsOneWidget);
+    });
+  });
+}

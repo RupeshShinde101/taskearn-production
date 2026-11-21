@@ -151,8 +151,8 @@ class AppTheme {
           thickness: 1,
           space: 0,
         ),
-        fontFamily: 'Inter',
-        fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
+        fontFamily: 'Roboto',
+        fontFamilyFallback: const ['sans-serif'],
       );
 
   static ThemeData get darkTheme => ThemeData(
@@ -206,8 +206,8 @@ class AppTheme {
               const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           hintStyle: const TextStyle(color: AppColors.gray, fontSize: 14),
         ),
-        fontFamily: 'Inter',
-        fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
+        fontFamily: 'Roboto',
+        fontFamilyFallback: const ['sans-serif'],
       );
 }
 

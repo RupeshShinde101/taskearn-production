@@ -468,15 +468,6 @@ class Task {
   /// Legacy alias for total poster payment amount.
   double get totalAmount => totalPosterCost;
 
-  /// True for categories under Repair (where service materials/parts are paid separately by the poster).
-  static bool isRepairCategory(String categoryId) {
-    const repairCats = {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
-    return repairCats.contains(categoryId.toLowerCase());
-  }
-
-  /// Whether this task is in the repair category hierarchy.
-  bool get isRepairCategoryType => isRepairCategory(category);
-
   /// Normalizes category IDs across snake_case, kebab-case, space-separated, and legacy web keys.
   static String normalizeCategoryKey(String category) {
     final clean = category.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
@@ -518,7 +509,6 @@ class Task {
   }
 
   static String _normalizeCategoryKey(String category) => normalizeCategoryKey(category);
-  }
 
   /// Minimum budget required for a given task category based on current market rates.
   static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {

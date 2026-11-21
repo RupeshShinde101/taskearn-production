@@ -15,22 +15,6 @@ import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/map_location_picker.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 
-/// Parent Category grouping configuration for the Edit Task screen,
-/// aligned with Browse Tasks and Category standards.
-class _ParentCategoryConfig {
-  final String label;
-  final String subtitle;
-  final String imageAsset;
-  final List<String> subcategories;
-
-  const _ParentCategoryConfig({
-    required this.label,
-    required this.subtitle,
-    required this.imageAsset,
-    required this.subcategories,
-  });
-}
-
 class EditTaskScreen extends StatefulWidget {
   final Task task;
   const EditTaskScreen({super.key, required this.task});
@@ -42,13 +26,11 @@ class EditTaskScreen extends StatefulWidget {
 class _EditTaskScreenState extends State<EditTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleCtrl;
-  late final TextEditingController _descCtrl;
   late final TextEditingController _addressCtrl;
   late final TextEditingController _pickupAddrCtrl;
   late final TextEditingController _dropAddrCtrl;
 
-  late String _selectedCategory;
-  late String _selectedParentGroup;
+  late final String _selectedCategory;
   late final ValueNotifier<double> _effectiveBudgetNotifier;
 
   LatLng? _location;
@@ -75,83 +57,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   bool _searchingDrop = false;
   bool _searchingAddress = false;
 
-  static const List<_ParentCategoryConfig> _parentGroups = [
-    _ParentCategoryConfig(
-      label: 'Delivery & Moving',
-      subtitle: 'Moving, delivery, parcel transport',
-      imageAsset: 'assets/images/cat_3d_delivery.png',
-      subcategories: ['delivery', 'moving', 'transport', 'pickup'],
-    ),
-    _ParentCategoryConfig(
-      label: 'Repair',
-      subtitle: 'Plumbing, electrical, appliance, auto',
-      imageAsset: 'assets/images/cat_3d_repair.png',
-      subcategories: [
-        'repair',
-        'electrician',
-        'plumbing',
-        'carpentry',
-        'vehicle',
-        'tech_support',
-      ],
-    ),
-    _ParentCategoryConfig(
-      label: 'Home & Lifestyle',
-      subtitle: 'Cleaning, cooking, household chores',
-      imageAsset: 'assets/images/cat_3d_home.png',
-      subcategories: [
-        'cleaning',
-        'household',
-        'cooking',
-        'laundry',
-        'gardening',
-        'beauty',
-      ],
-    ),
-    _ParentCategoryConfig(
-      label: 'Shopping & Errands',
-      subtitle: 'Groceries, purchase, errands',
-      imageAsset: 'assets/images/cat_3d_shopping.png',
-      subcategories: [
-        'shopping',
-        'groceries',
-        'errands',
-        'queue_standing',
-        'event_help',
-      ],
-    ),
-    _ParentCategoryConfig(
-      label: 'Professional',
-      subtitle: 'Freelance, IT, design, tutoring',
-      imageAsset: 'assets/images/cat_3d_professional.png',
-      subcategories: [
-        'freelancer',
-        'data_entry',
-        'photography',
-        'tutoring',
-        'painting',
-        'drawing',
-        'graphic_design',
-        'web_app_tech',
-        'video_audio_editing',
-        'digital_marketing',
-        'business_admin',
-      ],
-    ),
-    _ParentCategoryConfig(
-      label: 'Care Services',
-      subtitle: 'Child care, elder care, pet care',
-      imageAsset: 'assets/images/cat_3d_care.png',
-      subcategories: ['child_care', 'elder_care', 'pet_care'],
-    ),
-    _ParentCategoryConfig(
-      label: 'Other',
-      subtitle: 'Custom & miscellaneous tasks',
-      imageAsset: 'assets/images/cat_3d_other_skyline.png',
-      subcategories: ['other'],
-    ),
-  ];
-
   static const _deliveryCats = {'delivery', 'pickup', 'transport', 'moving'};
   bool get _isDelivery => _deliveryCats.contains(_selectedCategory);
 
@@ -160,22 +65,38 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     super.initState();
     final t = widget.task;
     _titleCtrl = TextEditingController(text: t.title);
-    _descCtrl = TextEditingController(text: t.description);
     _selectedCategory = t.category;
 
-    // Resolve parent group from current category
-    _selectedParentGroup = _parentGroups.firstWhere(
-      (p) => p.subcategories.contains(_selectedCategory),
-      orElse: () => _parentGroups.first,
-    ).label;
+    // Detect delivery vehicle from description or budget
+    final desc = t.description.toLowerCase();
+    if (desc.contains('rikshaw') || desc.contains('auto') || desc.contains('3 wheeler')) {
+      _deliveryVehicle = 'rikshaw';
+    } else {
+      _deliveryVehicle = 'bike';
+    }
 
-    // Pre-fill address fields
-    if (_isDelivery && t.address != null) {
-      final addr = t.address!;
-      final pickupMatch = RegExp(r'Pickup:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
-      final dropMatch = RegExp(r'Drop:\s*(.+?)(?:\n|$)', dotAll: true).firstMatch(addr);
-      _pickupAddrCtrl = TextEditingController(text: pickupMatch?.group(1)?.trim() ?? '');
-      _dropAddrCtrl = TextEditingController(text: dropMatch?.group(1)?.trim() ?? '');
+    // Pre-fill location coordinates
+    if (t.latitude != 0.0 && t.longitude != 0.0) {
+      _location = LatLng(t.latitude, t.longitude);
+      _locationLabel = t.address;
+      if (_isDelivery) {
+        _pickupLocation = _location;
+      }
+    }
+    if (_isDelivery &&
+        t.dropLatitude != null &&
+        t.dropLongitude != null &&
+        t.dropLatitude != 0.0 &&
+        t.dropLongitude != 0.0) {
+      _dropLocation = LatLng(t.dropLatitude!, t.dropLongitude!);
+    }
+
+    // Pre-fill address text fields using effective helper properties with fallback
+    if (_isDelivery) {
+      final pickup = t.effectivePickupAddress;
+      final drop = t.effectiveDropAddress ?? '';
+      _pickupAddrCtrl = TextEditingController(text: pickup);
+      _dropAddrCtrl = TextEditingController(text: drop);
       _addressCtrl = TextEditingController();
     } else {
       _pickupAddrCtrl = TextEditingController();
@@ -183,22 +104,19 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _addressCtrl = TextEditingController(text: t.address ?? '');
     }
 
-    _location = LatLng(t.latitude, t.longitude);
-    _locationLabel = t.address;
-    if (_isDelivery) {
-      _pickupLocation = _location;
-      if (t.dropLatitude != null && t.dropLongitude != null) {
-        _dropLocation = LatLng(t.dropLatitude!, t.dropLongitude!);
-      }
-      final desc = t.description.toLowerCase();
-      if (desc.contains('rikshaw') || desc.contains('auto')) {
-        _deliveryVehicle = 'rikshaw';
-      }
+    // Pre-fill distance directly from task or calculate immediately from coordinates
+    if (t.distanceKm != null && t.distanceKm! > 0) {
+      _calculatedDistanceKm = t.distanceKm;
+    } else if (_pickupLocation != null && _dropLocation != null) {
+      final meters = const Distance().distance(_pickupLocation!, _dropLocation!);
+      _calculatedDistanceKm = (meters / 1000.0) * 1.25;
     }
 
+    // Initialize effective budget notifier with exact task budget / distance fare
     _effectiveBudgetNotifier = ValueNotifier<double>(_computeEffectiveBudget());
 
-    if (_isDelivery) {
+    // Asynchronously refresh exact road distance via OSRM if delivery
+    if (_isDelivery && _pickupLocation != null && _dropLocation != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _recalcDistance());
     }
   }
@@ -209,7 +127,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _dropDebounce?.cancel();
     _addressDebounce?.cancel();
     _titleCtrl.dispose();
-    _descCtrl.dispose();
     _addressCtrl.dispose();
     _pickupAddrCtrl.dispose();
     _dropAddrCtrl.dispose();
@@ -219,33 +136,41 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   double _computeEffectiveBudget() {
     final cat = Task.normalizeCategoryKey(_selectedCategory);
-    if (cat == 'moving') {
+    if (_isDelivery || cat == 'moving') {
       if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
-        return Task.calculateDistancePrice(_calculatedDistanceKm!, 'moving', vehicle: _deliveryVehicle);
+        return Task.calculateDistancePrice(
+          _calculatedDistanceKm!,
+          _selectedCategory,
+          vehicle: _deliveryVehicle,
+        );
       }
-      return Task.minBudgetForCategory('moving');
-    }
-    if (_isDelivery) {
-      if (_calculatedDistanceKm != null && _calculatedDistanceKm! > 0) {
-        return Task.calculateDistancePrice(_calculatedDistanceKm!, _selectedCategory, vehicle: _deliveryVehicle);
+      // If distance is not available yet, preserve the existing task budget
+      if (widget.task.budget > 0) {
+        return widget.task.budget;
       }
       return Task.minBudgetForCategory(_selectedCategory);
+    }
+    // For non-delivery tasks, always preserve the task budget from when it was posted
+    if (widget.task.budget > 0) {
+      return widget.task.budget;
     }
     return Task.minBudgetForCategory(_selectedCategory);
   }
 
-  Future<void> _recalcDistance() async {
+  Future<void> _recalcDistance({bool force = false}) async {
     if (_pickupLocation != null && _dropLocation != null) {
       final seq = ++_distCalcSeq;
-      // 1. Instant road estimate (aerial * 1.25 road factor) for zero UI lag
-      final meters = const Distance().distance(
-        _pickupLocation!,
-        _dropLocation!,
-      );
-      final immediateKm = (meters / 1000.0) * 1.25;
-      if (mounted) {
-        setState(() => _calculatedDistanceKm = immediateKm);
-        _effectiveBudgetNotifier.value = _computeEffectiveBudget();
+      // 1. Instant road estimate (aerial * 1.25 road factor) only if distance is unset or forced
+      if (_calculatedDistanceKm == null || force) {
+        final meters = const Distance().distance(
+          _pickupLocation!,
+          _dropLocation!,
+        );
+        final immediateKm = (meters / 1000.0) * 1.25;
+        if (mounted) {
+          setState(() => _calculatedDistanceKm = immediateKm);
+          _effectiveBudgetNotifier.value = _computeEffectiveBudget();
+        }
       }
 
       // 2. Fetch exact road driving route via OSRM (Google Maps parity)
@@ -304,7 +229,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _location ??= _pickupLocation;
     _pickupSuggestions = [];
     _searchingPickup = false;
-    _recalcDistance();
+    _recalcDistance(force: true);
     FocusScope.of(context).unfocus();
     setState(() {});
   }
@@ -344,7 +269,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _dropLocation = s.toLatLng();
     _dropSuggestions = [];
     _searchingDrop = false;
-    _recalcDistance();
+    _recalcDistance(force: true);
     FocusScope.of(context).unfocus();
     setState(() {});
   }
@@ -422,7 +347,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         _location ??= _pickupLocation;
         if (addr != null && addr.isNotEmpty) _pickupAddrCtrl.text = addr;
       });
-      _recalcDistance();
+      _recalcDistance(force: true);
     }
   }
 
@@ -440,7 +365,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         _dropLocation = result['location'] as LatLng;
         if (addr != null && addr.isNotEmpty) _dropAddrCtrl.text = addr;
       });
-      _recalcDistance();
+      _recalcDistance(force: true);
     }
   }
 
@@ -459,7 +384,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _pickupLocation = loc;
       _location ??= loc;
     });
-    _recalcDistance();
+    _recalcDistance(force: true);
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -494,7 +419,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       return;
     }
     setState(() => _dropLocation = loc);
-    _recalcDistance();
+    _recalcDistance(force: true);
     try {
       final places = await placemarkFromCoordinates(loc.latitude, loc.longitude)
           .timeout(const Duration(seconds: 6));
@@ -527,7 +452,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     }
 
     final budget = _computeEffectiveBudget();
-    final charge = Task.serviceChargeForCategory(_selectedCategory).toDouble();
+    final charge = widget.task.serviceCharge ??
+        (_isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0);
 
     final String? combinedAddress;
     if (_isDelivery) {
@@ -544,11 +470,12 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
     final data = {
       'title': _titleCtrl.text.trim(),
-      'description': _descCtrl.text.trim(),
+      'description': widget.task.description,
       'category': _selectedCategory,
       'price': budget,
       'budget': budget,
       if (charge > 0) 'service_charge': charge,
+      if (_isDelivery) 'vehicle': _deliveryVehicle,
       'location': {
         'lat': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.latitude,
         'lng': (_isDelivery ? (_pickupLocation ?? _location) : _location)!.longitude,
@@ -598,14 +525,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         ),
       );
     }
-  }
-
-  String _getCategoryLabel(String categoryId) {
-    final match = TaskCategory.all.firstWhere(
-      (c) => c.id == categoryId,
-      orElse: () => TaskCategory(id: categoryId, label: categoryId.replaceAll('_', ' '), icon: '📋'),
-    );
-    return match.label;
   }
 
   // ── Unified Card Container ──────────────────────────────────────────────
@@ -681,199 +600,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           const SizedBox(height: 14),
           child,
         ],
-      ),
-    );
-  }
-
-  // ── High Quality Category Artwork Icons ─────────────────────────────────
-  Widget _buildSubcatIcon(String categoryId, {double size = 28}) {
-    final assetPath = 'assets/images/subcats/$categoryId.png';
-    return Image.asset(
-      assetPath,
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) {
-        final cat = TaskCategory.all.firstWhere(
-          (c) => c.id == categoryId,
-          orElse: () => TaskCategory(id: categoryId, label: categoryId, icon: '📋'),
-        );
-        return Text(cat.icon, style: TextStyle(fontSize: size * 0.8));
-      },
-    );
-  }
-
-  // ── Delivery Vehicle Selector ───────────────────────────────────────────
-  Widget _buildDeliveryVehicleSelector() {
-    return _buildCardSection(
-      icon: Icons.two_wheeler_rounded,
-      iconColor: const Color(0xFF2563EB),
-      iconBg: const Color(0xFFEFF6FF),
-      title: 'Delivery Vehicle Option',
-      subtitle: 'Select vehicle capacity matching package weight and size',
-      trailing: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFEFF6FF),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFBFDBFE)),
-        ),
-        child: Text(
-          _deliveryVehicle == 'bike' ? '₹12 / km (Bike)' : '₹18 / km (Rikshaw)',
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-            fontSize: 11.5,
-            color: Color(0xFF2563EB),
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildVehicleTile(
-              title: 'Bike / 2-Wheeler',
-              rate: '₹12 / km',
-              capacity: 'Max 20kg • 40×40cm',
-              desc: 'Small items, parcels, docs',
-              imageAsset: 'assets/images/vehicle_bike.png',
-              isSelected: _deliveryVehicle == 'bike',
-              onTap: () {
-                if (_deliveryVehicle != 'bike') {
-                  setState(() => _deliveryVehicle = 'bike');
-                  _recalcDistance();
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _buildVehicleTile(
-              title: 'Auto / Rikshaw',
-              rate: '₹18 / km',
-              capacity: 'Max 80kg • Bulky cargo',
-              desc: 'Medium boxes, rain safe',
-              imageAsset: 'assets/images/vehicle_rikshaw.png',
-              isSelected: _deliveryVehicle == 'rikshaw',
-              onTap: () {
-                if (_deliveryVehicle != 'rikshaw') {
-                  setState(() => _deliveryVehicle = 'rikshaw');
-                  _recalcDistance();
-                }
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVehicleTile({
-    required String title,
-    required String rate,
-    required String capacity,
-    required String desc,
-    required String imageAsset,
-    required bool isSelected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-            width: isSelected ? 2 : 1,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.12),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Image.asset(
-                  imageAsset,
-                  height: 38,
-                  fit: BoxFit.contain,
-                  errorBuilder: (_, __, ___) => Icon(
-                    title.contains('Bike') ? Icons.two_wheeler : Icons.electric_rickshaw,
-                    size: 32,
-                    color: isSelected ? const Color(0xFF2563EB) : const Color(0xFF64748B),
-                  ),
-                ),
-                const Spacer(),
-                Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: isSelected ? const Color(0xFF2563EB) : Colors.transparent,
-                    border: Border.all(
-                      color: isSelected ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                      width: 1.5,
-                    ),
-                  ),
-                  child: isSelected
-                      ? const Icon(Icons.check, size: 13, color: Colors.white)
-                      : null,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              title,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: 13,
-                color: isSelected ? const Color(0xFF1E3A8A) : const Color(0xFF0F172A),
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              rate,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 12.5,
-                color: Color(0xFF2563EB),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : const Color(0xFFE2E8F0),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                capacity,
-                style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569),
-                ),
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              desc,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -958,11 +684,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final activeParent = _parentGroups.firstWhere(
-      (p) => p.label == _selectedParentGroup,
-      orElse: () => _parentGroups.first,
-    );
-
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -996,7 +717,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── 1. Task Title (Unified Single Card) ──────────────────────
+              // ── 1. Task Title (Unified Card) ──────────────────────────
               _buildCardSection(
                 icon: Icons.edit_note_rounded,
                 iconColor: const Color(0xFF2563EB),
@@ -1048,276 +769,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
               const SizedBox(height: 14),
 
-              // ── 2. Category Selection (Enhanced High-Res 3D Artwork) ───
-              _buildCardSection(
-                icon: Icons.grid_view_rounded,
-                iconColor: const Color(0xFF2563EB),
-                iconBg: const Color(0xFFEFF6FF),
-                title: 'Select Category',
-                subtitle: 'Choose the service type that best matches your task',
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF2563EB)),
-                      const SizedBox(width: 4),
-                      Text(
-                        _getCategoryLabel(_selectedCategory),
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF2563EB),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Primary Groups (Browse Tasks Reference)
-                    SizedBox(
-                      height: 96,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: _parentGroups.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 10),
-                        itemBuilder: (_, i) {
-                          final group = _parentGroups[i];
-                          final isGroupSelected = group.label == _selectedParentGroup;
-                          return GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _selectedParentGroup = group.label;
-                                if (!group.subcategories.contains(_selectedCategory) &&
-                                    group.subcategories.isNotEmpty) {
-                                  _selectedCategory = group.subcategories.first;
-                                  _recalcDistance();
-                                  _effectiveBudgetNotifier.value = _computeEffectiveBudget();
-                                }
-                              });
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              width: 112,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: isGroupSelected ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: isGroupSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                                  width: isGroupSelected ? 2 : 1,
-                                ),
-                                boxShadow: isGroupSelected
-                                    ? [
-                                        BoxShadow(
-                                          color: const Color(0xFF2563EB).withValues(alpha: 0.15),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 2),
-                                        ),
-                                      ]
-                                    : null,
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.asset(
-                                    group.imageAsset,
-                                    height: 40,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (_, __, ___) => const Icon(
-                                      Icons.category_rounded,
-                                      size: 32,
-                                      color: Color(0xFF2563EB),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    group.label,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: isGroupSelected ? FontWeight.w800 : FontWeight.w600,
-                                      color: isGroupSelected ? const Color(0xFF1E3A8A) : const Color(0xFF334155),
-                                      height: 1.1,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-
-                    const SizedBox(height: 14),
-                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                    const SizedBox(height: 12),
-
-                    // Subcategory Chips in 2-Column Grid
-                    Text(
-                      activeParent.label.endsWith('Services')
-                          ? activeParent.label
-                          : '${activeParent.label} Services',
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF475569),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      itemCount: activeParent.subcategories.length,
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 8,
-                        crossAxisSpacing: 10,
-                        mainAxisExtent: 50,
-                      ),
-                      itemBuilder: (context, index) {
-                        final subcatId = activeParent.subcategories[index];
-                        final isSubSelected = _selectedCategory == subcatId;
-                        final label = _getCategoryLabel(subcatId);
-                        return GestureDetector(
-                          onTap: () {
-                            setState(() {
-                              _selectedCategory = subcatId;
-                              _recalcDistance();
-                              _effectiveBudgetNotifier.value = _computeEffectiveBudget();
-                            });
-                          },
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 160),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: isSubSelected ? const Color(0xFF2563EB) : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSubSelected ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                                width: isSubSelected ? 1.5 : 1,
-                              ),
-                              boxShadow: isSubSelected
-                                  ? [
-                                      BoxShadow(
-                                        color: const Color(0xFF2563EB).withValues(alpha: 0.22),
-                                        blurRadius: 6,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ]
-                                  : null,
-                            ),
-                            child: Row(
-                              children: [
-                                _buildSubcatIcon(subcatId, size: 22),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    label,
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: isSubSelected ? FontWeight.w700 : FontWeight.w600,
-                                      color: isSubSelected ? Colors.white : const Color(0xFF1E293B),
-                                      height: 1.15,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (isSubSelected) ...[
-                                  const SizedBox(width: 4),
-                                  const Icon(Icons.check_circle_rounded, size: 15, color: Colors.white),
-                                ],
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── 3. Vehicle Option (for Delivery & Moving) ────────────────
-              if (_selectedCategory == 'delivery' || _selectedCategory == 'moving') ...[
-                const SizedBox(height: 14),
-                _buildDeliveryVehicleSelector(),
-              ],
-
-              const SizedBox(height: 14),
-
-              // ── 4. Task Description (Unified Single Card) ────────────────
-              _buildCardSection(
-                icon: Icons.description_rounded,
-                iconColor: const Color(0xFF2563EB),
-                iconBg: const Color(0xFFEFF6FF),
-                title: 'Description',
-                subtitle: 'Detail instructions, requirements, and items needed',
-                trailing: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${_descCtrl.text.length}/1000',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: _descCtrl.text.length > 900
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFF64748B),
-                    ),
-                  ),
-                ),
-                child: TextFormField(
-                  controller: _descCtrl,
-                  maxLines: 4,
-                  maxLength: 1000,
-                  buildCounter: (_, {required currentLength, required isFocused, maxLength}) => null,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Color(0xFF0F172A),
-                    height: 1.45,
-                  ),
-                  decoration: InputDecoration(
-                    hintText: 'Describe what needs to be done, location instructions, specific items…',
-                    hintStyle: const TextStyle(color: Color(0xFF94A3B8), fontSize: 13),
-                    filled: true,
-                    fillColor: const Color(0xFFF8FAFC),
-                    contentPadding: const EdgeInsets.all(14),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5),
-                    ),
-                  ),
-                  validator: (v) => (v == null || v.trim().length < 10)
-                      ? 'Description must be at least 10 characters'
-                      : null,
-                  onChanged: (_) => setState(() {}),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // ── 5 & 6. Pickup and Drop Location with Distance ────────────
+              // ── 2. Pickup and Drop Location with Distance ───────────────
               if (_isDelivery) ...[
                 _buildCardSection(
                   icon: Icons.route_rounded,
@@ -1485,12 +937,13 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
 
               const SizedBox(height: 14),
 
-              // ── 7. Price Breakdown Card Layout ───────────────────────────
+              // ── 3. Price Breakdown Card Layout ───────────────────────────
               ValueListenableBuilder<double>(
                 valueListenable: _effectiveBudgetNotifier,
                 builder: (_, budget, __) {
                   final isDelivery = _isDelivery;
-                  final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
+                  final charge = widget.task.serviceCharge ??
+                      (isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0);
                   final posterFee = budget * 0.20;
                   final total = budget + charge + posterFee;
                   return TaskPriceBreakdownCard(

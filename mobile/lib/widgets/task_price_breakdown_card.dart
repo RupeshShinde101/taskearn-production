@@ -12,6 +12,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
   final bool isGrocery;
   final double? distanceKm;
   final String? customNote;
+  final bool locationsPending;
 
   const TaskPriceBreakdownCard({
     super.key,
@@ -23,6 +24,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
     this.isGrocery = false,
     this.distanceKm,
     this.customNote,
+    this.locationsPending = false,
   });
 
   @override
@@ -80,7 +82,7 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                           color: Color(0xFF0F172A),
                           letterSpacing: -0.2,
                         ),
-                        overflow: TextOverflow.ellipsis,
+                        softWrap: true,
                       ),
                     ),
                   ],
@@ -115,7 +117,47 @@ class TaskPriceBreakdownCard extends StatelessWidget {
           const SizedBox(height: 16),
 
           // Itemized rows
-          if (isGrocery) ...[
+          if (isGrocery && locationsPending) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF64748B)),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Set delivery address and select a store to calculate prices.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF475569),
+                        fontWeight: FontWeight.w600,
+                      ),
+                      softWrap: true,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const _PriceRow('Task Value', '--'),
+            const SizedBox(height: 10),
+            const _PriceRow('Handling Charges', '--'),
+            const SizedBox(height: 10),
+            const _PriceRowWithBadge(
+              label: 'Platform Fee (GST included)',
+              badgeText: 'Flat ₹12',
+              value: '--',
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+            ),
+          ] else if (isGrocery) ...[
             _PriceRow(
               'Task Value',
               '₹${groceryTaskValue.toStringAsFixed(0)}',
@@ -184,8 +226,8 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                           color: Color(0xFF0F172A),
                         ),
                       ),
-                      SizedBox(height: 2),
-                      Text(
+                      const SizedBox(height: 2),
+                      const Text(
                         'Pay only after work completion',
                         style: TextStyle(
                           fontSize: 11,
@@ -198,11 +240,11 @@ class TaskPriceBreakdownCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '₹${totalCost.toStringAsFixed(0)}',
-                  style: const TextStyle(
+                  (isGrocery && locationsPending) ? '--' : '₹${totalCost.toStringAsFixed(0)}',
+                  style: TextStyle(
                     fontWeight: FontWeight.w900,
                     fontSize: 21,
-                    color: Color(0xFF4338CA),
+                    color: (isGrocery && locationsPending) ? const Color(0xFF94A3B8) : const Color(0xFF4338CA),
                     letterSpacing: -0.5,
                   ),
                 ),
@@ -291,6 +333,7 @@ class _PriceRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
           child: Text(
@@ -300,9 +343,10 @@ class _PriceRow extends StatelessWidget {
               color: Color(0xFF64748B),
               fontWeight: FontWeight.w500,
             ),
+            softWrap: true,
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Text(
           value,
           style: const TextStyle(
@@ -331,43 +375,44 @@ class _PriceRowWithBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
+          child: Wrap(
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 6,
+            runSpacing: 4,
             children: [
-              Flexible(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF64748B),
-                    fontWeight: FontWeight.w500,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF64748B),
+                  fontWeight: FontWeight.w500,
                 ),
+                softWrap: true,
               ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEEF2FF),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: const Color(0xFFC7D2FE)),
-                ),
-                child: Text(
-                  badgeText,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF4338CA),
+              if (badgeText.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEEF2FF),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFFC7D2FE)),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF4338CA),
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: 10),
         Text(
           value,
           style: const TextStyle(

@@ -240,6 +240,8 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     _dropLocation = s.toLatLng();
     _dropSuggestions = [];
     _searchingDrop = false;
+    _userPickedStoreManually = false;
+    _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
     _recalcDistance();
     FocusScope.of(context).unfocus();
     setState(() {});
@@ -646,22 +648,15 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       setState(() {
         _loadingNearbyStores = false;
         _hasFetchedNearbyStores = true;
-        _suggestedGroceryStoresList = realStores;
-        if (realStores.isNotEmpty &&
-            (!_userPickedStoreManually ||
-                _selectedGroceryStoreName == null ||
-                _selectedGroceryStoreName!.trim().isEmpty)) {
-          final chosen = realStores.first;
-          _selectedGroceryStoreName = chosen['name'] as String;
-          _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
-          _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
-          _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
-          _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries') + 40.0);
-        }
+        _suggestedGroceryStoresList = realStores.where((s) =>
+          s['hasAllItems'] == true ||
+          LocationSearchService.isAllItemsStore(
+            s['name'] as String? ?? '',
+            s['shopType'] as String? ?? '',
+            s['amenity'] as String? ?? '',
+          )
+        ).toList();
       });
-      if (realStores.isNotEmpty && !_userPickedStoreManually) {
-        _recalcDistance();
-      }
     }).catchError((_) {
       if (mounted && seq == _storeFetchSeq) {
         setState(() {
@@ -675,7 +670,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   void _onStoreSearchChanged(String raw) {
     _storeSearchDebounce?.cancel();
     final q = raw.trim();
-    if (q.length < 2) {
+    if (q.isEmpty) {
       if (_storeSearchResults.isNotEmpty || _searchingStoresByName) {
         setState(() {
           _storeSearchResults = [];
@@ -684,11 +679,21 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       }
       return;
     }
-    final center = _dropLocation ?? _location;
-    if (center == null) return;
+    final inMem = _suggestedGroceryStoresList.where((s) {
+      final name = (s['name'] as String? ?? '').toLowerCase();
+      final addr = (s['address'] as String? ?? '').toLowerCase();
+      final qLower = q.toLowerCase();
+      return name.contains(qLower) || addr.contains(qLower);
+    }).toList();
 
-    setState(() => _searchingStoresByName = true);
-    _storeSearchDebounce = Timer(const Duration(milliseconds: 350), () async {
+    setState(() {
+      _storeSearchResults = inMem;
+      _searchingStoresByName = true;
+    });
+
+    final center = _dropLocation ?? _location ?? LocationSearchService.defaultPuneCenter;
+
+    _storeSearchDebounce = Timer(const Duration(milliseconds: 200), () async {
       final area = _extractAreaName(_dropAddrCtrl.text);
       final matches = await LocationSearchService.searchStoresByName(
         q,
@@ -698,8 +703,19 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       );
       if (!mounted) return;
       if (_storeSearchCtrl.text.trim() != q) return;
+
+      final merged = <Map<String, dynamic>>[...inMem];
+      for (final m in matches) {
+        if (!merged.any((ex) => (ex['name'] as String).toLowerCase() == (m['name'] as String).toLowerCase())) {
+          merged.add(m);
+        }
+      }
+      merged.sort((a, b) =>
+          ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num)
+              .compareTo((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num));
+
       setState(() {
-        _storeSearchResults = matches;
+        _storeSearchResults = merged;
         _searchingStoresByName = false;
       });
     });
@@ -1773,9 +1789,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
   }
 
   Widget _buildGroceryLocationSection() {
-    if (_selectedGroceryStoreName == null && _suggestedGroceryStoresList.isNotEmpty) {
-      _selectedGroceryStoreName = _suggestedGroceryStoresList.first['name'] as String;
-    }
+
 
     final hasSelectedStore = _selectedGroceryStoreName != null &&
         _selectedGroceryStoreName!.trim().isNotEmpty;
@@ -1788,487 +1802,733 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
             : (_dropLocation == null
                 ? 'Set Delivery Address first'
                 : (_loadingNearbyStores
-                    ? 'Finding real stores within 10 km...'
+                    ? 'Finding stores within 10 km...'
                     : 'Search or Pick a Store')),
-        'tag': 'Grocery Store',
+        'tag': 'Supermarket',
         'distanceKm': _calculatedDistanceKm ?? 0.0,
         'address': hasSelectedStore
             ? (_pickupAddrCtrl.text.trim().isNotEmpty
                 ? _pickupAddrCtrl.text.trim()
                 : 'Selected Store')
             : (_dropLocation == null
-                ? 'Real nearby stores load automatically once you set Delivery Address'
+                ? 'Nearby stores load automatically once you set Delivery Address'
                 : (_loadingNearbyStores
-                    ? 'Fetching verified map stores near your delivery location'
-                    : 'Tap Select to search by store name or pick on map')),
+                    ? 'Fetching stores near your location'
+                    : 'Tap search to enter store name or pick on map')),
         'icon': Icons.storefront_rounded,
-        'color': const Color(0xFF2563EB),
+        'color': const Color(0xFF16A34A),
+        'hasAllItems': true,
       },
     );
 
     final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
-    final isSearchingQuery = _storeSearchCtrl.text.trim().length >= 2;
-    final displayedStores = isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList;
+    final isSearchingQuery = _storeSearchCtrl.text.trim().isNotEmpty;
+    final displayedStores = (isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList)
+        .where((s) =>
+            s['hasAllItems'] == true ||
+            LocationSearchService.isAllItemsStore(
+              s['name'] as String? ?? '',
+              s['shopType'] as String? ?? '',
+              s['amenity'] as String? ?? '',
+            ))
+        .toList();
+    // Sort strictly from closest to longest range
+    displayedStores.sort((a, b) =>
+        ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num)
+            .compareTo((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num));
+    final hasDropAddr = _dropAddrCtrl.text.trim().isNotEmpty;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // 1. Separate Delivery Address Header
-        _buildSectionHeader(
-          icon: Icons.home_rounded,
-          iconColor: AppColors.danger,
-          iconBg: const Color(0xFFFEE2E2),
-          title: 'Delivery Address',
-        ),
-        const SizedBox(height: 12),
-
-        TextFormField(
-          controller: _dropAddrCtrl,
-          onChanged: _onDropAddrChanged,
-          decoration: InputDecoration(
-            labelText: 'Delivery Address *',
-            prefixIcon: const Icon(Icons.home_rounded, color: AppColors.danger),
-            suffixIcon: _AddressActionButtons(
-              isLoading: _gettingDropGps,
-              accentColor: AppColors.danger,
-              onGps: () async {
-                await _getGpsForDrop();
-                if (mounted && _dropAddrCtrl.text.isNotEmpty) {
-                  _userPickedStoreManually = false;
-                  _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
-                }
-              },
-              onMap: () async {
-                await _pickMapForDrop();
-                if (mounted && _dropAddrCtrl.text.isNotEmpty) {
-                  _userPickedStoreManually = false;
-                  _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
-                }
-              },
-            ),
-            suffixIconConstraints: const BoxConstraints(maxHeight: 48),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
-          validator: (v) => (v == null || v.trim().isEmpty) ? 'Delivery address is required' : null,
-        ),
-        LocationSuggestionsDropdown(
-          suggestions: _dropSuggestions,
-          isLoading: _searchingDrop,
-          accentColor: AppColors.danger,
-          onSelect: (s) {
-            _selectDropSuggestion(s);
-            _userPickedStoreManually = false;
-            _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
-          },
-          onDismiss: () => setState(() => _dropSuggestions = []),
-        ),
-
-        const SizedBox(height: 18),
-
-        // 2. Separate Store Address Header
-        _buildSectionHeader(
-          icon: Icons.storefront_rounded,
-          iconColor: const Color(0xFF15803D),
-          iconBg: const Color(0xFFDCFCE7),
-          title: 'Store Address',
-          trailing: _loadingNearbyStores
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF15803D)),
-                )
-              : Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFBBF7D0)),
-                  ),
-                  child: const Text(
-                    '10 km Radius',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Route Journey Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1)),
+            ),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Pickup-to-Delivery Route',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Delivery address & store selection',
+                        style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                      ),
+                    ],
                   ),
                 ),
-        ),
-        const SizedBox(height: 12),
-
-        // Store Selection Card
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
+                if (_loadingNearbyStores)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF16A34A)),
+                  )
+                else if (hasDropAddr)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBBF7D0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.check_circle_rounded, size: 12, color: Color(0xFF16A34A)),
+                        const SizedBox(width: 4),
+                        Text(
+                          dist <= 1.0 ? 'Flat ₹40 Zone' : '${dist.toStringAsFixed(1)} km',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: const Text(
+                      '10 km Radius',
+                      style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          child: !_isStoreDropdownOpen
-              ? Container(
+
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ─────────────────────────────────────────────────────────────
+                // DELIVERY ADDRESS (DROP) - FULL EXTENDED WIDTH
+                // ─────────────────────────────────────────────────────────────
+                const Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Delivery Address',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            'DELIVER TO HOME (DROP)',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFDC2626),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Delivery Subcard - Full Width
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: const Color(0xFF2563EB), width: 1.4),
+                    border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
                   ),
-                  child: Row(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Container(
-                        width: 42,
-                        height: 42,
-                        decoration: BoxDecoration(
-                          color: (currentStore['color'] as Color? ?? const Color(0xFF2563EB)).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(10),
+                      TextFormField(
+                        controller: _dropAddrCtrl,
+                        onChanged: _onDropAddrChanged,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                        decoration: InputDecoration(
+                          isDense: true,
+                          filled: true,
+                          fillColor: Colors.white,
+                          labelText: 'Delivery Address *',
+                          labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                          hintText: 'House / Flat no, Building, Street, Area',
+                          hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                          suffixIcon: _AddressActionButtons(
+                            isLoading: _gettingDropGps,
+                            accentColor: AppColors.danger,
+                            onGps: () async {
+                              await _getGpsForDrop();
+                              if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                                _userPickedStoreManually = false;
+                                _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+                              }
+                            },
+                            onMap: () async {
+                              await _pickMapForDrop();
+                              if (mounted && _dropAddrCtrl.text.isNotEmpty) {
+                                _userPickedStoreManually = false;
+                                _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+                              }
+                            },
+                          ),
+                          suffixIconConstraints: const BoxConstraints(maxHeight: 44),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: const BorderSide(color: AppColors.danger, width: 1.4),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         ),
-                        child: Icon(
-                          currentStore['icon'] as IconData? ?? Icons.storefront_rounded,
-                          size: 22,
-                          color: currentStore['color'] as Color? ?? const Color(0xFF2563EB),
+                        validator: (v) {
+                          if (v == null || v.trim().isEmpty) {
+                            return 'Delivery address is required';
+                          }
+                          return null;
+                        },
+                      ),
+                      LocationSuggestionsDropdown(
+                        suggestions: _dropSuggestions,
+                        isLoading: _searchingDrop,
+                        accentColor: AppColors.danger,
+                        onSelect: (s) {
+                          _selectDropSuggestion(s);
+                          _userPickedStoreManually = false;
+                          _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
+                        },
+                        onDismiss: () => setState(() => _dropSuggestions = []),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // ─────────────────────────────────────────────────────────────
+                // FULL-WIDTH ROUTE CONNECTOR & TRANSIT BAR
+                // ─────────────────────────────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFBFDBFE), width: 1.0),
+                    ),
+                    child: Row(
+                      children: [
+                        const Text('🛵', style: TextStyle(fontSize: 14)),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            hasDropAddr
+                                ? '${dist.toStringAsFixed(1)} km bike transit • ~${(dist * 5 + 3).round()} mins'
+                                : 'Enter delivery address above to show nearby stores',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: hasDropAddr ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (hasDropAddr)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDBEAFE),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              dist <= 1.0 ? 'Flat ₹40' : '₹${(30 + dist * 12).round()}',
+                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF1D4ED8)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ─────────────────────────────────────────────────────────────
+                // STORE ADDRESS (PICKUP) - ENTER SHOP NAME AT THE TOP
+                // ─────────────────────────────────────────────────────────────
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Store Address',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          Text(
+                            'BUY FROM STORE (PICKUP)',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF15803D),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (hasSelectedStore && _storeSearchCtrl.text.isNotEmpty)
+                      InkWell(
+                        onTap: () {
+                          _storeSearchCtrl.clear();
+                          setState(() {
+                            _storeSearchResults = [];
+                            _searchingStoresByName = false;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Text(
+                            'Clear',
+                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              currentStore['name'] as String,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                                color: Color(0xFF102A56),
+                  ],
+                ),
+
+                // 1. Enter Shop Name Input (MOVED TO TOP OF STORE SECTION)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  child: TextField(
+                    controller: _storeSearchCtrl,
+                    onChanged: _onStoreSearchChanged,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                    decoration: InputDecoration(
+                      hintText: 'Enter shop name',
+                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
+                      suffixIcon: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_searchingStoresByName)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
                               ),
-                              maxLines: 2,
-                              softWrap: true,
-                              overflow: TextOverflow.ellipsis,
+                            )
+                          else if (_storeSearchCtrl.text.isNotEmpty)
+                            IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
+                              onPressed: () {
+                                _storeSearchCtrl.clear();
+                                setState(() {
+                                  _storeSearchResults = [];
+                                  _searchingStoresByName = false;
+                                });
+                              },
                             ),
-                            const SizedBox(height: 4),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 4,
-                              crossAxisAlignment: WrapCrossAlignment.center,
+                          IconButton(
+                            icon: const Icon(Icons.map_rounded, size: 19, color: Color(0xFF16A34A)),
+                            tooltip: 'Pick on Map',
+                            onPressed: _pickStoreFromGoogleMap,
+                          ),
+                        ],
+                      ),
+                      isDense: true,
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.4),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // 2. While typing: Suggest related shops right below!
+                if (_storeSearchCtrl.text.trim().isNotEmpty) ...[
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (_searchingStoresByName && displayedStores.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 14),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                if (hasSelectedStore && dist > 0)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFDCFCE7),
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      '${dist.toStringAsFixed(1)} km',
-                                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
-                                    ),
+                                SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB))),
+                                SizedBox(width: 10),
+                                Text('Searching matching stores...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                              ],
+                            ),
+                          )
+                        else if (displayedStores.isEmpty && !_searchingStoresByName)
+                          Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Use "${_storeSearchCtrl.text.trim()}" as custom store',
+                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
                                   ),
+                                ),
+                                ElevatedButton(
+                                  onPressed: () => _setCustomGroceryStore(_storeSearchCtrl.text.trim()),
+                                  style: ElevatedButton.styleFrom(
+                                    minimumSize: Size.zero,
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                    backgroundColor: const Color(0xFF2563EB),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  child: const Text('Select', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                ),
+                              ],
+                            ),
+                          )
+                        else ...[
+                          Padding(
+                            padding: const EdgeInsets.only(left: 12, top: 8, bottom: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'SUGGESTED SHOPS (${displayedStores.length}):',
+                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Scroll to view all',
+                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Container(
+                            constraints: const BoxConstraints(maxHeight: 220),
+                            child: Scrollbar(
+                              thumbVisibility: displayedStores.length > 3,
+                              child: ListView.builder(
+                                shrinkWrap: true,
+                                physics: const ClampingScrollPhysics(),
+                                itemCount: displayedStores.length,
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                itemBuilder: (context, index) {
+                                  final store = displayedStores[index];
+                                  final isSel = _selectedGroceryStoreName == store['name'];
+                                  final sDist = (store['distanceKm'] as num).toDouble();
+                                  return Container(
+                                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                        width: isSel ? 1.4 : 1.0,
+                                      ),
+                                    ),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(8),
+                                      onTap: () {
+                                        if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                          _suggestedGroceryStoresList.insert(0, store);
+                                        }
+                                        _selectGroceryStore(store);
+                                        _storeSearchCtrl.text = store['name'] as String;
+                                      },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                store['name'] as String,
+                                                style: TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                                  color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                                  height: 1.25,
+                                                ),
+                                                maxLines: 2,
+                                                softWrap: true,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF1F5F9),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                '${sDist.toStringAsFixed(1)} km',
+                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Icon(
+                                              isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                              color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                                              size: 18,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ] else ...[
+                  // 3. When not typing: Show currently selected store card
+                  if (hasSelectedStore)
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'SELECTED STORE',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                                ),
+                                const SizedBox(height: 2),
                                 Text(
-                                  currentStore['address'] as String? ?? 'Store Address',
-                                  style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                                  currentStore['name'] as String,
+                                  style: const TextStyle(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                    height: 1.25,
+                                  ),
                                   maxLines: 2,
                                   softWrap: true,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ],
                             ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        height: 36,
-                        child: OutlinedButton.icon(
-                          onPressed: () => setState(() => _isStoreDropdownOpen = true),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: Size.zero,
-                            foregroundColor: const Color(0xFF2563EB),
-                            side: const BorderSide(color: Color(0xFF93C5FD)),
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                            visualDensity: VisualDensity.compact,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
-                          icon: const Icon(Icons.arrow_drop_down_rounded, size: 20),
-                          label: Text(
-                            hasSelectedStore ? 'Change' : 'Select',
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Nearby Stores (10 km Radius)',
-                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF102A56)),
-                          ),
-                        ),
-                        if (_dropLocation != null && !_loadingNearbyStores)
-                          IconButton(
-                            onPressed: () => _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation),
-                            tooltip: 'Refresh nearby stores',
-                            icon: const Icon(Icons.refresh_rounded, size: 19, color: Color(0xFF2563EB)),
-                            padding: const EdgeInsets.only(right: 6),
-                            constraints: const BoxConstraints(),
-                          ),
-                        IconButton(
-                          onPressed: () => setState(() => _isStoreDropdownOpen = false),
-                          icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: _storeSearchCtrl,
-                      onChanged: _onStoreSearchChanged,
-                      decoration: InputDecoration(
-                        hintText: 'Search real store (DMart, Reliance, Kirana...)',
-                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
-                        suffixIcon: _searchingStoresByName
-                            ? const Padding(
-                                padding: EdgeInsets.all(10),
-                                child: SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                ),
-                              )
-                            : (_storeSearchCtrl.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
-                                    onPressed: () {
-                                      _storeSearchCtrl.clear();
-                                      setState(() {
-                                        _storeSearchResults = [];
-                                        _searchingStoresByName = false;
-                                      });
-                                    },
-                                  )
-                                : null),
-                        isDense: true,
-                        filled: true,
-                        fillColor: Colors.white,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _pickStoreFromGoogleMap,
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: Size.zero,
-                          foregroundColor: const Color(0xFF15803D),
-                          side: const BorderSide(color: Color(0xFF86EFAC), width: 1.2),
-                          backgroundColor: const Color(0xFFF0FDF4),
-                          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                        icon: const Icon(Icons.map_rounded, size: 18, color: Color(0xFF15803D)),
-                        label: const Text('Pick Store on Map', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    if (_dropLocation == null)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                          'Set your Delivery Address above to automatically load real nearby stores within 10 km.',
-                          style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        ),
-                      )
-                    else if ((!isSearchingQuery && _loadingNearbyStores && displayedStores.isEmpty) ||
-                        (isSearchingQuery && _searchingStoresByName && displayedStores.isEmpty))
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 14),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFF86EFAC)),
                             ),
-                            SizedBox(width: 10),
-                            Text(
-                              'Searching verified stores within 10 km...',
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (displayedStores.isEmpty && (_hasFetchedNearbyStores || isSearchingQuery))
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          isSearchingQuery
-                              ? 'No matching mapped store found within 10 km for "${_storeSearchCtrl.text.trim()}". Try another keyword or Pick Store on Map.'
-                              : 'No mapped stores found within 10 km of this address. Search by store name above or tap Pick Store on Map.',
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
-                        ),
-                      ),
-                    ...displayedStores.map((store) {
-                      final isSel = _selectedGroceryStoreName == store['name'];
-                      final sDist = (store['distanceKm'] as num).toDouble();
-                      final addrText = (store['address'] as String? ?? '').trim();
-                      final tagText = (store['tag'] as String? ?? '').trim();
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 6),
-                        decoration: BoxDecoration(
-                          color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                            width: isSel ? 1.4 : 1.0,
-                          ),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(10),
-                          onTap: () {
-                            if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
-                              _suggestedGroceryStoresList.insert(0, store);
-                            }
-                            _selectGroceryStore(store);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 34,
-                                  height: 34,
-                                  decoration: BoxDecoration(
-                                    color: (store['color'] as Color? ?? const Color(0xFF2563EB)).withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(
-                                    store['icon'] as IconData? ?? Icons.storefront_rounded,
-                                    size: 18,
-                                    color: store['color'] as Color? ?? const Color(0xFF2563EB),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        store['name'] as String,
-                                        style: TextStyle(
-                                          fontSize: 13.5,
-                                          fontWeight: isSel ? FontWeight.w800 : FontWeight.w700,
-                                          color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
-                                        ),
-                                        maxLines: 2,
-                                        softWrap: true,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Wrap(
-                                        spacing: 6,
-                                        runSpacing: 3,
-                                        crossAxisAlignment: WrapCrossAlignment.center,
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                            decoration: BoxDecoration(
-                                              color: const Color(0xFFDCFCE7),
-                                              borderRadius: BorderRadius.circular(4),
-                                            ),
-                                            child: Text(
-                                              '${sDist.toStringAsFixed(1)} km',
-                                              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
-                                            ),
-                                          ),
-                                          if (tagText.isNotEmpty)
-                                            Text(
-                                              tagText,
-                                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-                                            ),
-                                        ],
-                                      ),
-                                      if (addrText.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          addrText,
-                                          style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
-                                          maxLines: 2,
-                                          softWrap: true,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Icon(
-                                  isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                                  color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                                  size: 20,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    }),
-                    if (!_showCustomStoreInput)
-                      TextButton.icon(
-                        onPressed: () => setState(() => _showCustomStoreInput = true),
-                        icon: const Icon(Icons.add_location_alt_outlined, size: 16),
-                        label: const Text('Enter another store name', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                      )
-                    else
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _customStoreCtrl,
-                              decoration: InputDecoration(
-                                hintText: 'Store name',
-                                hintStyle: const TextStyle(fontSize: 12),
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            child: Text(
+                              '${dist.toStringAsFixed(1)} km',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF15803D),
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          SizedBox(
-                            height: 36,
-                            child: ElevatedButton(
-                              onPressed: () {
-                                if (_customStoreCtrl.text.trim().isNotEmpty) {
-                                  _setCustomGroceryStore(_customStoreCtrl.text.trim());
-                                }
-                              },
-                              style: ElevatedButton.styleFrom(
-                                minimumSize: Size.zero,
-                                backgroundColor: const Color(0xFF2563EB),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              child: const Text('Select', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
                             ),
                           ),
                         ],
                       ),
+                    ),
+
+                  // 4. Scrollable list of nearby grocery and kirana stores
+                  if (displayedStores.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'NEARBY GROCERY, KIRANA & VEGETABLE STORES (${displayedStores.length}):',
+                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text(
+                          'Scroll to view all',
+                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      constraints: const BoxConstraints(maxHeight: 250),
+                      child: Scrollbar(
+                        thumbVisibility: displayedStores.length > 3,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const ClampingScrollPhysics(),
+                          itemCount: displayedStores.length,
+                          itemBuilder: (context, index) {
+                            final store = displayedStores[index];
+                            final isSel = _selectedGroceryStoreName == store['name'];
+                            final sDist = (store['distanceKm'] as num).toDouble();
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 6),
+                              decoration: BoxDecoration(
+                                color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                  width: isSel ? 1.4 : 1.0,
+                                ),
+                              ),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(10),
+                                onTap: () {
+                                  if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                    _suggestedGroceryStoresList.insert(0, store);
+                                  }
+                                  _selectGroceryStore(store);
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          store['name'] as String,
+                                          style: TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                            color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                            height: 1.25,
+                                          ),
+                                          maxLines: 2,
+                                          softWrap: true,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF1F5F9),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: Text(
+                                          '${sDist.toStringAsFixed(1)} km',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Icon(
+                                        isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                        color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                                        size: 18,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ],
-                ),
-        ),
-      ],
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2388,9 +2648,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     controller: _budgetCtrl,
                     autovalidateMode: AutovalidateMode.onUserInteraction,
                     keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'Budget (₹)',
-                      prefixIcon: const Icon(Icons.currency_rupee),
+                      prefixIcon: Icon(Icons.currency_rupee),
                     ),
                     validator: (v) {
                       final n = double.tryParse(v ?? '');
@@ -2609,6 +2869,9 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
                   final posterFee = _isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
                   final total = budget + charge + posterFee;
+                  final isGroceryLocationsPending = _isGrocery &&
+                      (_dropAddrCtrl.text.trim().isEmpty ||
+                          (_pickupAddrCtrl.text.trim().isEmpty && _selectedGroceryStoreName == null));
                   return TaskPriceBreakdownCard(
                     budget: budget,
                     serviceCharge: charge,
@@ -2617,6 +2880,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                     isRepair: isRepair,
                     isGrocery: _isGrocery,
                     distanceKm: _calculatedDistanceKm,
+                    locationsPending: isGroceryLocationsPending,
                   );
                 },
               ),

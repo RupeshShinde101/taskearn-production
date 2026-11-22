@@ -78,6 +78,25 @@ class LocationSearchService {
   // Center of Pune
   static const LatLng defaultPuneCenter = LatLng(18.5204, 73.8567);
 
+  /// Geocode a textual address into GPS [LatLng] coordinates.
+  static Future<LatLng?> geocodeAddress(String address) async {
+    final q = address.trim();
+    if (q.isEmpty) return null;
+    try {
+      final results = await search(q);
+      if (results.isNotEmpty) {
+        return results.first.toLatLng();
+      }
+    } catch (_) {}
+    try {
+      final locs = await locationFromAddress(q).timeout(const Duration(seconds: 2));
+      if (locs.isNotEmpty) {
+        return LatLng(locs.first.latitude, locs.first.longitude);
+      }
+    } catch (_) {}
+    return null;
+  }
+
   /// Search for location suggestions matching [query].
   /// Returns top relevant results with zero delay for local matches + enriched online POIs.
   static Future<List<LocationSearchResult>> search(
@@ -725,9 +744,56 @@ class LocationSearchService {
     return isGroceryOrKiranaOrSupermarket(name, shopType, amenity);
   }
 
-  static bool _isRealGroceryShop(String name, String osmValue, String osmKey) {
-    return isAllItemsStore(name, osmKey == 'shop' ? osmValue : '', osmKey == 'amenity' ? osmValue : '');
+  static bool _isValidGroceryOrVegetableStore(String rawName, String osmValue, String osmKey) {
+    final lowerName = rawName.toLowerCase().trim();
+    final lowerOsm = osmValue.toLowerCase().trim();
+    final lowerKey = osmKey.toLowerCase().trim();
+
+    // 1. Exclude non-shop categories, transit, religious places, residential, natural
+    if (lowerKey == 'highway' ||
+        lowerKey == 'place_of_worship' ||
+        lowerKey == 'natural' ||
+        lowerKey == 'boundary' ||
+        lowerKey == 'railway' ||
+        lowerKey == 'leisure') {
+      return false;
+    }
+
+    if (lowerName.contains('mandir') ||
+        lowerName.contains('temple') ||
+        lowerName.contains('masjid') ||
+        lowerName.contains('dargah') ||
+        lowerName.contains('church') ||
+        lowerName.contains('hospital') ||
+        lowerName.contains('clinic')) {
+      return false;
+    }
+
+    // Exclude road names that matched a query
+    if (lowerName.endsWith(' road') ||
+        lowerName.endsWith(' marg') ||
+        lowerName.endsWith(' path') ||
+        lowerName.endsWith(' lane') ||
+        lowerName.endsWith(' chowk')) {
+      return false;
+    }
+
+    // Exclude irrelevant shop types
+    const excludedTypes = {
+      'chemist', 'pharmacy', 'clothes', 'fashion', 'hairdresser', 'beauty',
+      'car_repair', 'hardware', 'electronics', 'car', 'motorcycle', 'tyres',
+      'optician', 'shoes', 'jewelry', 'jewellery', 'florist', 'bookmaker',
+      'laundry', 'dry_cleaning', 'stationery', 'mobile_phone', 'furniture',
+      'beverages', 'alcohol', 'wine', 'tobacco'
+    };
+    if (excludedTypes.contains(lowerOsm)) {
+      return false;
+    }
+
+    return isGroceryOrKiranaOrSupermarket(rawName, lowerKey == 'shop' ? lowerOsm : '', lowerKey == 'amenity' ? lowerOsm : '');
   }
+
+
 
   static Map<String, dynamic> _buildStoreMap({
     required String rawName,
@@ -758,36 +824,25 @@ class LocationSearchService {
         lowerName.contains('sabji') ||
         lowerName.contains('मंडई') ||
         lowerName.contains('mandi') ||
-        lowerName.contains('greengrocer')) {
-      categoryLabel = 'Vegetables & Fruits';
+        lowerName.contains('tarkari')) {
+      categoryLabel = 'Fresh Vegetables & Produce';
       icon = Icons.eco_rounded;
+      color = const Color(0xFF16A34A);
+    } else if (lowerType == 'supermarket' ||
+        lowerType == 'hypermarket' ||
+        lowerName.contains('supermarket') ||
+        lowerName.contains('dmart') ||
+        lowerName.contains('smart') ||
+        lowerName.contains('bazaar') ||
+        lowerName.contains('mart')) {
+      categoryLabel = 'All-in-One Supermarket';
+      icon = Icons.shopping_cart_rounded;
       color = const Color(0xFF059669);
     } else if (lowerName.contains('kirana') ||
         lowerName.contains('किराणा') ||
+        lowerName.contains('provision') ||
         lowerType == 'convenience') {
-      categoryLabel = 'Kirana Store';
-      icon = Icons.storefront_rounded;
-      color = const Color(0xFFD97706);
-    } else if (lowerType == 'supermarket' ||
-        lowerType == 'hypermarket' ||
-        lowerType == 'department_store' ||
-        lowerName.contains('dmart') ||
-        lowerName.contains('reliance') ||
-        lowerName.contains('smart') ||
-        lowerName.contains('more') ||
-        lowerName.contains('star bazaar') ||
-        lowerName.contains('supermarket') ||
-        lowerName.contains('hypermarket') ||
-        lowerName.contains('bazaar')) {
-      categoryLabel = 'Supermarket';
-      icon = Icons.local_convenience_store_rounded;
-      color = const Color(0xFF16A34A);
-    } else if (lowerName.contains('provision') ||
-        lowerName.contains('trading') ||
-        lowerName.contains('ट्रेडिंग') ||
-        lowerName.contains('general store') ||
-        lowerName.contains('जनरल')) {
-      categoryLabel = 'Provision Store';
+      categoryLabel = 'Kirana & Grocery';
       icon = Icons.storefront_rounded;
       color = const Color(0xFF2563EB);
     } else {
@@ -817,7 +872,7 @@ class LocationSearchService {
     String query, {
     required double radiusKm,
     required String areaFallback,
-    bool restrictToShopTag = true,
+    bool restrictToShopTag = false,
     bool strictGroceryFilter = true,
     int limit = 15,
   }) async {
@@ -852,12 +907,12 @@ class LocationSearchService {
         if (straightKm > radiusKm) continue;
 
         final rawName = (props['name'] as String?)?.trim() ?? '';
-        if (rawName.isEmpty) continue;
+        if (rawName.isEmpty || rawName.length < 2) continue;
 
         final osmVal = (props['osm_value'] as String?)?.toLowerCase() ?? '';
         final osmKey = (props['osm_key'] as String?)?.toLowerCase() ?? '';
 
-        if (strictGroceryFilter && !_isRealGroceryShop(rawName, osmVal, osmKey)) {
+        if (strictGroceryFilter && !_isValidGroceryOrVegetableStore(rawName, osmVal, osmKey)) {
           continue;
         }
         if (!strictGroceryFilter && _excludedShopOsmValues.contains(osmVal)) {
@@ -865,21 +920,35 @@ class LocationSearchService {
         }
 
         final addrParts = <String>[];
+        final house = (props['housenumber'] as String?)?.trim() ?? '';
         final street = (props['street'] as String?)?.trim() ?? '';
-        final locality = ((props['locality'] ?? props['district'] ?? props['suburb']) as String?)?.trim() ?? '';
-        final city = (props['city'] as String?)?.trim() ?? '';
+        final suburb = ((props['suburb'] ?? props['district'] ?? props['locality']) as String?)?.trim() ?? '';
+        final city = ((props['city'] ?? props['county']) as String?)?.trim() ?? '';
+        final postcode = (props['postcode'] as String?)?.trim() ?? '';
+
+        if (house.isNotEmpty) addrParts.add(house);
         if (street.isNotEmpty && street.toLowerCase() != rawName.toLowerCase()) {
           addrParts.add(street);
         }
-        if (locality.isNotEmpty &&
-            locality.toLowerCase() != street.toLowerCase() &&
-            locality.toLowerCase() != rawName.toLowerCase()) {
-          addrParts.add(locality);
+        if (suburb.isNotEmpty &&
+            suburb.toLowerCase() != street.toLowerCase() &&
+            suburb.toLowerCase() != rawName.toLowerCase()) {
+          addrParts.add(suburb);
         }
-        if (city.isNotEmpty && city.toLowerCase() != locality.toLowerCase()) {
+        if (city.isNotEmpty &&
+            city.toLowerCase() != suburb.toLowerCase() &&
+            city.toLowerCase() != street.toLowerCase()) {
           addrParts.add(city);
         }
-        final addr = addrParts.isNotEmpty ? addrParts.join(', ') : 'Near $areaFallback';
+        if (postcode.isNotEmpty) {
+          addrParts.add(postcode);
+        }
+
+        final addr = addrParts.isNotEmpty
+            ? addrParts.join(', ')
+            : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
+                ? '$areaFallback, Pune'
+                : 'Pune, Maharashtra');
 
         results.add(_buildStoreMap(
           rawName: rawName,
@@ -936,22 +1005,39 @@ class LocationSearchService {
         final rawName = (it['name'] as String?)?.trim().isNotEmpty == true
             ? (it['name'] as String).trim()
             : dispName.split(',').first.trim();
-        if (rawName.isEmpty) continue;
+        if (rawName.isEmpty || rawName.length < 2) continue;
 
         final osmType = (it['type'] as String?)?.toLowerCase() ?? '';
         final osmClass = (it['class'] as String?)?.toLowerCase() ?? '';
-        if (strictGroceryFilter && !_isRealGroceryShop(rawName, osmType, osmClass)) {
+        if (strictGroceryFilter && !_isValidGroceryOrVegetableStore(rawName, osmType, osmClass)) {
           continue;
         }
 
-        final parts = dispName.split(',').skip(1).take(3).map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
-        final addr = parts.isNotEmpty ? parts.join(', ') : 'Near $areaFallback';
+        final addrObj = it['address'] as Map<String, dynamic>? ?? {};
+        final addrParts = <String>[];
+        final road = (addrObj['road'] ?? addrObj['pedestrian'])?.toString().trim() ?? '';
+        final sub = (addrObj['suburb'] ?? addrObj['neighbourhood'] ?? addrObj['residential'])?.toString().trim() ?? '';
+        final city = (addrObj['city'] ?? addrObj['town'] ?? addrObj['county'])?.toString().trim() ?? '';
+        final pin = addrObj['postcode']?.toString().trim() ?? '';
+
+        if (road.isNotEmpty && road.toLowerCase() != rawName.toLowerCase()) addrParts.add(road);
+        if (sub.isNotEmpty && sub.toLowerCase() != road.toLowerCase()) addrParts.add(sub);
+        if (city.isNotEmpty && city.toLowerCase() != sub.toLowerCase()) addrParts.add(city);
+        if (pin.isNotEmpty) addrParts.add(pin);
+
+        final addr = addrParts.isNotEmpty
+            ? addrParts.join(', ')
+            : dispName.split(',').skip(1).take(3).map((s) => s.trim()).join(', ');
 
         results.add(_buildStoreMap(
           rawName: rawName,
           shopType: osmClass == 'shop' ? osmType : '',
           amenity: osmClass == 'amenity' ? osmType : '',
-          address: addr,
+          address: addr.isNotEmpty
+              ? addr
+              : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
+                  ? '$areaFallback, Pune'
+                  : 'Pune, Maharashtra'),
           lat: lat,
           lng: lng,
           straightKm: straightKm,
@@ -992,7 +1078,7 @@ class LocationSearchService {
               },
               body: {'data': query},
             )
-            .timeout(const Duration(seconds: 5));
+            .timeout(const Duration(seconds: 4));
 
         if (resp.statusCode != 200) continue;
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
@@ -1004,11 +1090,11 @@ class LocationSearchService {
           if (el is! Map<String, dynamic>) continue;
           final tags = el['tags'] as Map<String, dynamic>? ?? {};
           final rawName = (tags['name'] ?? tags['name:en'] ?? tags['brand'] ?? '').toString().trim();
-          if (rawName.isEmpty) continue;
+          if (rawName.isEmpty || rawName.length < 2) continue;
 
           final shopType = (tags['shop'] ?? '').toString().toLowerCase();
           final amenity = (tags['amenity'] ?? '').toString().toLowerCase();
-          if (!_isRealGroceryShop(rawName, shopType.isNotEmpty ? shopType : amenity, shopType.isNotEmpty ? 'shop' : 'amenity')) {
+          if (!_isValidGroceryOrVegetableStore(rawName, shopType.isNotEmpty ? shopType : amenity, shopType.isNotEmpty ? 'shop' : 'amenity')) {
             continue;
           }
 
@@ -1037,7 +1123,11 @@ class LocationSearchService {
             if ((tags['addr:city'] ?? '').toString().trim().isNotEmpty)
               tags['addr:city'].toString().trim(),
           ];
-          final addr = addrParts.isNotEmpty ? addrParts.join(', ') : 'Near $areaFallback';
+          final addr = addrParts.isNotEmpty
+              ? addrParts.join(', ')
+              : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
+                  ? '$areaFallback, Pune'
+                  : 'Pune, Maharashtra');
 
           stores.add(_buildStoreMap(
             rawName: rawName,
@@ -1060,7 +1150,7 @@ class LocationSearchService {
 
   static List<Map<String, dynamic>> _mergeAndDedupeStores(
     List<Map<String, dynamic>> rawStores, {
-    int maxResults = 30,
+    int maxResults = 40,
   }) {
     // Sort by real straight-line distance first so the closest & best-named entry wins
     rawStores.sort((a, b) =>
@@ -1107,181 +1197,57 @@ class LocationSearchService {
     return unique;
   }
 
-  /// Fetches REAL verified nearby All-in-One Supermarkets & Grocery Marts
-  /// strictly within [radiusKm] (default 10 km) where all item categories
-  /// (Milk & Dairy, Fresh Vegetables, Grocery/Kirana staples, Snacks & Beverages)
-  /// are available under one roof. Never fabricates fake stores or fake coordinates.
-  /// Device Native Google Maps / Play Services Geocoder for major verified All-in-One stores.
-  /// 100% legal, built into Android Google Play Services, zero cost.
-  static Future<List<Map<String, dynamic>>> _fetchNativeGoogleStores(
-    LatLng center, {
-    double radiusKm = 10.0,
-    String areaFallback = 'Nearby Area',
-  }) async {
-    final results = <Map<String, dynamic>>[];
-
-
-
-    // 2. Resolve locality and sublocality via Google reverse geocoder
-    String locality = 'Pune';
-    String subLocality = '';
-    try {
-      final marks = await placemarkFromCoordinates(center.latitude, center.longitude)
-          .timeout(const Duration(seconds: 2));
-      if (marks.isNotEmpty) {
-        final m = marks.first;
-        if (m.locality != null && m.locality!.trim().isNotEmpty) locality = m.locality!.trim();
-        if (m.subLocality != null && m.subLocality!.trim().isNotEmpty) subLocality = m.subLocality!.trim();
-      }
-    } catch (_) {}
-
-    if (subLocality.isEmpty && areaFallback.isNotEmpty && areaFallback != 'Nearby Area') {
-      subLocality = areaFallback;
-    }
-
-    final queryPrefixes = [
-      'Vegetable Market',
-      'Vegetable Shop',
-      'भाजी मार्केट',
-      'भाजीपाला दुकान',
-      'Sabzi Mandi',
-      'Kirana Store',
-      'किराणा दुकान',
-      'किराणा स्टोअर्स',
-      'Grocery Store',
-      'Supermarket',
-      'General Store',
-      'DMart',
-      'Reliance Smart',
-      'More Supermarket',
-      'Star Bazaar',
-      'Trading Company',
-      'Spencer Supermarket',
-      'Hypermarket',
-      'Provision Store',
-      'Daily Mart',
-    ];
-
-    final searchTerms = <String>[];
-    for (final q in queryPrefixes) {
-      if (subLocality.isNotEmpty) {
-        searchTerms.add('$q, $subLocality, $locality');
-      }
-      searchTerms.add('$q, $locality');
-    }
-
-    for (final term in searchTerms) {
-      try {
-        final locs = await locationFromAddress(term)
-            .timeout(const Duration(milliseconds: 1800));
-        for (final l in locs.take(2)) {
-          final distKm = _approxDistanceMeters(center.latitude, center.longitude, l.latitude, l.longitude) / 1000.0;
-          if (distKm <= radiusKm) {
-            final storeName = term.split(',').first.trim();
-            results.add(_buildStoreMap(
-              rawName: storeName,
-              lat: l.latitude,
-              lng: l.longitude,
-              straightKm: distKm,
-              radiusKm: radiusKm,
-              shopType: 'supermarket',
-              amenity: '',
-              address: subLocality.isNotEmpty ? '$storeName, $subLocality, $locality' : '$storeName, $locality',
-            ));
-          }
-        }
-      } catch (_) {}
-    }
-    return results;
-  }
-
-  static Future<List<Map<String, dynamic>>> _fetchGoogleStoresForQuery(
-    String query,
-    LatLng center,
-    String locality,
-    String subLocality,
-    double radiusKm,
-  ) async {
-    final results = <Map<String, dynamic>>[];
-    final terms = <String>[];
-    if (subLocality.isNotEmpty) {
-      terms.add('$query, $subLocality, $locality');
-    }
-    terms.add('$query, $locality');
-    terms.add('$query supermarket, $locality');
-
-    for (final term in terms) {
-      try {
-        final locs = await locationFromAddress(term)
-            .timeout(const Duration(milliseconds: 1800));
-        for (final l in locs.take(3)) {
-          final distKm = _approxDistanceMeters(center.latitude, center.longitude, l.latitude, l.longitude) / 1000.0;
-          if (distKm <= radiusKm) {
-            String storeName = query;
-            String resolvedAddr = '$locality, India';
-            try {
-              final marks = await placemarkFromCoordinates(l.latitude, l.longitude)
-                  .timeout(const Duration(seconds: 1));
-              if (marks.isNotEmpty) {
-                final m = marks.first;
-                final parts = [m.name, m.thoroughfare, m.subLocality, m.locality]
-                    .where((p) => p != null && p.trim().isNotEmpty)
-                    .map((p) => p!.trim())
-                    .toSet()
-                    .toList();
-                if (parts.isNotEmpty) {
-                  if (parts.first.toLowerCase() != query.toLowerCase()) {
-                    storeName = '$query (${parts.first})';
-                  }
-                  resolvedAddr = parts.join(', ');
-                }
-              }
-            } catch (_) {}
-
-            results.add(_buildStoreMap(
-              rawName: storeName,
-              lat: l.latitude,
-              lng: l.longitude,
-              straightKm: distKm,
-              radiusKm: radiusKm,
-              shopType: 'supermarket',
-              amenity: '',
-              address: resolvedAddr,
-            ));
-          }
-        }
-      } catch (_) {}
-    }
-    return results;
-  }
-
+  /// Fetches 100% REAL, verified nearby Grocery, Kirana, Supermarket & Vegetable stores
+  /// strictly within [radiusKm] (default 10 km) of [center].
+  /// Uses live OpenStreetMap, Photon, and Nominatim geodata.
+  /// NEVER generates synthetic or fake coordinates.
   static Future<List<Map<String, dynamic>>> searchNearbyGroceryStores(
     LatLng center, {
     double radiusKm = 10.0,
     String areaFallback = 'Nearby Area',
   }) async {
-    final batches = await Future.wait<List<Map<String, dynamic>>>([
-      _fetchNativeGoogleStores(center, radiusKm: radiusKm, areaFallback: areaFallback),
-      _fetchPhotonGroceryStores(center, 'vegetable', radiusKm: radiusKm, areaFallback: areaFallback, limit: 15),
-      _fetchPhotonGroceryStores(center, 'greengrocer', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchPhotonGroceryStores(center, 'sabzi', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchPhotonGroceryStores(center, 'kirana', radiusKm: radiusKm, areaFallback: areaFallback, limit: 15),
-      _fetchPhotonGroceryStores(center, 'grocery', radiusKm: radiusKm, areaFallback: areaFallback, limit: 15),
-      _fetchPhotonGroceryStores(center, 'supermarket', radiusKm: radiusKm, areaFallback: areaFallback, limit: 15),
-      _fetchPhotonGroceryStores(center, 'general store', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchPhotonGroceryStores(center, 'provision store', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchPhotonGroceryStores(center, 'dmart', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchPhotonGroceryStores(center, 'reliance smart', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchNominatimGroceryStores(center, 'vegetable', radiusKm: radiusKm, areaFallback: areaFallback, limit: 20),
-      _fetchNominatimGroceryStores(center, 'greengrocer', radiusKm: radiusKm, areaFallback: areaFallback, limit: 15),
-      _fetchNominatimGroceryStores(center, 'sabzi', radiusKm: radiusKm, areaFallback: areaFallback, limit: 12),
-      _fetchNominatimGroceryStores(center, 'kirana', radiusKm: radiusKm, areaFallback: areaFallback, limit: 20),
-      _fetchNominatimGroceryStores(center, 'grocery', radiusKm: radiusKm, areaFallback: areaFallback, limit: 20),
-      _fetchNominatimGroceryStores(center, 'supermarket', radiusKm: radiusKm, areaFallback: areaFallback, limit: 20),
-      _fetchNominatimGroceryStores(center, 'provision store', radiusKm: radiusKm, areaFallback: areaFallback, limit: 12),
-      _fetchNominatimGroceryStores(center, 'dmart', radiusKm: radiusKm, areaFallback: areaFallback, limit: 10),
-      _fetchOverpassNearbyStores(center, radiusKm: radiusKm, areaFallback: areaFallback),
-    ]);
+    final queries = [
+      'supermarket',
+      'grocery',
+      'kirana',
+      'vegetable',
+      'greengrocer',
+      'sabzi',
+      'dmart',
+      'reliance smart',
+      'provision',
+      'mandi',
+      'किराणा',
+      'भाजीपाला',
+      'mart',
+    ];
+
+    final futures = <Future<List<Map<String, dynamic>>>>[];
+    for (final q in queries) {
+      futures.add(_fetchPhotonGroceryStores(
+        center,
+        q,
+        radiusKm: radiusKm,
+        areaFallback: areaFallback,
+        limit: 15,
+      ));
+    }
+
+    // Complementary Nominatim queries for maximum coverage
+    for (final q in ['supermarket', 'grocery', 'kirana', 'vegetable', 'dmart', 'provision store']) {
+      futures.add(_fetchNominatimGroceryStores(
+        center,
+        q,
+        radiusKm: radiusKm,
+        areaFallback: areaFallback,
+        limit: 12,
+      ));
+    }
+
+    // Overpass for live local OSM nodes
+    futures.add(_fetchOverpassNearbyStores(center, radiusKm: radiusKm, areaFallback: areaFallback));
+
+    final batches = await Future.wait(futures);
 
     final all = <Map<String, dynamic>>[];
     for (final list in batches) {
@@ -1296,6 +1262,7 @@ class LocationSearchService {
         }
       }
     }
+
     final deduped = _mergeAndDedupeStores(all, maxResults: 40);
     // Sort strictly from closest to longest range!
     deduped.sort((a, b) =>
@@ -1304,7 +1271,7 @@ class LocationSearchService {
     return deduped;
   }
 
-  /// Searches REAL Google Maps & Map-verified stores matching [query] near [center] within [radiusKm].
+  /// Searches REAL map-verified stores matching [query] near [center] within [radiusKm].
   static Future<List<Map<String, dynamic>>> searchStoresByName(
     String query,
     LatLng center, {
@@ -1314,23 +1281,7 @@ class LocationSearchService {
     final q = query.trim();
     if (q.isEmpty) return [];
 
-    String locality = 'Pune';
-    String subLocality = '';
-    try {
-      final marks = await placemarkFromCoordinates(center.latitude, center.longitude)
-          .timeout(const Duration(seconds: 1));
-      if (marks.isNotEmpty) {
-        final m = marks.first;
-        if (m.locality != null && m.locality!.trim().isNotEmpty) locality = m.locality!.trim();
-        if (m.subLocality != null && m.subLocality!.trim().isNotEmpty) subLocality = m.subLocality!.trim();
-      }
-    } catch (_) {}
-    if (subLocality.isEmpty && areaFallback.isNotEmpty && areaFallback != 'Nearby Area') {
-      subLocality = areaFallback;
-    }
-
     final batches = await Future.wait<List<Map<String, dynamic>>>([
-      _fetchGoogleStoresForQuery(q, center, locality, subLocality, radiusKm),
       _fetchPhotonGroceryStores(
         center,
         q,
@@ -1338,7 +1289,7 @@ class LocationSearchService {
         areaFallback: areaFallback,
         restrictToShopTag: false,
         strictGroceryFilter: false,
-        limit: 15,
+        limit: 20,
       ),
       _fetchNominatimGroceryStores(
         center,
@@ -1354,8 +1305,6 @@ class LocationSearchService {
     for (final list in batches) {
       all.addAll(list);
     }
-
-
 
     final deduped = _mergeAndDedupeStores(all, maxResults: 25);
     // Sort strictly from closest to longest range!

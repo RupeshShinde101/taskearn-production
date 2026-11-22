@@ -518,11 +518,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropSuggestions = results;
           _searchingDrop = false;
         });
-        if (Task.isGroceryCategory(_selectedCategory) && results.isNotEmpty) {
-          final top = results.first;
-          _dropLocation ??= top.toLatLng();
-          _updateSuggestedStoresForDrop(q, _dropLocation);
-        }
       } catch (_) {
         if (mounted) setState(() => _searchingDrop = false);
       }
@@ -539,6 +534,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
     _recalcDistance();
     setState(() {});
+  }
+
+  void _onDropFocusChanged() async {
+    if (!_dropFocus.hasFocus && _dropLocation == null && _dropAddrCtrl.text.trim().isNotEmpty) {
+      try {
+        final loc = await LocationSearchService.geocodeAddress(_dropAddrCtrl.text.trim());
+        if (loc != null && mounted) {
+          _dropLocation = loc;
+          _userPickedStoreManually = false;
+          _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+          _recalcDistance();
+          setState(() {});
+        }
+      } catch (_) {}
+    }
   }
 
   void _onAddressChanged(String text) {
@@ -1313,6 +1323,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _addressCtrl.addListener(_onLocationAreaChanged);
     _pickupAddrCtrl.addListener(_onLocationAreaChanged);
     _dropAddrCtrl.addListener(_onLocationAreaChanged);
+    _dropFocus.addListener(_onDropFocusChanged);
     if (widget.initialGroceryItems != null && widget.initialGroceryItems!.isNotEmpty) {
       _selectedGroceryItems = List.from(widget.initialGroceryItems!);
     }
@@ -1391,6 +1402,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _customStoreCtrl.dispose();
     _storeSearchCtrl.dispose();
     _pickupFocus.dispose();
+    _dropFocus.removeListener(_onDropFocusChanged);
     _dropFocus.dispose();
     _addressFocus.dispose();
     _addressCtrl.dispose();
@@ -5027,18 +5039,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   void _selectGroceryStore(Map<String, dynamic> store) {
     final dist = (store['distanceKm'] as num).toDouble();
+    final double? storeLat = (store['lat'] as num?)?.toDouble();
+    final double? storeLng = (store['lng'] as num?)?.toDouble();
     setState(() {
       _userPickedStoreManually = true;
       _selectedGroceryStoreName = store['name'] as String;
       _calculatedDistanceKm = dist;
       _pickupAddrCtrl.text = '${store['name']}, ${store['address']}';
-      if (store['lat'] != null && store['lng'] != null) {
-        _pickupLocation = LatLng(store['lat'] as double, store['lng'] as double);
-      } else if (_dropLocation != null) {
-        _pickupLocation = LatLng(
-          _dropLocation!.latitude + (dist / 111.0) * 0.6,
-          _dropLocation!.longitude + (dist / 111.0) * 0.8,
-        );
+      if (storeLat != null && storeLng != null && storeLat != 0.0 && storeLng != 0.0) {
+        _pickupLocation = LatLng(storeLat, storeLng);
+      } else {
+        _pickupLocation = null;
       }
       _isStoreDropdownOpen = false;
     });
@@ -5077,17 +5088,32 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
 
     if (!mounted) return;
-    const dist = 2.0;
+    LatLng? customLoc;
+    double customDist = 2.0;
+    if (center != null) {
+      try {
+        final queryWithArea = '$trimmed, ${_extractAreaName(_dropAddrCtrl.text)}, Pune';
+        final geocoded = await LocationSearchService.geocodeAddress(queryWithArea);
+        if (geocoded != null) {
+          final distFromDrop = const Distance().as(LengthUnit.Kilometer, center, geocoded);
+          if (distFromDrop <= 12.0) {
+            customLoc = geocoded;
+            customDist = distFromDrop;
+          }
+        }
+      } catch (_) {}
+    }
+
     setState(() {
       _userPickedStoreManually = true;
       _selectedGroceryStoreName = trimmed;
-      _calculatedDistanceKm = dist;
+      _calculatedDistanceKm = customDist;
       _pickupAddrCtrl.text = trimmed;
-      _pickupLocation = null;
+      _pickupLocation = customLoc;
       _isStoreDropdownOpen = false;
       _showCustomStoreInput = false;
     });
-    final travelFare = Task.calculateDistancePrice(dist, 'groceries');
+    final travelFare = Task.calculateDistancePrice(customDist, 'groceries');
     const handlingFee = 40.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);

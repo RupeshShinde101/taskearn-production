@@ -940,10 +940,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 color: Color(0xFF1E293B))),
                         const SizedBox(height: 12),
                         ...[
-                          'ðŸ“‹ Your profile & personal details',
-                          'ðŸ’° Wallet balance & transaction history',
-                          'ðŸ“Œ Posted & accepted tasks',
-                          'â­ Ratings & reviews',
+                          '📋 Your profile & personal details',
+                          '💰 Wallet balance & transaction history',
+                          '📌 Posted & accepted tasks',
+                          '⭐ Ratings & reviews',
                         ].map((item) => Padding(
                           padding: const EdgeInsets.only(bottom: 6),
                           child: Text(item, style: const TextStyle(
@@ -1462,7 +1462,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
             ),
             const SizedBox(height: 16),
 
-            // â”€â”€ Gender selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // -- Gender selection --
             const Text('Gender',
                 style: TextStyle(
                     fontSize: 14,
@@ -1473,7 +1473,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
               children: [
                 Expanded(
                   child: _GenderOption(
-                    label: 'Male', emoji: 'ðŸ‘¦',
+                    label: 'Male', emoji: '👨',
                     selected: _gender == 'male',
                     onTap: () => setState(() => _gender = 'male'),
                   ),
@@ -1481,7 +1481,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: _GenderOption(
-                    label: 'Female', emoji: 'ðŸ‘§',
+                    label: 'Female', emoji: '👩',
                     selected: _gender == 'female',
                     onTap: () => setState(() => _gender = 'female'),
                   ),
@@ -1509,7 +1509,7 @@ class _EditProfileSheetState extends State<_EditProfileSheet> {
   }
 }
 
-// â”€â”€ Gender option tile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Gender option tile --
 class _GenderOption extends StatelessWidget {
   final String label;
   final String emoji;

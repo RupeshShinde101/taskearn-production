@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/task_provider.dart';
 import '../../models/task.dart';
-import '../../theme/app_theme.dart';
 import '../../widgets/task_card.dart';
 import '../../services/location_service.dart';
 import '../../widgets/task_screen_watermark.dart';
@@ -44,10 +43,10 @@ class BrowseCategoryConfig {
       label: 'Repair',
       subtitle: 'Plumbing, electrical, appliance',
       categoryIds: [
-        'repair',
         'electrician',
         'plumbing',
         'carpentry',
+        'painting',
         'vehicle',
         'tech_support',
       ],
@@ -170,7 +169,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
   // User's current GPS location for radius filtering
   double? _userLat;
   double? _userLng;
-  bool _locationDenied = false;
 
   @override
   void didChangeDependencies() {
@@ -189,9 +187,11 @@ class _BrowseScreenState extends State<BrowseScreen> {
         }
       }
       setState(() {
-        _selectedCategory = cat;
         if (targetConfig != null) {
           _selectedCategoryConfig = targetConfig;
+          _selectedCategory = 'all';
+        } else {
+          _selectedCategory = cat;
         }
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -247,10 +247,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
       setState(() {
         _userLat = pos.latitude;
         _userLng = pos.longitude;
-        _locationDenied = false;
       });
-    } else {
-      setState(() => _locationDenied = true);
     }
   }
 
@@ -287,161 +284,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
           refresh: true,
         );
   }
-
-  void _showFilters() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useRootNavigator: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setModal) => Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Filters',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                'Category',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 44,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    _SmallChip(
-                      label: 'All',
-                      selected: _selectedCategory == 'all',
-                      onTap: () => setModal(() => _selectedCategory = 'all'),
-                    ),
-                    ...TaskCategory.all.map(
-                      (c) => _SmallChip(
-                        label: c.label,
-                        selected: _selectedCategory == c.id,
-                        onTap: () => setModal(() => _selectedCategory = c.id),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Max Budget',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                    ),
-                  ),
-                  Text(
-                    '₹${_maxBudget.toInt()}',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                    ),
-                  ),
-                ],
-              ),
-              Slider(
-                value: _maxBudget,
-                min: 100,
-                max: 10000,
-                divisions: 99,
-                activeColor: AppColors.primary,
-                onChanged: (v) => setModal(() => _maxBudget = v),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Radius',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                    ),
-                  ),
-                  Text(
-                    '${_radiusKm.toInt()} km',
-                    style: const TextStyle(
-                      color: AppColors.primary,
-                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                    ),
-                  ),
-                ],
-              ),
-              if (_locationDenied)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 6),
-                  child: Text(
-                    '⚠️ Location permission denied — radius filter disabled',
-                    style: TextStyle(
-                      color: AppColors.danger,
-                      fontSize: 12,
-                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                    ),
-                  ),
-                ),
-              Slider(
-                value: _radiusKm,
-                min: 1,
-                max: 50,
-                divisions: 49,
-                activeColor:
-                    _locationDenied ? AppColors.grayLight : AppColors.primary,
-                onChanged: _locationDenied
-                    ? null
-                    : (v) => setModal(() => _radiusKm = v),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(ctx);
-                  setState(() => _radiusFilterActive = true);
-                  _applyFilters();
-                },
-                child: const Text('Apply Filters'),
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _clearFilters() {
-    setState(() {
-      _selectedCategory = 'all';
-      _maxBudget = 5000;
-      _radiusFilterActive = false;
-      _selectedCategoryConfig = null;
-      _searchCtrl.clear();
-    });
-    _applyFilters();
-  }
-
-  bool get _hasActiveFilters =>
-      _selectedCategory != 'all' ||
-      _maxBudget < 5000 ||
-      _searchCtrl.text.isNotEmpty;
 
   /// Matches a task against a parent category configuration.
   static BrowseCategoryConfig _findCategoryForTask(Task task) {
@@ -566,37 +408,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       ),
                     ),
                   ],
-                ),
-              ),
-              // Filter Action Button matching Image
-              GestureDetector(
-                onTap: _showFilters,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFDCE7F5),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            const Color(0xFF2563EB).withValues(alpha: 0.06),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.tune_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 22,
-                    ),
-                  ),
                 ),
               ),
             ],
@@ -863,7 +674,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
           width: 72,
           height: 72,
           fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
           errorBuilder: (_, __, ___) => const _ThreeDots3DIllustration(),
         ),
       ),
@@ -924,36 +734,6 @@ class _BrowseScreenState extends State<BrowseScreen> {
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                ),
-              ),
-              GestureDetector(
-                onTap: _showFilters,
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: const Color(0xFFDCE7F5),
-                      width: 1.5,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            const Color(0xFF2563EB).withValues(alpha: 0.06),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.tune_rounded,
-                      color: Color(0xFF2563EB),
-                      size: 20,
-                    ),
-                  ),
                 ),
               ),
             ],
@@ -1091,6 +871,31 @@ class _BrowseScreenState extends State<BrowseScreen> {
                             fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
                           ),
                         ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          height: 44,
+                          child: ElevatedButton.icon(
+                            onPressed: () => context.push('/post-task'),
+                            icon: const Icon(Icons.add_rounded, size: 18),
+                            label: Text(
+                              'Post a Task in ${config.label}',
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                                fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2563EB),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(horizontal: 22),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(22),
+                              ),
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -1197,41 +1002,6 @@ class _ThreeDots3DIllustration extends StatelessWidget {
                 ],
               ),
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SmallChip extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _SmallChip({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : AppColors.light,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: selected ? Colors.white : AppColors.gray,
-            fontSize: 12,
-            fontFamilyFallback: const ['Roboto', 'Arial', 'sans-serif'],
           ),
         ),
       ),

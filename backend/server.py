@@ -1185,10 +1185,9 @@ CATEGORY_MIN_PRICES = {
     'electrician': 150.0,
     'plumbing': 150.0,
     'carpentry': 200.0,
-    'repair': 250.0,
     'tech_support': 250.0,
     'tech-support': 250.0,
-    'painting': 500.0,
+    'painting': 150.0,
     'vehicle': 200.0,
 
     # Home & Household
@@ -1253,6 +1252,15 @@ CATEGORY_MIN_PRICES = {
 }
 
 
+REPAIR_FIXED_PRICES = {
+    'electrician': 199.0,
+    'plumbing': 199.0,
+    'painting': 199.0,
+    'carpentry': 249.0,
+    'vehicle': 299.0,
+}
+
+
 def get_min_price_for_category(category):
     if not category:
         return 100.0
@@ -1264,6 +1272,8 @@ def get_min_price_for_category(category):
     # Delivery/transport min handled above
     if cat_lower == 'moving':
         return 400.0
+    if cat_lower in REPAIR_FIXED_PRICES:
+        return REPAIR_FIXED_PRICES[cat_lower]
     return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
@@ -2995,7 +3005,11 @@ def create_task():
             price = float(data['price'])
             category = str(data.get('category', 'other')).lower()
             min_allowed = get_min_price_for_category(category)
-            if price < min_allowed or price > 50000:
+            if category in REPAIR_FIXED_PRICES:
+                if price < min_allowed:
+                    cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                    return jsonify({'success': False, 'message': f'Fixed visit price for {cat_label} is ₹{min_allowed:.0f}'}), 400
+            elif price < min_allowed or price > 50000:
                 cat_label = category.replace('_', ' ').replace('-', ' ').title()
                 return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
         except (ValueError, TypeError):
@@ -3839,7 +3853,11 @@ def update_task(task_id):
                 price = float(data['price'])
                 category = str(data.get('category', task.get('category', 'other'))).lower()
                 min_allowed = get_min_price_for_category(category)
-                if price < min_allowed or price > 50000:
+                if category in REPAIR_FIXED_PRICES:
+                    if price < min_allowed:
+                        cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                        return jsonify({'success': False, 'message': f'Fixed visit price for {cat_label} is ₹{min_allowed:.0f}'}), 400
+                elif price < min_allowed or price > 50000:
                     cat_label = category.replace('_', ' ').replace('-', ' ').title()
                     return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
             except (ValueError, TypeError):

@@ -385,10 +385,12 @@ class Task {
       dailyReleasesUsed: int.tryParse(
           (json['daily_releases_used'] ?? json['dailyReleasesUsed'] ?? json['dailyReleaseCount'] ?? 0).toString()
       ) ?? 0,
-      groceryItems: GroceryCatalog.parseGroceryItems(
-        json['grocery_items'] ?? json['groceryItems'],
-        json['description']?.toString(),
-      ),
+      groceryItems: Task.isGroceryCategory((json['category'] ?? '').toString())
+          ? GroceryCatalog.parseGroceryItems(
+              json['grocery_items'] ?? json['groceryItems'],
+              json['description']?.toString(),
+            )
+          : null,
     );
   }
 
@@ -402,7 +404,7 @@ class Task {
 
   /// True for categories under Repair (where service materials/parts are paid separately by the poster).
   static bool isRepairCategory(String categoryId) {
-    const repairCats = {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
+    const repairCats = {'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
     return repairCats.contains(_normalizeCategoryKey(categoryId));
   }
 
@@ -414,7 +416,6 @@ class Task {
       case 'painting':
         return 199.0;
       case 'carpentry':
-      case 'repair':
         return 249.0;
       case 'vehicle':
         return 299.0;
@@ -436,7 +437,6 @@ class Task {
         return 'Painter Visiting Fee';
       case 'vehicle':
         return 'Mechanic Visiting Fee';
-      case 'repair':
       default:
         return 'Repair Visiting Fee';
     }
@@ -566,11 +566,8 @@ class Task {
       case 'carpentry':
       case 'vehicle':
         return 200.0;
-      case 'repair':
       case 'tech_support':
         return 250.0;
-      case 'painting':
-        return 500.0;
 
       // 2. Home & Household
       case 'laundry':
@@ -2267,7 +2264,6 @@ class TaskCategory {
     TaskCategory(id: 'plumbing', label: 'Plumbing', icon: '🔧'),
     TaskCategory(id: 'carpentry', label: 'Carpentry', icon: '🛠️'),
     TaskCategory(id: 'painting', label: 'Painting', icon: '🎨'),
-    TaskCategory(id: 'repair', label: 'Repair', icon: '🔨'),
     TaskCategory(id: 'vehicle', label: 'Vehicle', icon: '🚘'),
     TaskCategory(id: 'tutoring', label: 'Tutoring', icon: '📚'),
     TaskCategory(id: 'freelancer', label: 'Freelancer', icon: '💼'),
@@ -2319,7 +2315,6 @@ class TaskCategory {
     'photography',
     'plumbing',
     'queue_standing',
-    'repair',
     'shopping',
     'tech_support',
     'tutoring',
@@ -2513,7 +2508,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Repair',
       icon: '🔧',
-      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
+      categoryIds: ['electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
     ),
     TaskCategoryGroup(
       label: 'Home & Lifestyle',

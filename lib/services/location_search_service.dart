@@ -652,6 +652,9 @@ class LocationSearchService {
         lowerType == 'greengrocer' ||
         lowerType == 'farm' ||
         lowerType == 'farm_produce' ||
+        lowerType == 'vegetables' ||
+        lowerType == 'vegetable' ||
+        lowerType == 'market' ||
         lowerAmenity == 'marketplace') {
       return true;
     }
@@ -659,19 +662,28 @@ class LocationSearchService {
     // 2b. Name matches for Vegetable & Fruit shops & Mandis
     if (lowerName.contains('vegetable') ||
         lowerName.contains('vegetables') ||
+        lowerName.contains('vegitable') ||
+        lowerName.contains('vegitables') ||
         lowerName.contains('veggie') ||
+        lowerName.contains('veggies') ||
         lowerName.contains('greengrocer') ||
         lowerName.contains('green grocer') ||
         lowerName.contains('sabzi') ||
         lowerName.contains('sabji') ||
         lowerName.contains('subzi') ||
+        lowerName.contains('bhaji') ||
         lowerName.contains('भाजी') ||
         lowerName.contains('भाजीपाला') ||
         lowerName.contains('भाजी मार्केट') ||
+        lowerName.contains('भाजी दुकान') ||
+        lowerName.contains('भाजी केंद्र') ||
+        lowerName.contains('भाजी स्टॉल') ||
         lowerName.contains('मंडई') ||
         lowerName.contains('mandi') ||
         lowerName.contains('tarkari') ||
+        lowerName.contains('torkari') ||
         lowerName.contains('farm fresh') ||
+        lowerName.contains('produce') ||
         (lowerName.contains('fruit') && lowerName.contains('vegetable'))) {
       return true;
     }
@@ -681,7 +693,8 @@ class LocationSearchService {
         lowerName.contains('किराणा') ||
         lowerName.contains('किराणा स्टोअर') ||
         lowerName.contains('किराणा माल') ||
-        lowerName.contains('किराणा दुकान')) {
+        lowerName.contains('किराणा दुकान') ||
+        lowerName.contains('किराना')) {
       return true;
     }
 
@@ -818,7 +831,12 @@ class LocationSearchService {
 
     if (lowerType == 'greengrocer' ||
         lowerType == 'farm' ||
+        lowerType == 'vegetables' ||
+        lowerType == 'vegetable' ||
         lowerName.contains('vegetable') ||
+        lowerName.contains('vegitable') ||
+        lowerName.contains('veggie') ||
+        lowerName.contains('bhaji') ||
         lowerName.contains('भाजी') ||
         lowerName.contains('sabzi') ||
         lowerName.contains('sabji') ||
@@ -840,6 +858,7 @@ class LocationSearchService {
       color = const Color(0xFF059669);
     } else if (lowerName.contains('kirana') ||
         lowerName.contains('किराणा') ||
+        lowerName.contains('किराना') ||
         lowerName.contains('provision') ||
         lowerType == 'convenience') {
       categoryLabel = 'Kirana & Grocery';
@@ -853,6 +872,8 @@ class LocationSearchService {
 
     return {
       'name': rawName,
+      'shopType': shopType,
+      'amenity': amenity,
       'tag': categoryLabel,
       'distanceKm': roadEstKm,
       'straightKm': straightKm,
@@ -1057,7 +1078,7 @@ class LocationSearchService {
     final queryRadiusMeters = (radiusKm.clamp(1.0, 3.5) * 1000).round();
     final query = '[out:json][timeout:5];'
         '('
-        'nwr["shop"~"^(supermarket|convenience|greengrocer|general|grocery|department_store|wholesale|farm|dairy|organic)\$"](around:$queryRadiusMeters,${center.latitude},${center.longitude});'
+        'nwr["shop"~"^(supermarket|convenience|greengrocer|general|grocery|department_store|wholesale|farm|dairy|organic|vegetables|vegetable|market)\$"](around:$queryRadiusMeters,${center.latitude},${center.longitude});'
         'nwr["amenity"="marketplace"](around:$queryRadiusMeters,${center.latitude},${center.longitude});'
         ');'
         'out center 80;';
@@ -1210,16 +1231,25 @@ class LocationSearchService {
       'supermarket',
       'grocery',
       'kirana',
+      'kirana store',
       'vegetable',
+      'vegetables',
+      'vegetable shop',
       'greengrocer',
       'sabzi',
+      'sabji',
+      'bhaji',
+      'भाजी दुकान',
       'dmart',
       'reliance smart',
       'provision',
       'mandi',
       'किराणा',
+      'किराणा स्टोअर',
       'भाजीपाला',
       'mart',
+      'super market',
+      'general store',
     ];
 
     final futures = <Future<List<Map<String, dynamic>>>>[];
@@ -1234,7 +1264,17 @@ class LocationSearchService {
     }
 
     // Complementary Nominatim queries for maximum coverage
-    for (final q in ['supermarket', 'grocery', 'kirana', 'vegetable', 'dmart', 'provision store']) {
+    for (final q in [
+      'supermarket',
+      'grocery',
+      'kirana',
+      'vegetable',
+      'vegetable shop',
+      'bhaji',
+      'dmart',
+      'provision store',
+      'sabzi'
+    ]) {
       futures.add(_fetchNominatimGroceryStores(
         center,
         q,

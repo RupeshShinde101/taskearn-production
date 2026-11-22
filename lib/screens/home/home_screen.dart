@@ -506,7 +506,6 @@ class _HomeScreenState extends State<HomeScreen> {
               auth.user?.gender ?? StorageService.getGender(),
             ),
           ),
-          SliverToBoxAdapter(child: _buildSearch()),
           SliverToBoxAdapter(child: _buildCategories()),
           SliverToBoxAdapter(child: _buildTrustedExpertsBanner()),
           if (_suggestedTasks.isNotEmpty)
@@ -885,63 +884,60 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // ── SEARCH ────────────────────────────────────────────────────────────────
   Widget _buildSearch() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: const Color(0xFFE5EDF7)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF1B4073).withValues(alpha: 0.06),
-              blurRadius: 18,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            const SizedBox(width: 14),
-            const Icon(Icons.search_rounded, color: Color(0xFF71819A)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: GestureDetector(
-                onTap: () => context.go('/browse'),
-                child: const AbsorbPointer(
-                  child: TextField(
-                    enabled: false,
-                    decoration: InputDecoration(
-                      hintText: 'Search tasks, categories...',
-                      border: InputBorder.none,
-                      hintStyle:
-                          TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            GestureDetector(
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE5EDF7)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1B4073).withValues(alpha: 0.06),
+            blurRadius: 18,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 14),
+          const Icon(Icons.search_rounded, color: Color(0xFF71819A)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
               onTap: () => context.go('/browse'),
-              child: Container(
-                margin: const EdgeInsets.all(6),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 10),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+              child: const AbsorbPointer(
+                child: TextField(
+                  enabled: false,
+                  decoration: InputDecoration(
+                    hintText: 'Search tasks, categories...',
+                    border: InputBorder.none,
+                    hintStyle:
+                        TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
                   ),
-                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Text('Search',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700)),
               ),
             ),
-          ],
-        ),
+          ),
+          GestureDetector(
+            onTap: () => context.go('/browse'),
+            child: Container(
+              margin: const EdgeInsets.all(6),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 18, vertical: 10),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text('Search',
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -964,7 +960,36 @@ class _HomeScreenState extends State<HomeScreen> {
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Popular Task Categories for You',
+                style: TextStyle(
+                  fontSize: 16.5,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF102A56),
+                  letterSpacing: -0.3,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => context.go('/browse'),
+                child: const Text(
+                  'See all',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0B63F6),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildSearch(),
+          const SizedBox(height: 14),
           Row(children: [
             _catTile(cats[0]), const SizedBox(width: 10),
             _catTile(cats[1]), const SizedBox(width: 10),

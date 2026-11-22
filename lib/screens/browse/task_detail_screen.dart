@@ -747,14 +747,14 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
 
               Builder(builder: (context) {
                 final isGrocery = Task.isGroceryCategory(task.category);
+                if (!isGrocery) return const SizedBox.shrink();
                 final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
                     ? task.groceryItems!
-                    : (isGrocery ? GroceryCatalog.parseGroceryItems(null, task.description) : const <SelectedGroceryItem>[]);
+                    : GroceryCatalog.parseGroceryItems(null, task.description);
                 if (groceryItems.isEmpty) return const SizedBox.shrink();
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (!isGrocery) const Divider(height: 28),
                     Row(
                       children: [
                         Container(

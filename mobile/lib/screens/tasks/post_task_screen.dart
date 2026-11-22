@@ -259,9 +259,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (_dropLocation != null) {
       _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
     }
-    final dist = _calculatedDistanceKm ?? 1.5;
+    final dist = _calculatedDistanceKm ?? 0.8;
     final travelFare = Task.calculateDistancePrice(dist, 'groceries', vehicle: 'bike');
-    const handlingFee = 30.0;
+    const handlingFee = 40.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);
   }
@@ -643,7 +643,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       );
       final immediateKm = double.parse(((meters / 1000.0) * 1.25).toStringAsFixed(1));
       final isGrocery = Task.isGroceryCategory(_selectedCategory);
-      final groceryHandling = isGrocery ? 30.0 : 0.0;
+      final groceryHandling = isGrocery ? 40.0 : 0.0;
       final immediatePrice = Task.calculateDistancePrice(
         immediateKm,
         _selectedCategory,
@@ -2203,7 +2203,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   Future<void> _submit() async {
     if (Task.isGroceryCategory(_selectedCategory)) {
       final dist = _calculatedDistanceKm ?? 0.8;
-      final autoGroceryBudget = Task.calculateDistancePrice(dist, 'groceries') + 30.0;
+      final autoGroceryBudget = Task.calculateDistancePrice(dist, 'groceries') + 40.0;
       _syncAutoBudget(autoGroceryBudget);
     }
     _compileDescriptionFromForm();
@@ -2862,7 +2862,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (_selectedGroceryStoreName != null) {
         lines.add('• Store / Supermarket: $_selectedGroceryStoreName');
       }
-      lines.add('• Handling & Shopping Charge: ₹30 included in delivery budget');
       lines.add('• Grocery Items Cost: Paid separately by task poster on actual bill (excluded from delivery budget)');
       if (_selectedGroceryItems.isNotEmpty) {
         lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
@@ -4894,7 +4893,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
           }
           final travelFare = Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries');
-          const handlingFee = 30.0;
+          const handlingFee = 40.0;
           _syncAutoBudget(travelFare + handlingFee);
         }
       });
@@ -4996,7 +4995,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       });
 
       final travelFare = Task.calculateDistancePrice(distKm, 'groceries');
-      const handlingFee = 30.0;
+      const handlingFee = 40.0;
       final totalBudget = travelFare + handlingFee;
       _syncAutoBudget(totalBudget);
       _compileDescriptionFromForm();
@@ -5021,9 +5020,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
       _isStoreDropdownOpen = false;
     });
-    // Base minimum ₹50 + ₹12/km + ₹30 handling
     final travelFare = Task.calculateDistancePrice(dist, 'groceries');
-    const handlingFee = 30.0;
+    const handlingFee = 40.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);
     _compileDescriptionFromForm();
@@ -5068,7 +5066,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _showCustomStoreInput = false;
     });
     final travelFare = Task.calculateDistancePrice(dist, 'groceries');
-    const handlingFee = 30.0;
+    const handlingFee = 40.0;
     final totalBudget = travelFare + handlingFee;
     _syncAutoBudget(totalBudget);
     _compileDescriptionFromForm();
@@ -7088,7 +7086,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         final budget = isRepair
             ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
             : (isGrocery && rawBudget <= 0
-                ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+                ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 40.0)
                 : rawBudget);
         final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
         final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;

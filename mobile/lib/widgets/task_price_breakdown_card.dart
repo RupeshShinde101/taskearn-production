@@ -27,6 +27,9 @@ class TaskPriceBreakdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double groceryTaskValue = (distanceKm != null && distanceKm! > 1.0)
+        ? (30.0 + (distanceKm! * 12.0).roundToDouble())
+        : 40.0;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -114,20 +117,20 @@ class TaskPriceBreakdownCard extends StatelessWidget {
           // Itemized rows
           if (isGrocery) ...[
             _PriceRow(
-              distanceKm != null && distanceKm! > 0
-                  ? 'Distance Fare (₹50 base + ₹12/km × ${distanceKm!.toStringAsFixed(1)} km)'
-                  : 'Distance Fare (₹50 min base + ₹12/km)',
-              '₹${(budget >= 30.0 ? (budget - 30.0) : budget).toStringAsFixed(0)}',
+              'Task Value',
+              '₹${groceryTaskValue.toStringAsFixed(0)}',
             ),
             const SizedBox(height: 10),
-            const _PriceRow('Handling & Shopping Charge', '₹30'),
-            const SizedBox(height: 10),
-            _PriceRow('Delivery Budget', '₹${budget.toStringAsFixed(0)}'),
+            const _PriceRow('Handling Charges', '₹40'),
             const SizedBox(height: 10),
             const _PriceRowWithBadge(
-              label: 'Platform Fee & GST',
+              label: 'Platform Fee (GST included)',
               badgeText: 'Flat ₹12',
               value: '₹12',
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
             ),
           ] else if (isRepair) ...[
             _PriceRow('Technician Visiting Fee', '₹${budget.toStringAsFixed(0)}'),
@@ -136,6 +139,10 @@ class TaskPriceBreakdownCard extends StatelessWidget {
               label: 'Platform Fee & GST',
               badgeText: 'Flat ₹20',
               value: '₹20',
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
             ),
           ] else ...[
             _PriceRow('Task Budget', '₹${budget.toStringAsFixed(0)}'),
@@ -147,12 +154,11 @@ class TaskPriceBreakdownCard extends StatelessWidget {
               const SizedBox(height: 10),
               _PriceRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
             ],
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 14),
+              child: Divider(height: 1, color: Color(0xFFE2E8F0)),
+            ),
           ],
-
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 14),
-            child: Divider(height: 1, color: Color(0xFFE2E8F0)),
-          ),
 
           // Total row with elevated styling
           Container(
@@ -166,13 +172,13 @@ class TaskPriceBreakdownCard extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Total Amount to Pay',
-                        style: TextStyle(
+                        isGrocery ? 'Total Pay' : 'Total Amount to Pay',
+                        style: const TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 13.5,
                           color: Color(0xFF0F172A),

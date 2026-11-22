@@ -100,7 +100,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       );
       final immediateKm = double.parse(((meters / 1000.0) * 1.25).toStringAsFixed(1));
       final isGrocery = _isGrocery;
-      final groceryHandling = isGrocery ? 30.0 : 0.0;
+      final groceryHandling = isGrocery ? 40.0 : 0.0;
       final immediatePrice = Task.calculateDistancePrice(
         immediateKm,
         _selectedCategory,
@@ -566,7 +566,6 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
     if (_selectedGroceryStoreName != null && _selectedGroceryStoreName!.trim().isNotEmpty) {
       lines.add('• Store / Supermarket: ${_selectedGroceryStoreName!.trim()}');
     }
-    lines.add('• Handling & Shopping Charge: ₹30 included in delivery budget');
     lines.add('• Grocery Items Cost: Paid separately by task poster on actual bill (excluded from delivery budget)');
     if (_selectedGroceryItems.isNotEmpty) {
       lines.add('• Selected Grocery Items (${_selectedGroceryItems.length} items):');
@@ -657,7 +656,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
           _pickupAddrCtrl.text = '${chosen['name']}, ${chosen['address']}';
           _calculatedDistanceKm = (chosen['distanceKm'] as num).toDouble();
           _pickupLocation = LatLng(chosen['lat'] as double, chosen['lng'] as double);
-          _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries') + 30.0);
+          _syncAutoBudget(Task.calculateDistancePrice(_calculatedDistanceKm ?? 1.0, 'groceries') + 40.0);
         }
       });
       if (realStores.isNotEmpty && !_userPickedStoreManually) {
@@ -753,7 +752,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         _suggestedGroceryStoresList.insert(0, customStore);
         _isStoreDropdownOpen = false;
       });
-      _syncAutoBudget(Task.calculateDistancePrice(distKm, 'groceries') + 30.0);
+      _syncAutoBudget(Task.calculateDistancePrice(distKm, 'groceries') + 40.0);
       _recalcDistance();
     }
   }
@@ -771,7 +770,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       }
       _isStoreDropdownOpen = false;
     });
-    _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 30.0);
+    _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 40.0);
     if (_dropLocation != null && _pickupLocation != null) {
       _recalcDistance();
     }
@@ -811,7 +810,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
       _isStoreDropdownOpen = false;
       _showCustomStoreInput = false;
     });
-    _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 30.0);
+    _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 40.0);
   }
 
   Future<void> _submit() async {
@@ -836,7 +835,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
         return;
       }
       final dist = _calculatedDistanceKm ?? 0.8;
-      _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 30.0);
+      _syncAutoBudget(Task.calculateDistancePrice(dist, 'groceries') + 40.0);
       _descCtrl.text = _compileGroceryDescription();
     }
 
@@ -2604,7 +2603,7 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   final budget = isRepair
                       ? Task.fixedVisitPriceForRepairCategory(_selectedCategory)
                       : (_isGrocery && rawBudget <= 0
-                          ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 30.0)
+                          ? (Task.calculateDistancePrice(_calculatedDistanceKm ?? 0.8, 'groceries') + 40.0)
                           : rawBudget);
                   final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
                   final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;

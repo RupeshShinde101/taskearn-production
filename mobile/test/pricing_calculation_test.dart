@@ -766,25 +766,39 @@ void main() {
       expect(Task.distancePriceDescription(10.0, 'moving', vehicle: 'truck'), '₹950 base + ₹55 per km (Truck)');
     });
 
-    test('grocery category enforces Bike/Scooty vehicle, 20kg weight limit, ₹12/km rate, min ₹100, and separate items policy', () {
+    test('grocery category enforces pricing model: under 1km ₹40 fix + ₹40 handling + ₹12 fee = ₹92 total; >1km ₹30 base + ₹12/km + ₹40 handling + ₹12 fee; 12% helper fee', () {
       expect(Task.isGroceryCategory('groceries'), isTrue);
       expect(Task.isGroceryCategory('grocery'), isTrue);
-      expect(Task.minBudgetForCategory('groceries'), 100.0);
+      expect(Task.minBudgetForCategory('groceries'), 40.0);
       expect(Task.ratePerKmForCategory('groceries'), 12.0);
 
-      // Short distance (< 8.33 km) gets base min ₹100
-      expect(Task.calculateDistancePrice(5.0, 'groceries'), 100.0);
+      // Distance under or equal to 1km gets fixed price ₹40
+      expect(Task.calculateDistancePrice(0.5, 'groceries'), 40.0);
+      expect(Task.calculateDistancePrice(1.0, 'groceries'), 40.0);
 
-      // 10 km @ ₹12/km = ₹120
-      expect(Task.calculateDistancePrice(10.0, 'groceries'), 120.0);
+      // Distance greater than 1km: ₹30 base + ₹12/km
+      expect(Task.calculateDistancePrice(2.0, 'groceries'), 54.0); // 30 + 2*12 = 54
+      expect(Task.calculateDistancePrice(5.0, 'groceries'), 90.0); // 30 + 5*12 = 90
+      expect(Task.calculateDistancePrice(10.0, 'groceries'), 150.0); // 30 + 10*12 = 150
 
-      // 15 km @ ₹12/km = ₹180
-      expect(Task.calculateDistancePrice(15.0, 'groceries'), 180.0);
-
-      // Description & itemized summaries
-      expect(Task.distancePriceDescription(5.0, 'groceries'), '₹12 per km (Bike / Scooty · Min ₹100)');
-      expect(Task.distanceFareSummary(5.0, 'groceries'), contains('₹100 min · Bike/Scooty'));
-      expect(Task.distanceFareSummary(10.0, 'groceries'), contains('10.0 km @ ₹12/km · Bike/Scooty'));
+      // Task object verifies 12% helper commission and ₹12 poster fee
+      final taskUnder1Km = Task(
+        id: 'groc1',
+        title: 'Grocery under 1km',
+        description: 'Test',
+        category: 'groceries',
+        budget: 80.0, // ₹40 fix + ₹40 handling
+        status: 'posted',
+        posterId: 'p1',
+        posterName: 'Poster',
+        latitude: 0,
+        longitude: 0,
+        createdAt: DateTime.now(),
+      );
+      expect(taskUnder1Km.posterFee, 12.0);
+      expect(taskUnder1Km.totalPosterCost, 92.0); // ₹40 + ₹40 + ₹12 = ₹92 total pay value
+      expect(taskUnder1Km.commissionRate, 0.12); // Helper 12% platform fee
+      expect(taskUnder1Km.netEarning, 80.0 * (1 - 0.12)); // ₹70.4 net earning
     });
 
     test('grocery catalog items, custom requirements, and JSON roundtrip', () {
@@ -891,23 +905,24 @@ void main() {
       expect(totalW, lessThanOrEqualTo(GroceryCatalog.maxTwoWheelerWeightKg));
     });
 
-    testWidgets('TaskPriceBreakdownCard for grocery tasks displays ₹50 handling charge and distance fare',
+    testWidgets('TaskPriceBreakdownCard for grocery tasks displays exact breakdown: Task Value, Handling Charges, Platform Fee (GST included), Total Pay',
         (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
 
-      // Grocery budget with travel fare ₹100 + handling ₹50 = ₹150 budget
+      // 1. Under 1km: task value ₹40 + handling ₹40 = ₹80 budget, poster fee ₹12 -> ₹92 total
       await tester.pumpWidget(
         const MaterialApp(
           home: Scaffold(
             body: Padding(
               padding: EdgeInsets.all(16),
               child: TaskPriceBreakdownCard(
-                budget: 150.0,
+                budget: 80.0,
                 serviceCharge: 0.0,
-                posterFee: 30.0,
-                totalCost: 180.0,
+                posterFee: 12.0,
+                totalCost: 92.0,
                 isGrocery: true,
+                distanceKm: 0.8,
               ),
             ),
           ),
@@ -915,13 +930,41 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Distance Travel Fare (₹12/km)'), findsOneWidget);
-      expect(find.text('₹100'), findsOneWidget);
-      expect(find.text('Handling & Shopping Charge'), findsOneWidget);
-      expect(find.text('₹50'), findsOneWidget);
-      expect(find.text('Task Delivery Budget'), findsOneWidget);
-      expect(find.text('₹150'), findsOneWidget);
-      expect(find.textContaining('Grocery Items Policy:'), findsOneWidget);
+      expect(find.text('Price Breakdown'), findsOneWidget);
+      expect(find.text('Task Value'), findsOneWidget);
+      expect(find.text('Handling Charges'), findsOneWidget);
+      expect(find.text('₹40'), findsNWidgets(2)); // Task Value ₹40 and Handling Charges ₹40
+      expect(find.text('Platform Fee (GST included)'), findsOneWidget);
+      expect(find.text('₹12'), findsOneWidget);
+      expect(find.text('Total Pay'), findsOneWidget);
+      expect(find.text('₹92'), findsOneWidget);
+
+      // 2. Greater than 1km (2.0 km): task value 30 + 12*2 = ₹54, handling ₹40 -> budget ₹94, poster fee ₹12 -> ₹106 total
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(16),
+              child: TaskPriceBreakdownCard(
+                budget: 94.0,
+                serviceCharge: 0.0,
+                posterFee: 12.0,
+                totalCost: 106.0,
+                isGrocery: true,
+                distanceKm: 2.0,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Task Value'), findsOneWidget);
+      expect(find.text('₹54'), findsOneWidget);
+      expect(find.text('Handling Charges'), findsOneWidget);
+      expect(find.text('Platform Fee (GST included)'), findsOneWidget);
+      expect(find.text('Total Pay'), findsOneWidget);
+      expect(find.text('₹106'), findsOneWidget);
     });
 
     testWidgets('PostTaskScreen smoothly switches to grocery category without freezing',
@@ -961,8 +1004,8 @@ void main() {
       await tester.tap(find.text('Save & Continue'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Delivery Address & Store'), findsOneWidget);
-      expect(find.text('Store / Supermarket (10 km Radius)'), findsOneWidget);
+      expect(find.text('Delivery Address'), findsOneWidget);
+      expect(find.text('Store Address'), findsOneWidget);
       expect(find.text('Grocery Items Policy'), findsOneWidget);
       expect(find.text('Select Items from Catalog'), findsOneWidget);
     });

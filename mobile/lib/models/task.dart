@@ -485,11 +485,8 @@ class Task {
   /// Platform commission rate (20% inclusive of GST & platform fee).
   static const double platformCommission = 0.20;
 
-  /// Per-task helper commission rate (12% for groceries, 20% for other categories; inclusive of GST).
-  double get commissionRate {
-    if (isGroceryCategory(category)) return 0.12;
-    return 0.20;
-  }
+  /// Per-task helper commission rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
+  double get commissionRate => 0.20;
 
   /// Per-task poster commission / platform fee rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
   double get posterCommissionRate => 0.20;
@@ -514,7 +511,7 @@ class Task {
   double get totalAmount => totalPosterCost;
 
   /// Normalizes category IDs across snake_case, kebab-case, space-separated, and legacy web keys.
-  static String _normalizeCategoryKey(String category) {
+  static String normalizeCategoryKey(String category) {
     final clean = category.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
     switch (clean) {
       case 'techsupport':
@@ -553,6 +550,8 @@ class Task {
     }
   }
 
+  static String _normalizeCategoryKey(String category) => normalizeCategoryKey(category);
+
   /// Minimum budget required for a given task category based on current market rates.
   static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {
     final cat = _normalizeCategoryKey(category);
@@ -590,7 +589,7 @@ class Task {
       // 3. Shopping, Errands & On-Demand
       case 'groceries':
       case 'grocery':
-        return 40.0;
+        return 50.0;
       case 'shopping':
         return 150.0;
       case 'errands':
@@ -670,11 +669,10 @@ class Task {
   static double calculateDistancePrice(double distanceKm, String category, {String vehicle = 'bike'}) {
     final cat = _normalizeCategoryKey(category);
     if (cat == 'groceries' || cat == 'grocery') {
+      // Grocery: ₹50 minimum base value + accurate ₹12/km from store to delivery location
+      const base = 50.0;
       final safeKm = distanceKm > 0 ? distanceKm : 0.0;
-      if (safeKm <= 1.0) {
-        return 40.0;
-      }
-      return 30.0 + (safeKm * 12.0).roundToDouble();
+      return base + (safeKm * 12.0).roundToDouble();
     }
     if (distanceKm <= 0) return 0.0;
     switch (cat) {
@@ -722,7 +720,8 @@ class Task {
       return 'Min fare: ₹$total (₹$baseFare base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹$rate/km · $vehName)';
     }
     if (cat == 'groceries' || cat == 'grocery') {
-      return 'Min fare: ₹$total';
+      final distPart = (distanceKm * 12.0).round();
+      return 'Min fare: ₹$total (₹50 base + ₹$distPart for ${distanceKm.toStringAsFixed(1)} km @ ₹12/km · Bike/Scooty)';
     }
     final rate = ratePerKmForCategory(cat, vehicle: vehicle).toInt();
     final baseMin = minBudgetForCategory(cat, vehicle: vehicle).toInt();
@@ -754,7 +753,7 @@ class Task {
             : '₹400 base + ₹35 per km (Tempo)';
       case 'groceries':
       case 'grocery':
-        return '₹12 per km';
+        return '₹12 per km (Bike / Scooty · Min ₹100)';
       default:
         return '₹12 per km';
     }
@@ -2081,7 +2080,7 @@ class Task {
     }
 
     final isGroc = cat == 'groceries' || cat == 'grocery';
-    final extraHandling = isGroc ? 40.0 : 0.0;
+    final extraHandling = isGroc ? 50.0 : 0.0;
     final catMin = minBudgetForCategory(cat, vehicle: vehicle) + extraHandling;
     const distCats = {'delivery', 'pickup', 'transport', 'moving', 'groceries', 'grocery'};
     final distFloor = (distCats.contains(cat) && distanceKm != null && distanceKm > 0)

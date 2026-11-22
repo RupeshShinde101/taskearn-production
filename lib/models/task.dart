@@ -511,7 +511,7 @@ class Task {
   double get totalAmount => totalPosterCost;
 
   /// Normalizes category IDs across snake_case, kebab-case, space-separated, and legacy web keys.
-  static String _normalizeCategoryKey(String category) {
+  static String normalizeCategoryKey(String category) {
     final clean = category.trim().toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
     switch (clean) {
       case 'techsupport':
@@ -549,6 +549,8 @@ class Task {
         return clean;
     }
   }
+
+  static String _normalizeCategoryKey(String category) => normalizeCategoryKey(category);
 
   /// Minimum budget required for a given task category based on current market rates.
   static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {

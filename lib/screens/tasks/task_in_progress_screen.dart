@@ -13,6 +13,7 @@ import '../../models/task.dart';
 import '../../models/grocery_item.dart';
 import '../../services/api_service.dart';
 import '../../services/location_service.dart';
+import '../../services/notification_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/task_released_dialog.dart';
@@ -39,6 +40,8 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
   Timer? _pollTimer;
   Timer? _gpsHeartbeatTimer;
   StreamSubscription<Position>? _locationSub;
+  StreamSubscription<Map<String, dynamic>>? _cancelSub;
+  bool _cancelledDialogShown = false;
   String? _prevStatus;          // tracks last-known status to detect transitions
   bool _paymentPopupShown = false; // ensure payment popup shown only once
   String? _cachedProofValue;
@@ -47,7 +50,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
 
   // ── statuses treated as "cancelled" — helper should be redirected away
   static const _cancelledStatuses = {
-    'cancelled', 'poster_cancelled', 'rejected', 'expired',
+    'cancelled', 'poster_cancelled', 'rejected', 'expired', 'deleted', 'removed',
   };
   // ── statuses treated as "verification pending" (proof submitted, waiting poster)
   static const _verifyPendingStatuses = {
@@ -75,11 +78,19 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Listen for real-time task cancellation notification
+    _cancelSub = NotificationService.onTaskCancelled.stream.listen((data) {
+      final cancelTaskId = data['task_id']?.toString() ?? '';
+      if (cancelTaskId.isEmpty || cancelTaskId == widget.taskId) {
+        final body = data['body']?.toString();
+        _showCancelledDialog(body);
+      }
+    });
     _load();
-    // Poll for status changes every 15 s so the helper is redirected
+    // Poll for status changes every 4 s so the helper is redirected
     // automatically if the poster cancels or payment is released.
     _pollTimer = Timer.periodic(
-      const Duration(seconds: 15),
+      const Duration(seconds: 4),
       (_) { if (mounted) _load(); },
     );
   }
@@ -95,7 +106,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
   }
 
   Future<void> _load() async {
-    if (!mounted) return;
+    if (!mounted || _cancelledDialogShown) return;
     if (_initialLoad) setState(() { _loading = true; });
     final provider = context.read<TaskProvider>();
     var task = await provider.getTaskDetail(widget.taskId);
@@ -108,28 +119,27 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
       if (mounted) task = await provider.getTaskDetail(widget.taskId) ?? task;
     }
 
-    if (!mounted) return;
+    if (!mounted || _cancelledDialogShown) return;
 
-    _syncProofCache(task?.completionProof);
-
-    final oldStatus = _prevStatus;
-    setState(() {
-      // During background polls keep the old task if the network returns null
-      if (task != null) {
-        _task = task;
-        _prevStatus = task.status;
-      }
-      _loading = false;
-      _initialLoad = false;
-    });
-
-    // If the poster cancelled (or task expired/rejected/not found), redirect.
-    final status = _task?.status ?? '';
-    if (_task == null || _cancelledStatuses.contains(status)) {
+    // If the poster cancelled (or task expired/rejected/not found), redirect immediately.
+    final currentTask = task;
+    if (currentTask == null || _cancelledStatuses.contains(currentTask.status)) {
       _pollTimer?.cancel();
       _showCancelledDialog();
       return;
     }
+
+    _syncProofCache(currentTask.completionProof);
+
+    final oldStatus = _prevStatus;
+    setState(() {
+      _task = currentTask;
+      _prevStatus = currentTask.status;
+      _loading = false;
+      _initialLoad = false;
+    });
+
+    final status = currentTask.status;
 
     // Start live GPS sharing once task is loaded (non-Professional categories only).
     if (!_locationUpdatesStarted &&
@@ -289,15 +299,40 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
     );
   }
 
-  Future<void> _showCancelledDialog() async {
-    if (!mounted) return;
+  Future<void> _showCancelledDialog([String? customMessage]) async {
+    if (!mounted || _cancelledDialogShown) return;
+    _cancelledDialogShown = true;
+    _pollTimer?.cancel();
+    _gpsHeartbeatTimer?.cancel();
+    _locationSub?.cancel();
+
+    try {
+      context.read<TaskProvider>().clearTaskFromCache(widget.taskId);
+    } catch (_) {}
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
-        title: const Text('Task Cancelled'),
-        content: const Text(
-          'The task poster has cancelled this task. You have been released and any held payment will be refunded to the poster.',
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        title: const Row(
+          children: [
+            Icon(Icons.cancel_outlined, color: AppColors.danger, size: 26),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Poster Cancelled Task',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ],
+        ),
+        content: Text(
+          customMessage ??
+              'The task poster has cancelled this task. You have been released and can accept new tasks.',
+          style: const TextStyle(fontSize: 14, color: AppColors.dark, height: 1.4),
         ),
         actions: [
           ElevatedButton(
@@ -305,18 +340,21 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-            child: const Text('OK'),
+            child: const Text('OK', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
-    if (mounted) context.go('/browse');
+    if (mounted) context.go('/home');
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _cancelSub?.cancel();
     _pollTimer?.cancel();
     _gpsHeartbeatTimer?.cancel();
     _locationSub?.cancel();

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/notification_provider.dart';
+import 'providers/task_provider.dart';
 import 'services/notification_service.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/auth/login_screen.dart';
@@ -47,6 +48,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
   StreamSubscription<Map<String, dynamic>>? _notifSub;
   StreamSubscription<Map<String, dynamic>>? _taskCompletedSub;
   StreamSubscription<Map<String, dynamic>>? _taskAcceptedSub;
+  StreamSubscription<Map<String, dynamic>>? _taskCancelledSub;
   /// Navigation path deferred until the user is authenticated.
   /// Set when a notification tap arrives before auth is established.
   String? _pendingNavPath;
@@ -254,6 +256,17 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       });
     }
 
+    // Listen to task cancellation events so task cache is immediately purged.
+    final taskProvider = context.read<TaskProvider>();
+    _taskCancelledSub ??= NotificationService.onTaskCancelled.stream.listen((data) {
+      final taskId = data['task_id']?.toString() ?? '';
+      if (taskId.isNotEmpty) {
+        try {
+          taskProvider.clearTaskFromCache(taskId);
+        } catch (_) {}
+      }
+    });
+
     // Auto-redirect task poster to live tracking screen when a helper accepts their task.
     _taskAcceptedSub ??= NotificationService.onTaskAccepted.stream.listen((data) {
       final taskId = data['task_id']?.toString() ?? '';
@@ -362,10 +375,15 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       return;
     }
 
-    // Notification types whose task has been deleted — navigate to My Tasks
+    // Notification types whose task has been deleted — navigate to Home
     // instead of trying to open a non-existent task detail.
     // Use go() for shell tab routes to avoid the navigator key assertion.
-    const deletedTaskTypes = {'task_cancelled_confirmation'};
+    const deletedTaskTypes = {
+      'task_cancelled_confirmation',
+      'task_cancelled_by_poster',
+      'task_cancelled',
+      'poster_cancelled',
+    };
     // Shell tab routes must use go() not push() — push() on an already-mounted
     // ShellRoute child throws '!keyReservation.contains(key)'.
     const shellTabRoutes = {'/my-tasks', '/home', '/browse', '/profile'};
@@ -373,7 +391,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     const chatTypes = {'chat', 'chat_message'};
     String destination;
     if (deletedTaskTypes.contains(type)) {
-      destination = '/my-tasks';
+      destination = '/home';
     } else if (chatTypes.contains(type) && taskId != null && taskId.isNotEmpty) {
       destination = '/chat/$taskId';
     } else if (taskId != null && taskId.isNotEmpty) {
@@ -440,6 +458,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
     _notifSub?.cancel();
     _taskCompletedSub?.cancel();
     _taskAcceptedSub?.cancel();
+    _taskCancelledSub?.cancel();
     super.dispose();
   }
 

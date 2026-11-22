@@ -3915,7 +3915,7 @@ def delete_task(task_id):
     """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT posted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
+            cursor.execute(f'SELECT posted_by, accepted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
 
             if not task:
@@ -3930,6 +3930,7 @@ def delete_task(task_id):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
             task_title = task.get('title', '')
+            helper_id = task.get('accepted_by')
 
             # Clean up all FK references then delete the task
             _safe_delete_tasks(cursor, task_id)
@@ -3946,13 +3947,35 @@ def delete_task(task_id):
                 ''', (request.user_id, 'task_cancelled_confirmation',
                       'Task Cancelled \u2705',
                       f'Your task "{task_title}" has been cancelled and removed.',
-                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation'}), _now_del))
+                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation', 'task_id': str(task_id)}), _now_del))
+
+                if helper_id:
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (helper_id, 'task_cancelled_by_poster',
+                          'Task Cancelled by Poster ⚠️',
+                          f'The poster has cancelled task "{task_title}" and removed it.',
+                          'unread', _json_del.dumps({'type': 'task_cancelled_by_poster', 'task_id': str(task_id)}), _now_del))
                 cursor.execute('RELEASE SAVEPOINT sp_del_notif')
             except Exception:
                 try: cursor.execute('ROLLBACK TO SAVEPOINT sp_del_notif')
                 except Exception: pass
 
         print(f"✅ Task {task_id} deleted by user {request.user_id}")
+
+        # FCM push to helper if assigned
+        if helper_id:
+            try:
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Cancelled ⚠️',
+                    f'The poster has cancelled task "{task_title}".',
+                    data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception as _fcm_h_err:
+                print(f'[FCM] \u274c delete_task helper notify failed: {_fcm_h_err}')
 
         # FCM push — confirm to poster (same pattern as task_posted)
         try:

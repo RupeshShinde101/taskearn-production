@@ -691,7 +691,7 @@ class _PosterTaskInProgressScreenState
     );
     if (confirmed != true || !mounted) return;
     setState(() => _cancelling = true);
-    final ok = await context.read<TaskProvider>().cancelTask(t.id);
+    final ok = await context.read<TaskProvider>().cancelTask(t.id, hasHelper: true);
     if (!mounted) return;
     setState(() => _cancelling = false);
     if (ok) {

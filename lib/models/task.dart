@@ -385,10 +385,12 @@ class Task {
       dailyReleasesUsed: int.tryParse(
           (json['daily_releases_used'] ?? json['dailyReleasesUsed'] ?? json['dailyReleaseCount'] ?? 0).toString()
       ) ?? 0,
-      groceryItems: GroceryCatalog.parseGroceryItems(
-        json['grocery_items'] ?? json['groceryItems'],
-        json['description']?.toString(),
-      ),
+      groceryItems: Task.isGroceryCategory((json['category'] ?? '').toString())
+          ? GroceryCatalog.parseGroceryItems(
+              json['grocery_items'] ?? json['groceryItems'],
+              json['description']?.toString(),
+            )
+          : null,
     );
   }
 
@@ -402,8 +404,42 @@ class Task {
 
   /// True for categories under Repair (where service materials/parts are paid separately by the poster).
   static bool isRepairCategory(String categoryId) {
-    const repairCats = {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
-    return repairCats.contains(categoryId.toLowerCase());
+    const repairCats = {'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'};
+    return repairCats.contains(_normalizeCategoryKey(categoryId));
+  }
+
+  /// Current market visiting charge (fixed inspection & diagnosis fee) for repair child categories.
+  static double fixedVisitPriceForRepairCategory(String category) {
+    switch (_normalizeCategoryKey(category)) {
+      case 'electrician':
+      case 'plumbing':
+      case 'painting':
+        return 199.0;
+      case 'carpentry':
+        return 249.0;
+      case 'vehicle':
+        return 299.0;
+      default:
+        return 199.0;
+    }
+  }
+
+  /// Display title for the repair visiting fee.
+  static String repairVisitTitle(String category) {
+    switch (_normalizeCategoryKey(category)) {
+      case 'electrician':
+        return 'Electrician Visiting Fee';
+      case 'plumbing':
+        return 'Plumber Visiting Fee';
+      case 'carpentry':
+        return 'Carpenter Visiting Fee';
+      case 'painting':
+        return 'Painter Visiting Fee';
+      case 'vehicle':
+        return 'Mechanic Visiting Fee';
+      default:
+        return 'Repair Visiting Fee';
+    }
   }
 
   /// Whether this task is in the repair category hierarchy.
@@ -455,9 +491,15 @@ class Task {
   /// Per-task poster commission / platform fee rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
   double get posterCommissionRate => 0.20;
 
-  /// Poster platform fee & GST amount: 20% of budget.
-  /// Poster's platform fee (fixed ₹12 incl. GST for groceries; 20% for other categories).
-  double get posterFee => isGroceryCategory(category) ? 12.0 : (budget * posterCommissionRate);
+  /// Poster's platform fee:
+  /// - Groceries: fixed ₹12 incl. GST
+  /// - Repair categories: fixed ₹20 incl. GST
+  /// - All other categories: 20% of budget
+  double get posterFee {
+    if (isGroceryCategory(category)) return 12.0;
+    if (isRepairCategory(category)) return 20.0;
+    return budget * posterCommissionRate;
+  }
 
   /// Total base task value before helper commission: budget + service charge.
   double get totalTaskValue => budget + (serviceCharge ?? 0);
@@ -512,7 +554,11 @@ class Task {
 
   /// Minimum budget required for a given task category based on current market rates.
   static double minBudgetForCategory(String category, {String vehicle = 'bike'}) {
-    switch (_normalizeCategoryKey(category)) {
+    final cat = _normalizeCategoryKey(category);
+    if (isRepairCategory(cat)) {
+      return fixedVisitPriceForRepairCategory(cat);
+    }
+    switch (cat) {
       // 1. Engineering & Skilled Trades
       case 'electrician':
       case 'plumbing':
@@ -520,11 +566,8 @@ class Task {
       case 'carpentry':
       case 'vehicle':
         return 200.0;
-      case 'repair':
       case 'tech_support':
         return 250.0;
-      case 'painting':
-        return 500.0;
 
       // 2. Home & Household
       case 'laundry':
@@ -1556,6 +1599,16 @@ class Task {
     String? description,
   }) {
     final cat = _normalizeCategoryKey(category);
+    if (isRepairCategory(cat)) {
+      final visit = fixedVisitPriceForRepairCategory(cat);
+      return CategoryBudgetSuggestion(
+        minBudget: visit,
+        suggestedBudget: visit,
+        maxBudget: visit,
+        localityName: 'Fixed Visiting Fee',
+        localityTier: 'Doorstep Inspection',
+      );
+    }
     if (isFreelancerCategory(cat)) {
       if (freelancerMode != null) {
         final q = calculateFreelancerQuote(
@@ -2211,7 +2264,6 @@ class TaskCategory {
     TaskCategory(id: 'plumbing', label: 'Plumbing', icon: '🔧'),
     TaskCategory(id: 'carpentry', label: 'Carpentry', icon: '🛠️'),
     TaskCategory(id: 'painting', label: 'Painting', icon: '🎨'),
-    TaskCategory(id: 'repair', label: 'Repair', icon: '🔨'),
     TaskCategory(id: 'vehicle', label: 'Vehicle', icon: '🚘'),
     TaskCategory(id: 'tutoring', label: 'Tutoring', icon: '📚'),
     TaskCategory(id: 'freelancer', label: 'Freelancer', icon: '💼'),
@@ -2263,7 +2315,6 @@ class TaskCategory {
     'photography',
     'plumbing',
     'queue_standing',
-    'repair',
     'shopping',
     'tech_support',
     'tutoring',
@@ -2457,7 +2508,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Repair',
       icon: '🔧',
-      categoryIds: ['repair', 'electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
+      categoryIds: ['electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
     ),
     TaskCategoryGroup(
       label: 'Home & Lifestyle',

@@ -1185,10 +1185,9 @@ CATEGORY_MIN_PRICES = {
     'electrician': 150.0,
     'plumbing': 150.0,
     'carpentry': 200.0,
-    'repair': 250.0,
     'tech_support': 250.0,
     'tech-support': 250.0,
-    'painting': 500.0,
+    'painting': 150.0,
     'vehicle': 200.0,
 
     # Home & Household
@@ -1253,6 +1252,15 @@ CATEGORY_MIN_PRICES = {
 }
 
 
+REPAIR_FIXED_PRICES = {
+    'electrician': 199.0,
+    'plumbing': 199.0,
+    'painting': 199.0,
+    'carpentry': 249.0,
+    'vehicle': 299.0,
+}
+
+
 def get_min_price_for_category(category):
     if not category:
         return 100.0
@@ -1264,6 +1272,8 @@ def get_min_price_for_category(category):
     # Delivery/transport min handled above
     if cat_lower == 'moving':
         return 400.0
+    if cat_lower in REPAIR_FIXED_PRICES:
+        return REPAIR_FIXED_PRICES[cat_lower]
     return CATEGORY_MIN_PRICES.get(cat_lower, 100.0)
 
 
@@ -2995,7 +3005,11 @@ def create_task():
             price = float(data['price'])
             category = str(data.get('category', 'other')).lower()
             min_allowed = get_min_price_for_category(category)
-            if price < min_allowed or price > 50000:
+            if category in REPAIR_FIXED_PRICES:
+                if price < min_allowed:
+                    cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                    return jsonify({'success': False, 'message': f'Fixed visit price for {cat_label} is ₹{min_allowed:.0f}'}), 400
+            elif price < min_allowed or price > 50000:
                 cat_label = category.replace('_', ' ').replace('-', ' ').title()
                 return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
         except (ValueError, TypeError):
@@ -3839,7 +3853,11 @@ def update_task(task_id):
                 price = float(data['price'])
                 category = str(data.get('category', task.get('category', 'other'))).lower()
                 min_allowed = get_min_price_for_category(category)
-                if price < min_allowed or price > 50000:
+                if category in REPAIR_FIXED_PRICES:
+                    if price < min_allowed:
+                        cat_label = category.replace('_', ' ').replace('-', ' ').title()
+                        return jsonify({'success': False, 'message': f'Fixed visit price for {cat_label} is ₹{min_allowed:.0f}'}), 400
+                elif price < min_allowed or price > 50000:
                     cat_label = category.replace('_', ' ').replace('-', ' ').title()
                     return jsonify({'success': False, 'message': f'Minimum budget for {cat_label} is ₹{min_allowed:.0f} (max ₹50,000)'}), 400
             except (ValueError, TypeError):
@@ -3915,7 +3933,7 @@ def delete_task(task_id):
     """Delete a task (only poster can delete)"""
     try:
         with get_db() as (cursor, conn):
-            cursor.execute(f'SELECT posted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
+            cursor.execute(f'SELECT posted_by, accepted_by, status, title FROM tasks WHERE id = {PH}', (task_id,))
             task = cursor.fetchone()
 
             if not task:
@@ -3930,6 +3948,7 @@ def delete_task(task_id):
                 return jsonify({'success': False, 'message': f"Cannot delete task with status '{task['status']}'"}), 400
 
             task_title = task.get('title', '')
+            helper_id = task.get('accepted_by')
 
             # Clean up all FK references then delete the task
             _safe_delete_tasks(cursor, task_id)
@@ -3946,13 +3965,35 @@ def delete_task(task_id):
                 ''', (request.user_id, 'task_cancelled_confirmation',
                       'Task Cancelled \u2705',
                       f'Your task "{task_title}" has been cancelled and removed.',
-                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation'}), _now_del))
+                      'unread', _json_del.dumps({'type': 'task_cancelled_confirmation', 'task_id': str(task_id)}), _now_del))
+
+                if helper_id:
+                    cursor.execute(f'''
+                        INSERT INTO notifications (user_id, notification_type, title, message, status, data, created_at)
+                        VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
+                    ''', (helper_id, 'task_cancelled_by_poster',
+                          'Task Cancelled by Poster ⚠️',
+                          f'The poster has cancelled task "{task_title}" and removed it.',
+                          'unread', _json_del.dumps({'type': 'task_cancelled_by_poster', 'task_id': str(task_id)}), _now_del))
                 cursor.execute('RELEASE SAVEPOINT sp_del_notif')
             except Exception:
                 try: cursor.execute('ROLLBACK TO SAVEPOINT sp_del_notif')
                 except Exception: pass
 
         print(f"✅ Task {task_id} deleted by user {request.user_id}")
+
+        # FCM push to helper if assigned
+        if helper_id:
+            try:
+                send_fcm_to_user(
+                    helper_id,
+                    'Task Cancelled ⚠️',
+                    f'The poster has cancelled task "{task_title}".',
+                    data={'type': 'task_cancelled_by_poster', 'task_id': str(task_id)},
+                    channel='workmate4u_main',
+                )
+            except Exception as _fcm_h_err:
+                print(f'[FCM] \u274c delete_task helper notify failed: {_fcm_h_err}')
 
         # FCM push — confirm to poster (same pattern as task_posted)
         try:
@@ -4134,8 +4175,9 @@ def complete_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
+            _is_repair = str(task.get('category', '')).lower() in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
             _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
-            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
+            poster_fee = 12.0 if _is_grocery else (20.0 if _is_repair else (task_amount * _poster_commission_rate))
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4277,8 +4319,9 @@ def verify_task(task_id):
             _is_delivery = task.get('category', 'other') in _DELIVERY_CATS
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
+            _is_repair = str(task.get('category', '')).lower() in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
             _is_grocery = str(task.get('category', '')).lower() in {'groceries', 'grocery'}
-            poster_fee = 12.0 if _is_grocery else (task_amount * _poster_commission_rate)
+            poster_fee = 12.0 if _is_grocery else (20.0 if _is_repair else (task_amount * _poster_commission_rate))
             total_poster_cost = total_task_value + poster_fee
             helper_total_deduction = total_task_value * _commission_rate
             helper_net_receives = total_task_value - helper_total_deduction
@@ -4687,13 +4730,19 @@ def pay_helper(task_id):
             now = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
             # Commission rates:
-            # 20% helper commission and 20% poster platform fee & GST for all categories.
             _is_delivery = _category in _DELIVERY_CATS
+            _is_repair = _category in {'repair', 'electrician', 'plumbing', 'carpentry', 'vehicle', 'painting'}
+            _is_grocery = _category in {'groceries', 'grocery'}
             _commission_rate = 0.20
             _poster_commission_rate = 0.20
 
             helper_total_deduction = total_task_value * _commission_rate
-            poster_deduction = task_amount * _poster_commission_rate
+            if _is_grocery:
+                poster_deduction = 12.0
+            elif _is_repair:
+                poster_deduction = 20.0
+            else:
+                poster_deduction = task_amount * _poster_commission_rate
             total_poster_cost = total_task_value + poster_deduction
             
             print(f"\n💵 PAYMENT BREAKDOWN:")
@@ -4760,7 +4809,7 @@ def pay_helper(task_id):
                 ''', (
                     poster_wallet.get('id'), request.user_id, 'debit',
                     poster_deduction, poster_new_balance,
-                    f'Platform fee & GST (20%): ₹{poster_deduction:.2f}',
+                    f'Platform fee & GST: ₹{poster_deduction:.2f}' if (_is_grocery or _is_repair) else f'Platform fee & GST (20%): ₹{poster_deduction:.2f}',
                     f'task-platform-fee-{task_id}', task_id, now
                 ))
             
@@ -4854,7 +4903,7 @@ def pay_helper(task_id):
                 ''', (
                     company_wallet.get('id'), '1', 'commission',
                     poster_deduction, company_new_balance,
-                    f'Poster platform fee & GST ({_poster_commission_rate*100:.0f}%) from task #{task_id}: ₹{poster_deduction:.2f}',
+                    f'Poster platform fee & GST from task #{task_id}: ₹{poster_deduction:.2f}' if (_is_grocery or _is_repair) else f'Poster platform fee & GST ({_poster_commission_rate*100:.0f}%) from task #{task_id}: ₹{poster_deduction:.2f}',
                     f'task-poster-fee-{task_id}', task_id, now
                 ))
             

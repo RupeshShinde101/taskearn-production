@@ -153,3 +153,4 @@ class _TaskMapWatermarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+

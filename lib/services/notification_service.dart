@@ -472,6 +472,10 @@ class NotificationService {
   static final StreamController<Map<String, dynamic>> onTaskAccepted =
       StreamController.broadcast();
 
+  // Broadcast stream for foreground task cancelled events (helper redirection).
+  static final StreamController<Map<String, dynamic>> onTaskCancelled =
+      StreamController.broadcast();
+
   /// Holds the data from getInitialMessage() / getNotificationAppLaunchDetails()
   /// so it can be consumed AFTER the app widget has subscribed to [onNotificationTap].
   /// Using a static store prevents the race-condition where the initial message is
@@ -787,6 +791,20 @@ class NotificationService {
           });
         }
       }
+      // Notify the app when a task is cancelled by poster so helper is redirected immediately.
+      if (type == 'task_cancelled_by_poster' ||
+          type == 'task_cancelled' ||
+          type == 'poster_cancelled') {
+        final taskId = message.data['task_id']?.toString() ??
+            message.data['taskId']?.toString() ??
+            '';
+        onTaskCancelled.add({
+          'task_id': taskId,
+          'title': notification?.title ?? message.data['title'] ?? 'Poster Cancelled Task',
+          'body': notification?.body ?? message.data['body'] ?? 'The task poster has cancelled this task.',
+        });
+      }
+
       // Notify providers so the notification section auto-refreshes.
       onNewNotification?.call();
     });

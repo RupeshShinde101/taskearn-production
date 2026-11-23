@@ -131,6 +131,20 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> deleteSelected(Set<String> ids) async {
+    if (ids.isEmpty) return;
+    _notifications = _notifications.where((n) => !ids.contains(n.id)).toList();
+    _unreadCount = _notifications.where((n) => !n.isRead).length;
+    _locallyReadIds.removeAll(ids);
+    notifyListeners();
+
+    for (final id in ids) {
+      try {
+        await ApiService.delete('/notifications/$id');
+      } catch (_) {}
+    }
+  }
+
   Map<String, dynamic> _toJson(AppNotification n) => {
         'id': n.id,
         'title': n.title,

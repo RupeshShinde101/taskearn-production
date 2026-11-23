@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
+import '../screens/browse/browse_screen.dart';
 import '../widgets/app_exit_dialog.dart';
 
 /// Custom root back-button dispatcher that provides seamless back navigation
@@ -40,9 +41,17 @@ class AppBackButtonDispatcher extends RootBackButtonDispatcher {
     // 3. Inspect current route location
     final location = router.routerDelegate.currentConfiguration.uri.path;
 
-    // If on any tab other than Home (/browse, /my-tasks, /profile) -> redirect to Home
-    if (location.startsWith('/browse') ||
-        location.startsWith('/my-tasks') ||
+    // If on browse tab, allow category view back press to return to browse main cards view first
+    if (location.startsWith('/browse')) {
+      if (BrowseScreen.onBackOverride?.call() == true) {
+        return true;
+      }
+      router.go('/home');
+      return true;
+    }
+
+    // If on my-tasks or profile -> redirect to Home
+    if (location.startsWith('/my-tasks') ||
         location.startsWith('/profile')) {
       router.go('/home');
       return true;

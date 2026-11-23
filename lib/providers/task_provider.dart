@@ -274,6 +274,14 @@ class TaskProvider extends ChangeNotifier {
     } catch (_) {}
   }
 
+  void clearTaskFromCache(String id) {
+    _detailCache.remove(id);
+    _myAcceptedTasks.removeWhere((t) => t.id == id);
+    _myPostedTasks.removeWhere((t) => t.id == id);
+    _browseTasks.removeWhere((t) => t.id == id);
+    notifyListeners();
+  }
+
   Future<Task?> getTaskDetail(String id) async {
     if (id.isEmpty) return null;
 
@@ -295,6 +303,7 @@ class TaskProvider extends ChangeNotifier {
     }
 
     // For accepted/in-progress tasks always hit the network to get full poster info.
+    bool isTaskNotFound = false;
     for (final path in ['/tasks/$id/details', '/tasks/$id']) {
       try {
         final data = await ApiService.get(path);
@@ -399,9 +408,20 @@ class TaskProvider extends ChangeNotifier {
           _detailCache[id] = task;
           return task;
         }
+      } on ApiException catch (e) {
+        if (e.statusCode == 404 || e.message.toLowerCase().contains('not found')) {
+          isTaskNotFound = true;
+        }
       } catch (_) {
         // try next endpoint
       }
+    }
+
+    // If the server confirmed the task does not exist (404), clean up and return null
+    // so the UI can detect that the task was cancelled/deleted by the poster.
+    if (isTaskNotFound) {
+      clearTaskFromCache(id);
+      return null;
     }
 
     // Fallback: return whatever we have in cache.
@@ -578,16 +598,30 @@ class TaskProvider extends ChangeNotifier {
   /// For accepted tasks (poster cancels after helper accepted): POST /tasks/:id/poster-cancel
   Future<bool> cancelTask(String taskId, {bool hasHelper = false}) async {
     try {
-      if (hasHelper) {
-        await ApiService.post('/tasks/$taskId/poster-cancel');
+      final cached = _findCached(taskId);
+      final reallyHasHelper = hasHelper ||
+          (cached != null &&
+              (cached.helperId != null ||
+                  cached.status == 'accepted' ||
+                  cached.status == 'in_progress'));
+      if (reallyHasHelper) {
+        try {
+          await ApiService.post('/tasks/$taskId/poster-cancel');
+        } catch (_) {
+          await ApiService.delete('/tasks/$taskId');
+        }
       } else {
         await ApiService.delete('/tasks/$taskId');
       }
-      _myPostedTasks.removeWhere((t) => t.id == taskId);
-      _browseTasks.removeWhere((t) => t.id == taskId);
-      notifyListeners();
+      clearTaskFromCache(taskId);
       return true;
     } catch (e) {
+      // If error, try delete as last resort
+      try {
+        await ApiService.delete('/tasks/$taskId');
+        clearTaskFromCache(taskId);
+        return true;
+      } catch (_) {}
       _error = e.toString();
       notifyListeners();
       return false;

@@ -944,14 +944,16 @@ class _EditTaskScreenState extends State<EditTaskScreen> {
                   final isDelivery = _isDelivery;
                   final charge = widget.task.serviceCharge ??
                       (isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0);
-                  final posterFee = budget * 0.20;
+                  final isGrocery = Task.isGroceryCategory(_selectedCategory);
+                  final isRepair = Task.isRepairCategory(_selectedCategory);
+                  final posterFee = isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
                   final total = budget + charge + posterFee;
                   return TaskPriceBreakdownCard(
                     budget: budget,
                     serviceCharge: charge,
                     posterFee: posterFee,
                     totalCost: total,
-                    isRepair: Task.isRepairCategory(_selectedCategory),
+                    isRepair: isRepair,
                     distanceKm: _calculatedDistanceKm,
                     category: _selectedCategory,
                     vehicle: _deliveryVehicle,

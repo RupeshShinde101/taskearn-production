@@ -29,6 +29,13 @@ class User {
   final String? physicalVerificationStatus; // 'none' | 'pending' | 'verified' | 'rejected'
   final String? vehicleVerificationStatus; // 'none' | 'pending' | 'verified' | 'rejected'
 
+  final String? kycFlagReason;
+  final DateTime? kycRejectedAt;
+  final String? physicalVerificationRejectReason;
+  final DateTime? physicalVerificationRejectedAt;
+  final String? vehicleVerificationRejectReason;
+  final DateTime? vehicleVerificationRejectedAt;
+
   User({
     required this.id,
     required this.name,
@@ -63,13 +70,6 @@ class User {
     this.vehicleVerificationRejectReason,
     this.vehicleVerificationRejectedAt,
   });
-
-  final String? kycFlagReason;
-  final DateTime? kycRejectedAt;
-  final String? physicalVerificationRejectReason;
-  final DateTime? physicalVerificationRejectedAt;
-  final String? vehicleVerificationRejectReason;
-  final DateTime? vehicleVerificationRejectedAt;
 
   bool get isConfirmedUnderage => dob != null && !isEligibleAdultDob(dob!);
 
@@ -124,23 +124,15 @@ class User {
       kycFlagReason: json['kyc_flag_reason']?.toString() ?? json['kycFlagReason']?.toString(),
       kycRejectedAt: json['kyc_rejected_at'] != null
           ? DateTime.tryParse(json['kyc_rejected_at'].toString())
-          : (json['kycRejectedAt'] != null
-              ? DateTime.tryParse(json['kycRejectedAt'].toString())
-              : null),
-      physicalVerificationRejectReason: json['physical_verification_reject_reason']?.toString() ??
-          json['physicalVerificationRejectReason']?.toString(),
+          : null,
+      physicalVerificationRejectReason: json['physical_verification_reject_reason']?.toString() ?? json['physicalVerificationRejectReason']?.toString(),
       physicalVerificationRejectedAt: json['physical_verification_rejected_at'] != null
           ? DateTime.tryParse(json['physical_verification_rejected_at'].toString())
-          : (json['physicalVerificationRejectedAt'] != null
-              ? DateTime.tryParse(json['physicalVerificationRejectedAt'].toString())
-              : null),
-      vehicleVerificationRejectReason: json['vehicle_verification_reject_reason']?.toString() ??
-          json['vehicleVerificationRejectReason']?.toString(),
+          : null,
+      vehicleVerificationRejectReason: json['vehicle_verification_reject_reason']?.toString() ?? json['vehicleVerificationRejectReason']?.toString(),
       vehicleVerificationRejectedAt: json['vehicle_verification_rejected_at'] != null
           ? DateTime.tryParse(json['vehicle_verification_rejected_at'].toString())
-          : (json['vehicleVerificationRejectedAt'] != null
-              ? DateTime.tryParse(json['vehicleVerificationRejectedAt'].toString())
-              : null),
+          : null,
     );
   }
 
@@ -286,7 +278,7 @@ class User {
   }
 
   /// Returns a copy of this User with only the avatar replaced.
-  /// Preserves ALL fields (unlike toJsonâ†’fromJson which loses rank etc.).
+  /// Preserves ALL fields (unlike toJson→fromJson which loses rank etc.).
   User copyWithAvatar(String? newAvatar) => User(
         id: id,
         name: name,
@@ -313,5 +305,12 @@ class User {
         authProvider: authProvider,
         profileMode: profileMode,
         physicalVerificationStatus: physicalVerificationStatus,
+        vehicleVerificationStatus: vehicleVerificationStatus,
+        kycFlagReason: kycFlagReason,
+        kycRejectedAt: kycRejectedAt,
+        physicalVerificationRejectReason: physicalVerificationRejectReason,
+        physicalVerificationRejectedAt: physicalVerificationRejectedAt,
+        vehicleVerificationRejectReason: vehicleVerificationRejectReason,
+        vehicleVerificationRejectedAt: vehicleVerificationRejectedAt,
       );
 }

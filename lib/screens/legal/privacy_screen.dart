@@ -31,7 +31,7 @@ class PrivacyScreen extends StatelessWidget {
 
             _section(
               '1. Introduction & Compliance Framework',
-              'Workmate4u ("we", "us", "our") respects your privacy and processes personal data strictly in accordance with Indian law. This Privacy Policy explains what information we collect across the Workmate4u mobile app and website (https://workmate4u.com), why we process it, whom we share it with, how long we retain it, and your legal rights.\n\nThis Privacy Policy is published in compliance with Section 43A and Section 79 of the Information Technology Act, 2000, the IT (Reasonable Security Practices and Procedures and Sensitive Personal Data or Information) Rules, 2011 ("SPDI Rules"), the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, and India\'s Digital Personal Data Protection Act, 2023 ("DPDP Act, 2023").',
+              'WORKMATE4U PRIVATE LIMITED ("Company", "Workmate4u", "we", "us", "our") respects your privacy and processes personal data strictly in accordance with Indian law. This Privacy Policy explains what information we collect across the Workmate4u mobile app and website (https://workmate4u.com), why we process it, whom we share it with, how long we retain it, and your legal rights.\n\nThis Privacy Policy is published in compliance with Section 43A and Section 79 of the Information Technology Act, 2000, the IT (Reasonable Security Practices and Procedures and Sensitive Personal Data or Information) Rules, 2011 ("SPDI Rules"), the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, and India\'s Digital Personal Data Protection Act, 2023 ("DPDP Act, 2023"). WORKMATE4U PRIVATE LIMITED operates strictly as an intermediary technology platform; violating platform data guidelines, stalking, harassment, or illegal data disclosure by any user leads to immediate permanent ban and criminal prosecution under Indian law.',
             ),
 
             _infoBox(
@@ -39,7 +39,7 @@ class PrivacyScreen extends StatelessWidget {
             ),
 
             _section('2. Data Fiduciary & Grievance Contact', null, bullets: [
-              'Data Fiduciary / Operator: Workmate4u, India',
+              'Data Fiduciary / Operator: WORKMATE4U PRIVATE LIMITED, India',
               'Website: https://workmate4u.com',
               'Privacy & Grievance Officer: Workmate4u Grievance Cell — info@workmate4u.com',
             ]),

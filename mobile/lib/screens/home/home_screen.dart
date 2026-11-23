@@ -409,6 +409,65 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
             actions: [
+              // Profile mode indicator (Poster Profile vs Helper Profile)
+              GestureDetector(
+                onTap: () => showProfileModeSwitchDialog(
+                  context,
+                  targetMode: auth.isPosterMode ? 'helper' : 'poster',
+                ),
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: auth.isPosterMode
+                        ? const Color(0xFFEFF6FF)
+                        : const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: auth.isPosterMode
+                          ? const Color(0xFFBFDBFE)
+                          : const Color(0xFFA7F3D0),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (auth.isPosterMode
+                                ? const Color(0xFF2563EB)
+                                : const Color(0xFF059669))
+                            .withValues(alpha: 0.08),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        auth.isPosterMode
+                            ? Icons.campaign_rounded
+                            : Icons.handyman_rounded,
+                        size: 13,
+                        color: auth.isPosterMode
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFF059669),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        auth.isPosterMode ? 'Poster' : 'Helper',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: auth.isPosterMode
+                              ? const Color(0xFF1E40AF)
+                              : const Color(0xFF065F46),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
               GestureDetector(
                 onTap: () => context.push('/wallet'),
                 child: Container(
@@ -508,11 +567,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           SliverToBoxAdapter(child: _buildCategories()),
           SliverToBoxAdapter(child: _buildTrustedExpertsBanner()),
-          if (_suggestedTasks.isNotEmpty)
-            SliverToBoxAdapter(child: _buildAISuggested()),
-          if (_expiringTasks.isNotEmpty)
-            SliverToBoxAdapter(child: _buildExpiringSoon()),
-          SliverToBoxAdapter(child: _buildLiveNearbyTasksFeed()),
+          if (!auth.isPosterMode) ...[
+            if (_suggestedTasks.isNotEmpty)
+              SliverToBoxAdapter(child: _buildAISuggested()),
+            if (_expiringTasks.isNotEmpty)
+              SliverToBoxAdapter(child: _buildExpiringSoon()),
+            SliverToBoxAdapter(child: _buildLiveNearbyTasksFeed()),
+          ],
           SliverToBoxAdapter(
             child: SizedBox(
               height: MediaQuery.of(context).padding.bottom + 16,
@@ -882,66 +943,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // ── SEARCH ────────────────────────────────────────────────────────────────
-  Widget _buildSearch() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5EDF7)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1B4073).withValues(alpha: 0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          const SizedBox(width: 14),
-          const Icon(Icons.search_rounded, color: Color(0xFF71819A)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => context.go('/browse'),
-              child: const AbsorbPointer(
-                child: TextField(
-                  enabled: false,
-                  decoration: InputDecoration(
-                    hintText: 'Search tasks, categories...',
-                    border: InputBorder.none,
-                    hintStyle:
-                        TextStyle(color: Color(0xFF94A3B8), fontSize: 14),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          GestureDetector(
-            onTap: () => context.go('/browse'),
-            child: Container(
-              margin: const EdgeInsets.all(6),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 18, vertical: 10),
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
-                ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Text('Search',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ── CATEGORIES ────────────────────────────────────────────────────────────
   Widget _buildCategories() {
     const cats = <(String, String, Color)>[
@@ -962,33 +963,107 @@ class _HomeScreenState extends State<HomeScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Popular Task Categories for You',
-                style: TextStyle(
-                  fontSize: 16.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF102A56),
-                  letterSpacing: -0.3,
-                ),
+          // Unique, noticeable styled header banner
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFF8FAFC), Color(0xFFEFF6FF)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-              GestureDetector(
-                onTap: () => context.go('/browse'),
-                child: const Text(
-                  'See all',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF0B63F6),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: const Color(0xFFDBEAFE),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF2563EB).withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF2563EB), Color(0xFF4F46E5)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text(
+                        'Popular Task Categories for You',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF0F172A),
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Tap any category to view available tasks',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: () => context.go('/browse'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'See all',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0B63F6),
+                          ),
+                        ),
+                        SizedBox(width: 2),
+                        Icon(
+                          Icons.arrow_forward_ios_rounded,
+                          size: 11,
+                          color: Color(0xFF0B63F6),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 10),
-          _buildSearch(),
           const SizedBox(height: 14),
           Row(children: [
             _catTile(cats[0]), const SizedBox(width: 10),
@@ -1017,6 +1092,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: GestureDetector(
         onTap: () {
           BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
+          BrowseScreen.jumpToSubCategory = cat.$2.toLowerCase();
           context.go('/browse');
         },
         child: AspectRatio(

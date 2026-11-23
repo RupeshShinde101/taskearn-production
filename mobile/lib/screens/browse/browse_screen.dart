@@ -58,7 +58,7 @@ class BrowseCategoryConfig {
       ],
     ),
     BrowseCategoryConfig(
-      label: 'Home & Lifestyle',
+      label: 'Home',
       subtitle: 'Painting, cleaning, home help',
       categoryIds: [
         'cleaning',
@@ -76,14 +76,13 @@ class BrowseCategoryConfig {
       ],
     ),
     BrowseCategoryConfig(
-      label: 'Shopping & Errands',
+      label: 'Grocery & Shopping',
       subtitle: 'Purchase, pickup, daily errands',
       categoryIds: [
         'shopping',
         'groceries',
         'errands',
         'queue_standing',
-        'event_help',
       ],
       imageAsset: 'assets/images/cat_3d_shopping.png',
       // Subtle, soft lavender purple
@@ -94,13 +93,14 @@ class BrowseCategoryConfig {
     ),
     BrowseCategoryConfig(
       label: 'Professional',
-      subtitle: 'IT, design, writing, accounting',
+      subtitle: 'IT, design, writing, events',
       categoryIds: [
         'freelancer',
         'data_entry',
         'photography',
         'tutoring',
         'painting',
+        'event_help',
       ],
       imageAsset: 'assets/images/cat_3d_professional.png',
       // Subtle, soft ice cyan
@@ -139,6 +139,9 @@ class BrowseScreen extends StatefulWidget {
   /// browse screen can pre-select and filter by that category on arrival.
   static String? jumpToCategory;
 
+  /// Specific subcategory requested from home screen tile (e.g. 'electrician', 'cooking', 'groceries').
+  static String? jumpToSubCategory;
+
   /// Set before navigating to show tasks sorted by soonest-expiring first.
   static bool jumpToExpirySoon = false;
 
@@ -165,6 +168,8 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
   // Selected category when user taps on a category card to enter it
   BrowseCategoryConfig? _selectedCategoryConfig;
+  // Specific subcategory filter when arriving from a specific home screen tile
+  String? _selectedSubCategory;
 
   // User's current GPS location for radius filtering
   double? _userLat;
@@ -173,6 +178,13 @@ class _BrowseScreenState extends State<BrowseScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    // Consume subcategory signal if present
+    final subCat = BrowseScreen.jumpToSubCategory;
+    if (subCat != null) {
+      BrowseScreen.jumpToSubCategory = null;
+      _selectedSubCategory = subCat.toLowerCase();
+    }
+
     // Consume the category signal set by the home screen before navigating.
     final cat = BrowseScreen.jumpToCategory;
     if (cat != null) {
@@ -190,6 +202,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
         if (targetConfig != null) {
           _selectedCategoryConfig = targetConfig;
           _selectedCategory = 'all';
+          _selectedSubCategory ??= catLower;
         } else {
           _selectedCategory = cat;
         }
@@ -234,7 +247,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
   bool _handleBackPress() {
     if (_selectedCategoryConfig != null) {
-      setState(() => _selectedCategoryConfig = null);
+      setState(() {
+        _selectedCategoryConfig = null;
+        _selectedSubCategory = null;
+      });
       return true;
     }
     return false;
@@ -313,7 +329,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
       canPop: _selectedCategoryConfig == null,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _selectedCategoryConfig != null) {
-          setState(() => _selectedCategoryConfig = null);
+          setState(() {
+            _selectedCategoryConfig = null;
+            _selectedSubCategory = null;
+          });
         }
       },
       child: TaskScreenWatermark(
@@ -606,7 +625,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
         child: InkWell(
           borderRadius: BorderRadius.circular(22),
           onTap: () {
-            setState(() => _selectedCategoryConfig = config);
+            setState(() {
+              _selectedCategoryConfig = config;
+              _selectedSubCategory = null;
+            });
           },
           child: Stack(
             children: [
@@ -680,10 +702,37 @@ class _BrowseScreenState extends State<BrowseScreen> {
     );
   }
 
+  static bool _matchesSubCategory(Task task, String subCategory) {
+    final tCat = task.category.trim().toLowerCase();
+    final target = subCategory.trim().toLowerCase();
+    if (target.isEmpty || target == 'all') return true;
+    if (target == 'repair') return true;
+    if (tCat == target) return true;
+    if (target == 'groceries' && (tCat == 'groceries' || tCat == 'grocery')) return true;
+    if (target == 'shopping' && tCat == 'shopping') return true;
+    if (target == 'delivery' && tCat == 'delivery') return true;
+    if (tCat.contains(target) || target.contains(tCat)) return true;
+    return false;
+  }
+
+  static String _formatSubCatName(String name) {
+    if (name.isEmpty) return name;
+    return '${name[0].toUpperCase()}${name.substring(1)}';
+  }
+
   /// Detailed category view shown when user taps and enters into a category.
   /// Shows category title, subtitle, task count badge, and full task list.
   Widget _buildCategoryDetailView(
       BrowseCategoryConfig config, List<Task> catTasks) {
+    final isSubCatActive = _selectedSubCategory != null &&
+        _selectedSubCategory != 'repair' &&
+        _selectedSubCategory != 'all' &&
+        _selectedSubCategory!.toLowerCase() != config.label.toLowerCase();
+
+    final List<Task> effectiveTasks = isSubCatActive
+        ? catTasks.where((t) => _matchesSubCategory(t, _selectedSubCategory!)).toList()
+        : catTasks;
+
     return Column(
       children: [
         // Navigation Bar with Back Button
@@ -692,7 +741,10 @@ class _BrowseScreenState extends State<BrowseScreen> {
           child: Row(
             children: [
               GestureDetector(
-                onTap: () => setState(() => _selectedCategoryConfig = null),
+                onTap: () => setState(() {
+                  _selectedCategoryConfig = null;
+                  _selectedSubCategory = null;
+                }),
                 child: Container(
                   width: 42,
                   height: 42,
@@ -724,7 +776,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  config.label,
+                  isSubCatActive
+                      ? '${_formatSubCatName(_selectedSubCategory!)} Tasks'
+                      : config.label,
                   style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
@@ -791,41 +845,85 @@ class _BrowseScreenState extends State<BrowseScreen> {
                             fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
                           ),
                         ),
-                        const SizedBox(height: 12),
-                        // Badge showing count of available tasks
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(0xFFBFDBFE),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.layers_rounded,
-                                color: Color(0xFF2563EB),
-                                size: 14,
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 6,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // Badge showing count of available tasks
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 5,
                               ),
-                              const SizedBox(width: 5),
-                              Text(
-                                '${catTasks.length} ${catTasks.length == 1 ? 'task' : 'tasks'} available',
-                                style: const TextStyle(
-                                  color: Color(0xFF2563EB),
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFBFDBFE),
+                                  width: 1,
                                 ),
                               ),
-                            ],
-                          ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.layers_rounded,
+                                    color: Color(0xFF2563EB),
+                                    size: 14,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    '${effectiveTasks.length} ${effectiveTasks.length == 1 ? 'task' : 'tasks'} available',
+                                    style: const TextStyle(
+                                      color: Color(0xFF2563EB),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (isSubCatActive)
+                              GestureDetector(
+                                onTap: () => setState(() => _selectedSubCategory = null),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: const Color(0xFFFDE68A),
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        'Only ${_formatSubCatName(_selectedSubCategory!)}',
+                                        style: const TextStyle(
+                                          color: Color(0xFFB45309),
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 4),
+                                      const Icon(
+                                        Icons.close_rounded,
+                                        size: 13,
+                                        color: Color(0xFFB45309),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
@@ -840,7 +938,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
         // List of Tasks in this category
         Expanded(
-          child: catTasks.isEmpty
+          child: effectiveTasks.isEmpty
               ? Center(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -851,10 +949,12 @@ class _BrowseScreenState extends State<BrowseScreen> {
                           type: EmptyTasksClipboardType.browse,
                         ),
                         const SizedBox(height: 16),
-                        const Text(
-                          'No tasks in this category',
+                        Text(
+                          isSubCatActive
+                              ? 'No ${_formatSubCatName(_selectedSubCategory!)} tasks right now'
+                              : 'No tasks in this category',
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF0F172A),
@@ -863,7 +963,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          'New tasks posted by clients for ${config.label.toLowerCase()} will appear here.',
+                          isSubCatActive
+                              ? 'Tap "Only ${_formatSubCatName(_selectedSubCategory!)}" above to view all ${config.label} tasks or post one below.'
+                              : 'New tasks posted by clients for ${config.label.toLowerCase()} will appear here.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 13.5,
@@ -909,11 +1011,11 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       16,
                       MediaQuery.of(context).viewPadding.bottom + 85,
                     ),
-                    itemCount: catTasks.length,
+                    itemCount: effectiveTasks.length,
                     itemBuilder: (_, i) => TaskCard(
-                      task: catTasks[i],
+                      task: effectiveTasks[i],
                       onTap: () =>
-                          context.push('/task/${catTasks[i].id}'),
+                          context.push('/task/${effectiveTasks[i].id}'),
                     ),
                   ),
                 ),

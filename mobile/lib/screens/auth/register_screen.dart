@@ -173,57 +173,83 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
+                          horizontal: 14, vertical: 12),
                       decoration: BoxDecoration(
                         color: const Color(0xFFEEF2FF),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(12),
                         border: Border.all(
                             color: const Color(0xFF6366F1)
                                 .withValues(alpha: 0.25)),
                       ),
-                      child: Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Text(
-                            '18+ Adults Only (India): You must be at least 18 years old. By continuing with Google, you confirm your age (verified next step) and agree to our ',
+                            '18+ ADULTS ONLY • WORKMATE4U PRIVATE LIMITED',
                             style: TextStyle(
-                              fontSize: 11.5,
-                              color: Color(0xFF475569),
-                              height: 1.45,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF4F46E5),
+                              letterSpacing: 0.5,
                             ),
                           ),
-                          GestureDetector(
-                            onTap: () => context.push('/terms'),
-                            child: const Text(
-                              'Terms & Conditions',
-                              style: TextStyle(
-                                color: Color(0xFF4F46E5),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11.5,
-                                decoration: TextDecoration.underline,
+                          const SizedBox(height: 4),
+                          Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              const Text(
+                                'By continuing, you confirm you are 18+ and agree to the ',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF475569),
+                                  height: 1.45,
+                                ),
                               ),
-                            ),
-                          ),
-                          const Text(
-                            ' and ',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Color(0xFF475569),
-                              height: 1.45,
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => context.push('/privacy'),
-                            child: const Text(
-                              'Privacy Policy',
-                              style: TextStyle(
-                                color: Color(0xFF4F46E5),
-                                fontWeight: FontWeight.w700,
-                                fontSize: 11.5,
-                                decoration: TextDecoration.underline,
+                              GestureDetector(
+                                onTap: () => context.push('/terms'),
+                                child: const Text(
+                                  'Terms & Conditions',
+                                  style: TextStyle(
+                                    color: Color(0xFF4F46E5),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11.5,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const Text(
+                                ' and ',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF475569),
+                                  height: 1.45,
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () => context.push('/privacy'),
+                                child: const Text(
+                                  'Privacy Policy',
+                                  style: TextStyle(
+                                    color: Color(0xFF4F46E5),
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 11.5,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                ),
+                              ),
+                              const Text(
+                                '. WORKMATE4U PRIVATE LIMITED operates strictly as an intermediary platform (IT Act s.79); rule violations result in permanent ban and legal prosecution.',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: Color(0xFF475569),
+                                  height: 1.45,
+                                ),
+                              ),
+                            ],
                           ),
+                        ],
+                      ),
+                    ),
                           const Text(
                             '.',
                             style: TextStyle(
@@ -497,8 +523,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       const Text(
                                         'I confirm I am 18+ years old and agree to the ',
                                         style: TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFF64748B)),
+                                            fontSize: 12.5,
+                                            color: Color(0xFF475569)),
                                       ),
                                       GestureDetector(
                                         onTap: () => context.push('/terms'),
@@ -507,10 +533,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           style: TextStyle(
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
-                                            fontSize: 13,
+                                            fontSize: 12.5,
                                             decoration: TextDecoration.underline,
                                           ),
                                         ),
+                                      ),
+                                      const Text(
+                                        ' of WORKMATE4U PRIVATE LIMITED. I understand that WORKMATE4U is strictly an intermediary platform, is not liable for helper conduct, fraud, or damage, and rule violations cause an immediate permanent ban and legal action.',
+                                        style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: Color(0xFF475569)),
                                       ),
                                     ],
                                   ),
@@ -555,8 +587,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                       const Text(
                                         'I agree to the ',
                                         style: TextStyle(
-                                            fontSize: 13,
-                                            color: Color(0xFF64748B)),
+                                            fontSize: 12.5,
+                                            color: Color(0xFF475569)),
                                       ),
                                       GestureDetector(
                                         onTap: () => context.push('/privacy'),
@@ -565,10 +597,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           style: TextStyle(
                                             color: Color(0xFF6366F1),
                                             fontWeight: FontWeight.w700,
-                                            fontSize: 13,
+                                            fontSize: 12.5,
                                             decoration: TextDecoration.underline,
                                           ),
                                         ),
+                                      ),
+                                      const Text(
+                                        ' of WORKMATE4U PRIVATE LIMITED and consent to lawful data processing under India\'s DPDP Act, 2023.',
+                                        style: TextStyle(
+                                            fontSize: 12.5,
+                                            color: Color(0xFF475569)),
                                       ),
                                     ],
                                   ),

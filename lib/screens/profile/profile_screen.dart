@@ -785,7 +785,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(
                     icon: Icons.description_outlined,
-                    title: 'Terms of Service & Conditions',
+                    title: 'Terms of Service',
                     onTap: () => context.push('/terms'),
                   ),
                 ],
@@ -3222,7 +3222,7 @@ class _MenuItem extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: [
-                    Flexible(
+                    Expanded(
                       child: Text(
                         title,
                         style: const TextStyle(
@@ -3230,6 +3230,7 @@ class _MenuItem extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           fontSize: 14.5,
                         ),
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),

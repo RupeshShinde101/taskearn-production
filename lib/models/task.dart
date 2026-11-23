@@ -2511,7 +2511,7 @@ class TaskCategoryGroup {
       categoryIds: ['electrician', 'plumbing', 'carpentry', 'painting', 'vehicle'],
     ),
     TaskCategoryGroup(
-      label: 'Home & Lifestyle',
+      label: 'Home',
       icon: '🏠',
       categoryIds: ['cleaning', 'household', 'cooking', 'laundry', 'gardening', 'beauty'],
     ),
@@ -2521,14 +2521,14 @@ class TaskCategoryGroup {
       categoryIds: ['delivery', 'moving'],
     ),
     TaskCategoryGroup(
-      label: 'Shopping & Errands',
+      label: 'Grocery & Shopping',
       icon: '🛒',
-      categoryIds: ['shopping', 'groceries', 'errands', 'queue_standing', 'event_help'],
+      categoryIds: ['shopping', 'groceries', 'errands', 'queue_standing'],
     ),
     TaskCategoryGroup(
       label: 'Professional',
       icon: '💼',
-      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'drawing', 'tech_support'],
+      categoryIds: ['freelancer', 'data_entry', 'photography', 'tutoring', 'drawing', 'tech_support', 'event_help'],
     ),
     TaskCategoryGroup(
       label: 'Care Services',

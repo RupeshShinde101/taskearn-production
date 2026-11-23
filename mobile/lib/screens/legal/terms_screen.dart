@@ -23,7 +23,7 @@ class TermsScreen extends StatelessWidget {
           children: [
             _header(
               'Terms of Service & Conditions',
-              'Binding Legal Agreement governing all use of Workmate4u in India.',
+              'Binding Legal Agreement governing all use of WORKMATE4U PRIVATE LIMITED in India.',
               'Effective Date: $kLegalEffectiveDate  •  Version: $kTermsVersion',
             ),
             const SizedBox(height: 16),
@@ -35,7 +35,7 @@ class TermsScreen extends StatelessWidget {
 
             _section(
               '1. Acceptance of Terms',
-              'By downloading, accessing, registering on, or using the Workmate4u mobile application or website at https://workmate4u.com (collectively, the "Platform" or "Service"), you ("User", "you") agree to be legally bound by these Terms of Service and Terms & Conditions ("Terms") together with our Privacy Policy.\n\nThese Terms form an enforceable electronic contract under the Information Technology Act, 2000 between you and Workmate4u ("Workmate4u", "we", "us", "our"). They apply equally whether you browse, act as a Task Poster ("Poster Mode"), act as a Service Helper ("Helper Mode"), or submit verification or payment details. If you do not agree, stop using and uninstall the Platform immediately.',
+              'By downloading, accessing, registering on, or using the Workmate4u mobile application or website at https://workmate4u.com (collectively, the "Platform" or "Service"), you ("User", "you") agree to be legally bound by these Terms of Service and Terms & Conditions ("Terms") together with our Privacy Policy.\n\nThese Terms form an enforceable electronic contract under the Information Technology Act, 2000 between you and WORKMATE4U PRIVATE LIMITED ("Company", "Workmate4u", "we", "us", "our"). They apply equally whether you browse, act as a Task Poster ("Poster Mode"), act as a Service Helper ("Helper Mode"), or submit verification or payment details. If you do not agree, stop using and uninstall the Platform immediately.',
             ),
 
             _section(
@@ -72,31 +72,44 @@ class TermsScreen extends StatelessWidget {
             ]),
 
             _section(
-              '4. Legal Role — Pure Technology Intermediary & Non-Employment',
-              'Workmate4u operates strictly as a technology marketplace enabling dual-mode adult users to connect:',
+              '4. Legal Role — Pure Technology Intermediary & Total Non-Liability for Helper Conduct',
+              'WORKMATE4U PRIVATE LIMITED operates strictly as a neutral technology marketplace intermediary under Section 79 of the Information Technology Act, 2000, connecting independent adult users:',
               bullets: [
                 'Poster Mode: Adult Users posting lawful tasks and paying for verified completion;',
-                'Helper Mode: Adult Users configuring "My Skills" (strictly for Helper discovery and automated local alerts within ~10 km) to accept and execute tasks;',
-                'Automated Suggestions & Ranks: AI-suggested task matching, distance filters, Live Nearby feeds, and reputation tiers (New, Bronze, Silver, Gold, Platinum, Elite) are automated informational tools only — NOT endorsements, warranties, or guarantees.',
+                'Helper Mode: Adult Users configuring "My Skills" to discover and accept local tasks as independent self-employed freelancers;',
+                'No Employer-Employee / Agency Relationship: Helpers are NOT employees, servants, agents, franchisees, or partners of WORKMATE4U PRIVATE LIMITED under any Indian labour or employment statutes (including Code on Wages, 2019, Contract Labour Act, 1970, ESI Act, 1948, or EPF Act, 1952). Helpers control their own schedule, routes, tools, and work methods;',
+                'Absolute Non-Liability for Helper Conduct, Fraud & Offences: WORKMATE4U PRIVATE LIMITED is NOT liable or responsible under any circumstances if any helper commits fraud, misbehaviour, verbal or physical abuse, assault, theft, extortion, property damage, traffic violations, or illegal acts. Any helper who engages in wrongful, fraudulent, or criminal conduct acts purely in their own individual personal capacity and bears 100% direct civil and criminal liability under Indian law (including the Bharatiya Nyaya Sanhita, 2023 / Indian Penal Code);',
+                'No Guarantee of Conduct or Performance: Ratings, badges, tiers, and AI suggestions are automated informational aids only — NOT warranties or endorsements of character, competency, or trustworthiness.',
               ],
             ),
             _infoBox(
-              'IT ACT SECTION 79 SAFE HARBOUR & NON-EMPLOYMENT DISCLAIMER: Workmate4u acts solely as an online "intermediary" under Section 2(1)(w) and Section 79 of the Information Technology Act, 2000 and the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021. Workmate4u is NOT the employer, principal employer, contractor, agent, joint venturer, insurer, or custodian of any Helper or Poster under the Code on Wages, 2019, Industrial Relations Code, EPF Act, 1952, ESI Act, 1948, Employees\' Compensation Act, 1923, or Contract Labour (Regulation and Abolition) Act, 1970. Every Helper operates strictly as an independent self-employed service provider controlling their own tools, schedule, routes, and task selection.',
+              'IT ACT SECTION 79 SAFE HARBOUR & INTERMEDIARY IMMUNITY: Under Section 2(1)(w) and Section 79 of the Information Technology Act, 2000 and the IT (Intermediary Guidelines and Digital Media Ethics Code) Rules, 2021, WORKMATE4U PRIVATE LIMITED is an online intermediary exempt from liability for third-party user content, actions, service failures, or physical interactions. WORKMATE4U PRIVATE LIMITED does not supervise, direct, or insure on-site task performance.',
             ),
 
-            _section('5. Task Categories, Pricing, Pass-Through Costs & Task Rules', null, subsections: [
+            _section('5. Task Categories, Transit Risks, Pricing & Category Disclaimers', null, subsections: [
               const _SubSection(
                 '5.1 Category Minimums, Distance Rates & Freelancer Quotes',
                 null,
                 bullets: [
                   'Delivery, Pickup, Transport & Moving: Minimum quotes scale dynamically by vehicle and route/Haversine distance — e.g., Bike Delivery (₹12/km, min ₹24), Rikshaw Delivery / Auto Pickup (₹18/km, min ₹30), Transport (₹18/km, min ₹50), and Moving & Packing (₹400 base + ₹35/km). Road tolls, parking, and statutory levies are excluded unless expressly included.',
-                  'Home, Care, Errands & Local Services: Subject to dynamic category-based minimums (starting from ₹100 for Groceries/Laundry/Other up to ₹1,500 for Photography) and platform budget caps shown before posting.',
+                  'Home, Care, Errands & Local Services: Subject to dynamic category-based minimums (starting from ₹50 for Groceries/Errands up to ₹1,500 for Photography) and platform budget caps shown before posting.',
                   'Freelancer & Digital Tasks (Web/App & Tech, Design & Creative, Video & Audio, Content & Marketing, Business & Admin): Support Dual Pricing — Per Project / Package / Unit OR Hourly Rate (capped at platform limits displayed in-app).',
                   'Separate Client-Paid Third-Party Costs (Freelance & Errands): Domain names, hosting/cloud servers, paid APIs, SaaS subscriptions, stock media/font/music licences, commercial printing, paid ad wallet spend, government portal fees, and physical purchases/groceries requested by the Poster are paid separately by the Poster and are excluded from base budget and platform fees unless otherwise stated.',
                 ],
               ),
               const _SubSection(
-                '5.2 Strictly Prohibited Tasks & Content',
+                '5.2 Category-Specific Non-Liability Disclaimers',
+                'Users acknowledge and agree that WORKMATE4U PRIVATE LIMITED disclaims all liability across all service categories and child categories:',
+                bullets: [
+                  'Delivery, Transport, Moving & Pickup (all child categories): WORKMATE4U PRIVATE LIMITED is not a common carrier, courier, or transport contractor under the Carriage by Road Act, 2007. The Company is NOT liable if any parcel, document, luggage, fragile item, or furniture gets damaged, broken, scratched, lost, delayed, stolen, spilled, or confiscated during transit, loading, or unloading. Transit risk rests entirely between Poster and Helper. Helpers solely warrant vehicle roadworthiness, valid commercial/private licence, insurance, and compliance with the Motor Vehicles Act, 1988;',
+                  'Grocery & Shopping (all child categories: Groceries, Shopping, Errands, Queue Standing): WORKMATE4U PRIVATE LIMITED is not a retailer, grocer, or merchant. The Company is NOT liable for damaged, expired, defective, rotten, or incorrect goods, store pricing variances, receipt mismatches, or cash-handling errors. Helpers are independent shoppers;',
+                  'Repair (all child categories: Electrician, Plumbing, Carpentry, Painting, Vehicle Repair, Tech Support): WORKMATE4U PRIVATE LIMITED does not perform or inspect trade work. The Company is NOT liable for property damage, short circuits, electrical fires, appliance breakdowns, water leaks, structural damage, substandard workmanship, or use of defective spare parts. Posters must verify technician competence before authorizing repairs;',
+                  'Home (all child categories: Cleaning, Household, Cooking, Laundry, Gardening, Beauty): The Company is NOT liable for theft, loss of domestic items, stain/shrinkage of fabrics/clothes, allergic reactions or food-borne illness from cooked meals, cosmetic reactions, or domestic accidents;',
+                  'Professional, Creative & Care (Freelancer, Tech Support, Photography, Tutoring, Drawing, Event Help, Care Services): The Company is NOT liable for IP disputes, event mishaps, animal bites/escapes, personal injuries, or emergency care outcomes.',
+                ],
+              ),
+              const _SubSection(
+                '5.3 Strictly Prohibited Tasks & Content',
                 'You may NEVER post, accept, or facilitate tasks involving:',
                 bullets: [
                   'Anything illegal under Indian law (Bharatiya Nyaya Sanhita / IPC, NDPS narcotics/drugs, Arms Act weapons, smuggling, stolen or counterfeit goods, hawala, money laundering, or forged documents/certificates);',
@@ -109,7 +122,7 @@ class TermsScreen extends StatelessWidget {
                 ],
               ),
               const _SubSection(
-                '5.3 Helper Execution, Proof of Completion & Release Penalties',
+                '5.4 Helper Execution, Proof of Completion & Release Penalties',
                 null,
                 bullets: [
                   'One Active Task Limit: To maintain reliability, a Helper may hold only one (1) active accepted task at a time unless otherwise enabled.',
@@ -182,10 +195,12 @@ class TermsScreen extends StatelessWidget {
               ],
             ),
 
-            _section('10. Account Suspension, Termination & Account Deletion', null, bullets: [
-              'Voluntary Deletion: You may delete your account in-app (Profile → Delete My Account) or via info@workmate4u.com, provided you have no active/pending tasks, no unresolved disputes, and a non-negative Wallet balance (withdraw eligible funds ₹100+ beforehand).',
-              'Mandatory Retention on Deletion: Even after account deletion, Workmate4u retains transaction ledgers, KYC/onboarding audit records, and tax/fraud logs for up to 8 years (or longer if under dispute/legal hold) as required by Indian law.',
-              'Platform Enforcement: We may immediately suspend or permanently terminate any account for underage (<18) status, fake KYC/DOB, safety complaints, exceeding release limits, negative balance, scam tasks, or breach of these Terms.',
+            _section('10. Platform Rules, Immediate Permanent Ban & Criminal Prosecution', null, bullets: [
+              'Zero Tolerance for Rule Violations: Any violation of platform rules, policy breach, abusive conduct, or illegal act results in immediate enforcement actions by WORKMATE4U PRIVATE LIMITED;',
+              'Immediate & Permanent Account Ban: Any user (Helper or Poster) who commits fraud, theft, assault, harassment, misbehaviour, extortion, off-platform cash transactions, property damage, submits forged KYC/DOB documents, or damages the company\'s reputation is subjected to an IMMEDIATE AND PERMANENT BAN across all devices and phone numbers;',
+              'Loss of Wallet Credits & Negative Recovery: Banned accounts permanently forfeit all promotional wallet credits and bonuses, and WORKMATE4U PRIVATE LIMITED reserves the right to recover any resulting losses or negative balances through statutory legal processes;',
+              'Criminal Prosecution & Law Enforcement Reporting: WORKMATE4U PRIVATE LIMITED will actively report serious violations, fraud, physical harm, theft, extortion, and cyber crimes to law enforcement authorities (including filing First Information Reports / FIRs with local and cyber police stations) and initiate civil and criminal legal proceedings under the Bharatiya Nyaya Sanhita, 2023, Information Technology Act, 2000, and other relevant Indian statutes;',
+              'Voluntary Deletion & Statutory Retention: Voluntary account deletion (Profile → Delete My Account) requires resolution of all active tasks, disputes, and non-negative wallet balances. Transaction ledgers and compliance audit records are retained for statutory retention periods under Indian law.',
             ]),
 
             _section(
@@ -200,12 +215,12 @@ class TermsScreen extends StatelessWidget {
 
             _section(
               '13. Disclaimers ("AS IS") & Limitation of Liability',
-              'THE PLATFORM IS PROVIDED ON AN "AS-IS" AND "AS-AVAILABLE" BASIS WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING ACCURACY OF LOCATION/DISTANCE ESTIMATES, CONTINUOUS AVAILABILITY, OR USER CONDUCT.\n\nTO THE MAXIMUM EXTENT PERMITTED BY INDIAN LAW, WORKMATE4U SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, LOSS OF PROFITS, DATA LOSS, PERSONAL INJURY, OR PROPERTY DAMAGE. WORKMATE4U\'S MAXIMUM AGGREGATE LIABILITY FOR ALL CLAIMS ARISING OUT OF OR RELATING TO THE PLATFORM SHALL NOT EXCEED THE TOTAL PLATFORM FEES ACTUALLY RETAINED BY WORKMATE4U FROM YOU IN THE THREE (3) MONTHS PRECEDING THE CLAIM, OR INR 5,000 (RUPEES FIVE THOUSAND), WHICHEVER IS LOWER.',
+              'THE PLATFORM IS PROVIDED ON AN "AS-IS" AND "AS-AVAILABLE" BASIS WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING ACCURACY OF LOCATION/DISTANCE ESTIMATES, CONTINUOUS AVAILABILITY, OR USER CONDUCT.\n\nTO THE MAXIMUM EXTENT PERMITTED BY INDIAN LAW, WORKMATE4U PRIVATE LIMITED SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, LOSS OF PROFITS, DATA LOSS, PERSONAL INJURY, HELPER FRAUD, THEFT, ITEM DAMAGE, OR PROPERTY DAMAGE. WORKMATE4U PRIVATE LIMITED\'S MAXIMUM AGGREGATE LIABILITY FOR ALL CLAIMS ARISING OUT OF OR RELATING TO THE PLATFORM SHALL NOT EXCEED THE TOTAL PLATFORM FEES ACTUALLY RETAINED BY WORKMATE4U PRIVATE LIMITED FROM YOU IN THE THREE (3) MONTHS PRECEDING THE CLAIM, OR INR 5,000 (RUPEES FIVE THOUSAND), WHICHEVER IS LOWER.',
             ),
 
             _section(
               '14. Comprehensive Indemnification',
-              'You agree to defend, indemnify, and hold harmless Workmate4u and its owners, officers, employees, and agents from and against all claims, damages, liabilities, penalties, fines, criminal defense costs, and reasonable legal fees arising out of or relating to: (a) your breach of these Terms or any law; (b) misrepresentation of your age (<18), identity, KYC documents, or engagement/subcontracting of any minor or adolescent; (c) personal injury, death, road accident, property damage, theft, or third-party claims during any task; (d) failure to hold valid licences/insurance/permits; (e) IP infringement or unpaid pass-through costs/taxes; or (f) fraudulent chargebacks or off-platform dealings.',
+              'You agree to defend, indemnify, and hold harmless WORKMATE4U PRIVATE LIMITED and its directors, officers, employees, and agents from and against all claims, damages, liabilities, penalties, fines, criminal defense costs, and reasonable legal fees arising out of or relating to: (a) your breach of these Terms or any law; (b) misrepresentation of your age (<18), identity, KYC documents, or engagement/subcontracting of any minor or adolescent; (c) personal injury, death, road accident, property damage, theft, fraud, or third-party claims during any task; (d) failure to hold valid licences/insurance/permits; (e) IP infringement or unpaid pass-through costs/taxes; or (f) fraudulent chargebacks, defamation, or off-platform dealings.',
             ),
 
             _section(
@@ -234,7 +249,7 @@ class TermsScreen extends StatelessWidget {
             ]),
 
             _section('17. Contact Information', null, bullets: [
-              'Operator: Workmate4u, India',
+              'Corporate Entity: WORKMATE4U PRIVATE LIMITED, India',
               'Support & Legal Email: info@workmate4u.com',
               'Website: https://workmate4u.com',
             ]),

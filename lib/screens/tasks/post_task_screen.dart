@@ -742,6 +742,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           c2: const Color(0xFF3B82F6),
           footerNote: 'Skilled technicians nearby • Pay only after completion',
         );
+      case 'Home':
       case 'Home & Lifestyle':
         return (
           bgAsset: 'assets/images/cat_home.jpg',
@@ -750,6 +751,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           c2: const Color(0xFF0EA5E9),
           footerNote: 'Trusted home helpers • Flexible time slots',
         );
+      case 'Grocery & Shopping':
       case 'Shopping & Errands':
         return (
           bgAsset: 'assets/images/cat_shopping.jpg',
@@ -4492,14 +4494,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         image: 'assets/images/cat_3d_repair.png',
       ),
       (
-        label: 'Home & Lifestyle',
-        groupName: 'Home & Lifestyle',
+        label: 'Home',
+        groupName: 'Home',
         defaultId: 'cleaning',
         image: 'assets/images/cat_3d_home.png',
       ),
       (
-        label: 'Shopping & Errands',
-        groupName: 'Shopping & Errands',
+        label: 'Grocery & Shopping',
+        groupName: 'Grocery & Shopping',
         defaultId: 'shopping',
         image: 'assets/images/cat_3d_shopping.png',
       ),

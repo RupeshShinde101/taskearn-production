@@ -313,9 +313,7 @@ class _ConfirmPaymentDialogState extends State<ConfirmPaymentDialog> {
                     if (widget.posterFee > 0) ...[
                       const SizedBox(height: 8),
                       _DetailRow(
-                        (widget.posterFee == 12.0 || widget.posterFee == 20.0)
-                            ? 'Platform Fee & GST'
-                            : 'Platform Fee & GST (20%)',
+                        'Platform Fee & GST (20%)',
                         '₹${widget.posterFee.toStringAsFixed(0)}',
                       ),
                     ],

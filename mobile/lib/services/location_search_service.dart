@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -810,8 +811,26 @@ class LocationSearchService {
 
 
   /// Google Maps / Places API Key (from Google Cloud Console).
-  /// Pass `--dart-define=GOOGLE_MAPS_API_KEY=YOUR_KEY` or set it directly in code.
+  /// Pass `--dart-define=GOOGLE_MAPS_API_KEY=YOUR_KEY` or loaded from local untracked config.
   static String googlePlacesApiKey = const String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+  static bool _hasAttemptedKeyLoad = false;
+
+  /// Securely retrieves the API key from environment or local untracked config.
+  static Future<String> getApiKey() async {
+    if (googlePlacesApiKey.isNotEmpty) return googlePlacesApiKey;
+    if (_hasAttemptedKeyLoad) return googlePlacesApiKey;
+    _hasAttemptedKeyLoad = true;
+    try {
+      final str = await rootBundle.loadString('assets/config/env.json');
+      final map = jsonDecode(str) as Map<String, dynamic>;
+      final k = map['GOOGLE_MAPS_API_KEY']?.toString().trim() ?? '';
+      if (k.isNotEmpty) {
+        googlePlacesApiKey = k;
+        return k;
+      }
+    } catch (_) {}
+    return '';
+  }
 
   /// Fetches nearby stores using official Google Places API if an API key is configured.
   static Future<List<Map<String, dynamic>>> _fetchGooglePlacesStores(
@@ -819,7 +838,7 @@ class LocationSearchService {
     required double radiusKm,
     String query = 'grocery',
   }) async {
-    final apiKey = googlePlacesApiKey.trim();
+    final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
     if (apiKey.isEmpty) return [];
 
     try {
@@ -1734,8 +1753,9 @@ class LocationSearchService {
       'daily needs',
     ];
 
+    final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
     final futures = <Future<List<Map<String, dynamic>>>>[];
-    if (googlePlacesApiKey.isNotEmpty) {
+    if (apiKey.isNotEmpty) {
       futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'grocery'));
       futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'supermarket'));
       futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'vegetables'));
@@ -1878,8 +1898,9 @@ class LocationSearchService {
       }
     }
 
+    final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
     final batches = await Future.wait<List<Map<String, dynamic>>>([
-      if (googlePlacesApiKey.isNotEmpty)
+      if (apiKey.isNotEmpty)
         _fetchGooglePlacesStores(center, radiusKm: radiusKm, query: q),
       _fetchPhotonGroceryStores(
         center,

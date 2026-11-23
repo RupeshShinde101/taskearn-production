@@ -50,5 +50,17 @@ android/app/keystore/*
 # Allow shared debug keystore so all team members use the same SHA-1 for Google Sign-In
 !android/app/keystore/debug-keystore.jks
 
+# Environment & Secret files - NEVER COMMIT TO GIT
+.env
+.env.*
+*.env
+*.env.local
+*.local
+local.properties
+android/local.properties
+assets/config/env.json
+assets/config/secrets.json
+lib/config/secrets.dart
+
 # Scratch directory
 scratch/

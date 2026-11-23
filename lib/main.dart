@@ -10,6 +10,7 @@ import 'providers/wallet_provider.dart';
 import 'providers/notification_provider.dart';
 import 'services/storage_service.dart';
 import 'services/notification_service.dart';
+import 'services/location_search_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +42,7 @@ void main() async {
   }
 
   await StorageService.init();
+  await LocationSearchService.getApiKey();
 
   runApp(
     MultiProvider(

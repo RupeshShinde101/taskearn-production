@@ -1,21 +1,27 @@
-/// Shared legal age, terms version, and eligibility helpers for Workmate4u India.
+/// Shared legal age, terms version, and eligibility helpers for WORKMATE4U PRIVATE LIMITED India.
 ///
 /// Under Indian law (Indian Majority Act, 1875 s. 3; Indian Contract Act, 1872
 /// s. 11; Child and Adolescent Labour (Prohibition and Regulation) Act, 1986;
-/// Motor Vehicles Act, 1988; Digital Personal Data Protection Act, 2023 s. 2(f)
-/// & s. 9), users must be at least 18 years old to enter binding contracts,
-/// accept or post tasks, and consent to personal data processing.
+/// Motor Vehicles Act, 1988; Information Technology Act, 2000 s. 79;
+/// Bharatiya Nyaya Sanhita, 2023; Consumer Protection Act, 2019;
+/// Digital Personal Data Protection Act, 2023 s. 2(f) & s. 9), users must be
+/// at least 18 years old to enter binding contracts, accept or post tasks,
+/// and consent to personal data processing.
 library;
 
+const String kCorporateEntityName = 'WORKMATE4U PRIVATE LIMITED';
 const int kMinimumLegalAge = 18;
-const String kTermsVersion = '2026-11-18';
-const String kLegalEffectiveDate = 'November 18, 2026';
+const String kTermsVersion = '2026-11-23';
+const String kLegalEffectiveDate = 'November 23, 2026';
 
 const String kMinAgeErrorMessage =
     'You must be at least 18 years old (legal adult age in India) to use Workmate4u.';
 
 const String kEligibilitySummaryText =
     '18+ Adults Only (India): Users below 18 years are strictly prohibited.';
+
+const String kIntermediaryDisclaimerText =
+    'WORKMATE4U PRIVATE LIMITED is an intermediary platform connecting independent users under Section 79 of the Information Technology Act, 2000. The company is NOT liable for helper conduct, fraud, misbehaviour, transit damages, or task disputes. Rule violations lead to permanent ban and criminal/legal prosecution under Indian law.';
 
 /// Returns the user's completed age in whole years relative to [now].
 int calculateAgeInYears(DateTime dob, {DateTime? now}) {

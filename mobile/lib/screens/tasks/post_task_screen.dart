@@ -102,6 +102,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
+  String? _selectedGrocerySavedLocId;
   bool _showSavePrompt       = false; // non-delivery
   bool _showPickupSavePrompt = false; // pickup
   bool _showDropSavePrompt   = false; // drop
@@ -488,6 +489,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _onDropAddrChanged(String text) {
+    if (_selectedGrocerySavedLocId != null) {
+      try {
+        final current = _savedLocations.firstWhere((l) => l['id']?.toString() == _selectedGrocerySavedLocId);
+        if ((current['address'] as String? ?? '').trim().toLowerCase() != text.trim().toLowerCase()) {
+          _selectedGrocerySavedLocId = null;
+        }
+      } catch (_) {
+        _selectedGrocerySavedLocId = null;
+      }
+    }
     _dropDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
@@ -744,6 +755,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           c2: const Color(0xFF3B82F6),
           footerNote: 'Skilled technicians nearby • Pay only after completion',
         );
+      case 'Home':
       case 'Home & Lifestyle':
         return (
           bgAsset: 'assets/images/cat_home.jpg',
@@ -752,6 +764,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           c2: const Color(0xFF0EA5E9),
           footerNote: 'Trusted home helpers • Flexible time slots',
         );
+      case 'Grocery & Shopping':
       case 'Shopping & Errands':
         return (
           bgAsset: 'assets/images/cat_shopping.jpg',
@@ -1457,7 +1470,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           duration: Duration(seconds: 2)));
       return;
     }
-    final nameCtrl = TextEditingController();
+    final nameCtrl = TextEditingController(text: 'Home');
     String selectedType = 'Home';
     final saved = await showDialog<bool>(
       context: context,
@@ -1473,7 +1486,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Quick labels:',
+                const Text('Choose a label:',
                     style: TextStyle(fontSize: 12, color: AppColors.gray)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -1484,7 +1497,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     return GestureDetector(
                       onTap: () => setDlg(() {
                         selectedType = t;
-                        if (t != 'Other') nameCtrl.text = t;
+                        if (t != 'Other') {
+                          nameCtrl.text = t;
+                        } else {
+                          nameCtrl.text = '';
+                        }
                       }),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -1510,10 +1527,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Address name',
-                    hintText: 'e.g. Home, Office, Mom\'s place',
-                    prefixIcon: Icon(Icons.label_outline),
+                    hintText: selectedType == 'Other' ? 'e.g. Mom\'s place, Gym' : 'e.g. $selectedType',
+                    prefixIcon: const Icon(Icons.label_outline),
                   ),
                 ),
               ],
@@ -1537,7 +1554,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     );
     if (saved != true || !mounted) return;
     final label =
-        nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
+        nameCtrl.text.trim().isEmpty ? selectedType : nameCtrl.text.trim();
     await StorageService.addSavedLocation({
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'label': label,
@@ -1725,7 +1742,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   // ─── Generic save helper used by pickup / drop ────────────────────────
-  Future<void> _saveAddressEntry({
+  Future<Map<String, dynamic>?> _saveAddressEntry({
     required String address,
     required String flat,
     required String area,
@@ -1739,9 +1756,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           content: Text(
               'Please fill in at least the address or area before saving.'),
           duration: Duration(seconds: 2)));
-      return;
+      return null;
     }
-    final nameCtrl = TextEditingController();
+    final nameCtrl = TextEditingController(text: 'Home');
     String selectedType = 'Home';
     final saved = await showDialog<bool>(
       context: context,
@@ -1755,7 +1772,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Quick labels:',
+                const Text('Choose a label:',
                     style: TextStyle(fontSize: 12, color: AppColors.gray)),
                 const SizedBox(height: 8),
                 Wrap(
@@ -1766,7 +1783,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     return GestureDetector(
                       onTap: () => setDlg(() {
                         selectedType = t;
-                        if (t != 'Other') nameCtrl.text = t;
+                        if (t != 'Other') {
+                          nameCtrl.text = t;
+                        } else {
+                          nameCtrl.text = '';
+                        }
                       }),
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
@@ -1775,11 +1796,24 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: AppColors.primary.withValues(alpha: sel ? 1.0 : 0.3)),
                         ),
-                        child: Text(t,
-                            style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: sel ? Colors.white : AppColors.primary)),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              t == 'Home'
+                                  ? Icons.home_rounded
+                                  : (t == 'Work' ? Icons.work_rounded : Icons.location_on_rounded),
+                              size: 14,
+                              color: sel ? Colors.white : AppColors.primary,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(t,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: sel ? Colors.white : AppColors.primary)),
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),
@@ -1787,12 +1821,21 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 const SizedBox(height: 14),
                 TextField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     labelText: 'Address name',
-                    hintText: 'e.g. Home, Office, Mom\'s place',
-                    prefixIcon: Icon(Icons.label_outline),
+                    hintText: selectedType == 'Other' ? 'e.g. Mom\'s place, Gym' : 'e.g. $selectedType',
+                    prefixIcon: const Icon(Icons.label_outline),
                   ),
                 ),
+                if (address.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    address,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1811,9 +1854,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         ),
       ),
     );
-    if (saved != true || !mounted) return;
-    final label = nameCtrl.text.trim().isEmpty ? 'Saved' : nameCtrl.text.trim();
-    await StorageService.addSavedLocation({
+    if (saved != true || !mounted) return null;
+    final label = nameCtrl.text.trim().isEmpty ? selectedType : nameCtrl.text.trim();
+    final newLoc = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'label': label,
       'address': address,
@@ -1821,7 +1864,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       'area': area,
       'lat': lat,
       'lng': lng,
-    });
+    };
+    await StorageService.addSavedLocation(newLoc);
     _loadSavedLocations();
     onSaved();
     if (mounted) {
@@ -1829,6 +1873,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           content: Text('\u201c$label\u201d saved!'),
           duration: const Duration(seconds: 2)));
     }
+    return newLoc;
   }
 
   void _fillPickupFromSaved(Map<String, dynamic> loc) {
@@ -1858,6 +1903,521 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _showDropSavePrompt = false;
     });
     _recalcDistance();
+  }
+
+  Future<void> _saveGroceryDeliveryLocation() async {
+    final addr = _dropAddrCtrl.text.trim();
+    if (addr.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter or pick a delivery address first to save.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
+    double? lat = _dropLocation?.latitude;
+    double? lng = _dropLocation?.longitude;
+    if (lat == null || lng == null) {
+      try {
+        final geocoded = await LocationSearchService.geocodeAddress(addr);
+        if (geocoded != null) {
+          lat = geocoded.latitude;
+          lng = geocoded.longitude;
+          if (mounted) {
+            setState(() {
+              _dropLocation = geocoded;
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    final savedLoc = await _saveAddressEntry(
+      address: addr,
+      flat: _dropFlatCtrl.text.trim(),
+      area: _dropAreaCtrl.text.trim(),
+      lat: lat,
+      lng: lng,
+      onSaved: () {
+        setState(() {});
+      },
+    );
+
+    if (savedLoc != null && mounted) {
+      setState(() {
+        _selectedGrocerySavedLocId = savedLoc['id']?.toString();
+      });
+    }
+  }
+
+  void _selectGrocerySavedLocation(Map<String, dynamic> loc) {
+    setState(() {
+      _selectedGrocerySavedLocId = loc['id']?.toString();
+    });
+    _fillGroceryDropFromSaved(loc);
+  }
+
+  Future<void> _fillGroceryDropFromSaved(Map<String, dynamic> loc) async {
+    _fillDropFromSaved(loc);
+    _userPickedStoreManually = false;
+    if (_dropLocation == null && _dropAddrCtrl.text.trim().isNotEmpty) {
+      try {
+        final geocoded = await LocationSearchService.geocodeAddress(_dropAddrCtrl.text.trim());
+        if (geocoded != null && mounted) {
+          setState(() {
+            _dropLocation = geocoded;
+          });
+        }
+      } catch (_) {}
+    }
+    _updateSuggestedStoresForDrop(_dropAddrCtrl.text, _dropLocation);
+  }
+
+  void _showManageSavedLocationsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Manage Saved Locations',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Select, edit, or remove your saved addresses',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 16),
+                if (_savedLocations.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Text('No saved locations yet.', style: TextStyle(color: Color(0xFF94A3B8))),
+                    ),
+                  )
+                else
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: _savedLocations.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, i) {
+                        final loc = _savedLocations[i];
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(_iconForLabel(loc['label'] as String? ?? ''), size: 18, color: const Color(0xFF2563EB)),
+                          ),
+                          title: Text(
+                            loc['label'] as String? ?? 'Saved',
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Text(
+                            loc['address'] as String? ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF2563EB)),
+                                onPressed: () async {
+                                  await _editSavedLocation(loc);
+                                  setSheetState(() {});
+                                  setState(() {});
+                                },
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
+                                onPressed: () async {
+                                  await StorageService.deleteSavedLocation(loc['id'] as String);
+                                  _loadSavedLocations();
+                                  if (_selectedGrocerySavedLocId == loc['id']?.toString()) {
+                                    _selectedGrocerySavedLocId = null;
+                                  }
+                                  setSheetState(() {});
+                                  setState(() {});
+                                },
+                              ),
+                            ],
+                          ),
+                          onTap: () {
+                            Navigator.pop(ctx);
+                            _selectGrocerySavedLocation(loc);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGrocerySavedLocationsDropdown() {
+    Map<String, dynamic>? selectedLoc;
+    if (_selectedGrocerySavedLocId != null) {
+      try {
+        selectedLoc = _savedLocations.firstWhere(
+          (l) => l['id']?.toString() == _selectedGrocerySavedLocId,
+        );
+      } catch (_) {}
+    }
+    if (selectedLoc == null && _dropAddrCtrl.text.trim().isNotEmpty) {
+      try {
+        selectedLoc = _savedLocations.firstWhere(
+          (l) =>
+              (l['address'] as String? ?? '').trim().toLowerCase() ==
+              _dropAddrCtrl.text.trim().toLowerCase(),
+        );
+        if (selectedLoc != null) {
+          _selectedGrocerySavedLocId = selectedLoc['id']?.toString();
+        }
+      } catch (_) {}
+    }
+
+    final hasSaved = _savedLocations.isNotEmpty;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xFFCBD5E1), width: 1),
+          ),
+          color: Colors.white,
+          elevation: 6,
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Select Saved Location',
+        offset: const Offset(0, 48),
+        onSelected: (val) async {
+          if (val == '__save_new__') {
+            await _saveGroceryDeliveryLocation();
+          } else if (val == '__manage__') {
+            _showManageSavedLocationsSheet();
+          } else {
+            try {
+              final loc = _savedLocations.firstWhere((l) => l['id']?.toString() == val);
+              _selectGrocerySavedLocation(loc);
+            } catch (_) {}
+          }
+        },
+        itemBuilder: (context) {
+          final List<PopupMenuEntry<String>> items = [];
+
+          // Header
+          items.add(
+            const PopupMenuItem<String>(
+              enabled: false,
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.bookmark_rounded, size: 15, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Text(
+                    'SAVED LOCATIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF475569),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          items.add(const PopupMenuDivider(height: 1));
+
+          if (!hasSaved) {
+            items.add(
+              const PopupMenuItem<String>(
+                enabled: false,
+                height: 44,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    'No saved locations yet.\nTap below to save current address.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                  ),
+                ),
+              ),
+            );
+          } else {
+            for (final loc in _savedLocations) {
+              final id = loc['id']?.toString() ?? '';
+              final label = loc['label'] as String? ?? 'Saved';
+              final addr = loc['address'] as String? ?? '';
+              final isSelected = selectedLoc != null && selectedLoc['id']?.toString() == id;
+
+              IconData icon = Icons.location_on_rounded;
+              Color iconColor = const Color(0xFF64748B);
+              final l = label.toLowerCase();
+              if (l.contains('home')) {
+                icon = Icons.home_rounded;
+                iconColor = const Color(0xFF2563EB);
+              } else if (l.contains('work') || l.contains('office')) {
+                icon = Icons.work_rounded;
+                iconColor = const Color(0xFF0D9488);
+              } else {
+                icon = Icons.pin_drop_rounded;
+                iconColor = const Color(0xFFE11D48);
+              }
+
+              items.add(
+                PopupMenuItem<String>(
+                  value: id,
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: iconColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(icon, size: 16, color: iconColor),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF334155),
+                              ),
+                            ),
+                            if (addr.isNotEmpty)
+                              Text(
+                                addr,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (isSelected)
+                        const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF16A34A)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          items.add(const PopupMenuDivider(height: 1));
+
+          // Save current address action
+          items.add(
+            PopupMenuItem<String>(
+              value: '__save_new__',
+              height: 44,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.add_location_alt_rounded, size: 16, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      '+ Save Address (Home, Work, Other)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+          if (hasSaved) {
+            items.add(
+              PopupMenuItem<String>(
+                value: '__manage__',
+                height: 40,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.settings_outlined, size: 15, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Manage Saved Locations...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return items;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selectedLoc != null ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+              width: selectedLoc != null ? 1.4 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selectedLoc != null
+                    ? _iconForLabel(selectedLoc['label'] as String? ?? 'Other')
+                    : Icons.bookmark_outline_rounded,
+                size: 17,
+                color: selectedLoc != null ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            selectedLoc != null ? 'SAVED LOCATION' : 'SAVED LOCATIONS',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                        if (selectedLoc != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Text(
+                                selectedLoc['label'] as String? ?? 'Saved',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      selectedLoc != null
+                          ? (selectedLoc['address'] as String? ?? selectedLoc['label'] as String? ?? '')
+                          : (hasSaved
+                              ? 'Choose from Home, Work, Other'
+                              : 'Tap to save delivery location'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: selectedLoc != null ? FontWeight.w700 : FontWeight.w500,
+                        color: selectedLoc != null ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (selectedLoc != null)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedGrocerySavedLocId = null;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down_rounded, size: 22, color: Color(0xFF475569)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _getLocation() async {
@@ -4508,14 +5068,14 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         image: 'assets/images/cat_3d_repair.png',
       ),
       (
-        label: 'Home & Lifestyle',
-        groupName: 'Home & Lifestyle',
+        label: 'Home',
+        groupName: 'Home',
         defaultId: 'cleaning',
         image: 'assets/images/cat_3d_home.png',
       ),
       (
-        label: 'Shopping & Errands',
-        groupName: 'Shopping & Errands',
+        label: 'Grocery & Shopping',
+        groupName: 'Grocery & Shopping',
         defaultId: 'shopping',
         image: 'assets/images/cat_3d_shopping.png',
       ),
@@ -5368,15 +5928,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 // ─────────────────────────────────────────────────────────────
                 // DELIVERY ADDRESS (DROP) - FULL EXTENDED WIDTH
                 // ─────────────────────────────────────────────────────────────
-                const Row(
+                Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Expanded(
+                    const Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             'Delivery Address',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -5385,6 +5947,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                           Text(
                             'DELIVER TO HOME (DROP)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
@@ -5393,6 +5957,30 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             ),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: _saveGroceryDeliveryLocation,
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.bookmark_add_outlined, size: 14, color: Color(0xFF2563EB)),
+                            SizedBox(width: 4),
+                            Text(
+                              'Save Location',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -5410,6 +5998,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ── SAVED LOCATIONS DROPDOWN (HOME, WORK, OTHER) ──
+                      _buildGrocerySavedLocationsDropdown(),
+                      const SizedBox(height: 8),
+
                       TextFormField(
                         controller: _dropAddrCtrl,
                         focusNode: _dropFocus,
@@ -5427,6 +6019,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             isLoading: _gettingDropGps,
                             accentColor: AppColors.danger,
                             onGps: () async {
+                              _selectedGrocerySavedLocId = null;
                               await _getGpsForDrop();
                               if (mounted && _dropAddrCtrl.text.isNotEmpty) {
                                 _userPickedStoreManually = false;
@@ -5434,6 +6027,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               }
                             },
                             onMap: () async {
+                              _selectedGrocerySavedLocId = null;
                               await _pickMapForDrop();
                               if (mounted && _dropAddrCtrl.text.isNotEmpty) {
                                 _userPickedStoreManually = false;
@@ -5468,12 +6062,56 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         isLoading: _searchingDrop,
                         accentColor: AppColors.danger,
                         onSelect: (s) {
+                          _selectedGrocerySavedLocId = null;
                           _selectDropSuggestion(s);
                           _userPickedStoreManually = false;
                           _updateSuggestedStoresForDrop(s.fullAddress, s.toLatLng());
                         },
                         onDismiss: () => setState(() => _dropSuggestions = []),
                       ),
+                      // ── Quick Save Address Prompt if text entered and not yet in saved locations ──
+                      if (_dropAddrCtrl.text.trim().isNotEmpty &&
+                          !_savedLocations.any((l) => (l['address'] as String? ?? '').trim().toLowerCase() == _dropAddrCtrl.text.trim().toLowerCase())) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.bookmark_border_rounded, size: 16, color: Color(0xFF2563EB)),
+                              const SizedBox(width: 8),
+                              const Expanded(
+                                child: Text(
+                                  'Save as Home, Work, or Other for next time?',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              InkWell(
+                                onTap: _saveGroceryDeliveryLocation,
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF2563EB),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: const Text(
+                                    'Save',
+                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),

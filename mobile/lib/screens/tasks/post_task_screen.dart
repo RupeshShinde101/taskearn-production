@@ -5881,6 +5881,27 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
       return;
     }
+
+    // Auto-detect and resolve Google Maps shared links (e.g. maps.app.goo.gl, google.com/maps)
+    if (q.startsWith('http://') ||
+        q.startsWith('https://') ||
+        q.contains('maps.app.goo.gl') ||
+        q.contains('google.com/maps') ||
+        q.contains('goo.gl/maps')) {
+      setState(() => _searchingStoresByName = true);
+      LocationSearchService.resolveGoogleMapsUrl(q, userLocation: _dropLocation ?? _location).then((resolved) {
+        if (!mounted) return;
+        setState(() => _searchingStoresByName = false);
+        if (resolved != null) {
+          if (!_suggestedGroceryStoresList.any((s) => s['name'] == resolved['name'])) {
+            _suggestedGroceryStoresList.insert(0, resolved);
+          }
+          _selectGroceryStore(resolved);
+        }
+      });
+      return;
+    }
+
     final inMem = _suggestedGroceryStoresList.where((s) {
       final name = (s['name'] as String? ?? '').toLowerCase();
       final addr = (s['address'] as String? ?? '').toLowerCase();
@@ -6020,8 +6041,23 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final trimmed = storeName.trim();
     if (trimmed.isEmpty) return;
 
-    // Try to geocode the real store near delivery location first
     final center = _dropLocation ?? _location;
+
+    // Direct Google Maps URL support
+    if (trimmed.startsWith('http://') ||
+        trimmed.startsWith('https://') ||
+        trimmed.contains('maps.app.goo.gl') ||
+        trimmed.contains('google.com/maps') ||
+        trimmed.contains('goo.gl/maps')) {
+      final resolved = await LocationSearchService.resolveGoogleMapsUrl(trimmed, userLocation: center);
+      if (mounted && resolved != null) {
+        if (!_suggestedGroceryStoresList.any((s) => s['name'] == resolved['name'])) {
+          _suggestedGroceryStoresList.insert(0, resolved);
+        }
+        _selectGroceryStore(resolved);
+        return;
+      }
+    }
     if (center != null) {
       final matches = await LocationSearchService.searchStoresByName(
         trimmed,
@@ -6205,9 +6241,80 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               );
         })
         .toList();
-    // Sort strictly from top rated to low rated (without mentioning rate in UI)
-    displayedStores.sort((a, b) =>
-        ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));
+
+    final selectedItemCats = _selectedGroceryItems.map((e) => e.category).toSet();
+    final bool hasSelectedItems = selectedItemCats.isNotEmpty;
+
+    int getStoreItemMatchScore(Map<String, dynamic> store) {
+      if (!hasSelectedItems) return 0;
+      final tag = (store['tag'] as String? ?? '').toLowerCase();
+      final name = (store['name'] as String? ?? '').toLowerCase();
+      final storeCats = (store['categories'] as List<dynamic>? ?? [])
+          .map((e) => e.toString().toLowerCase())
+          .toSet();
+      final isAllStore = store['hasAllItems'] == true ||
+          tag.contains('supermarket') ||
+          name.contains('supermarket') ||
+          name.contains('mart');
+
+      bool directSpecializedMatch = false;
+      for (final cat in selectedItemCats) {
+        final catLower = cat.toLowerCase();
+        if (storeCats.contains(catLower)) {
+          directSpecializedMatch = true;
+          break;
+        }
+        if (cat == 'Vegetables & Fruits') {
+          if (tag.contains('vegetable') ||
+              name.contains('vegetable') ||
+              name.contains('vegitable') ||
+              name.contains('bhaji') ||
+              name.contains('fruit') ||
+              name.contains('produce') ||
+              name.contains('mandi')) {
+            directSpecializedMatch = true;
+            break;
+          }
+        } else if (cat == 'Staples & Dals' || cat == 'Oils & Masalas') {
+          if (tag.contains('kirana') ||
+              name.contains('kirana') ||
+              name.contains('provision') ||
+              name.contains('grocery')) {
+            directSpecializedMatch = true;
+            break;
+          }
+        } else if (cat == 'Dairy & Breakfast') {
+          if (tag.contains('dairy') ||
+              name.contains('dairy') ||
+              name.contains('milk') ||
+              name.contains('doodh')) {
+            directSpecializedMatch = true;
+            break;
+          }
+        }
+      }
+
+      if (directSpecializedMatch && !isAllStore) return 3; // Specialized store for selected items
+      if (directSpecializedMatch && isAllStore) return 2;  // Supermarket with selected items
+      if (isAllStore) return 1;                          // All-in-one supermarket
+      return 0;                                          // Other stores
+    }
+
+    // Sort: 1) Match with selected items & category, 2) Proximity / Prominence
+    displayedStores.sort((a, b) {
+      if (hasSelectedItems) {
+        final scoreA = getStoreItemMatchScore(a);
+        final scoreB = getStoreItemMatchScore(b);
+        if (scoreA != scoreB) {
+          return scoreB.compareTo(scoreA); // Higher match score first!
+        }
+      }
+      final distA = ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num).toDouble();
+      final distB = ((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num).toDouble();
+      final distComp = distA.compareTo(distB);
+      if (distComp != 0) return distComp;
+      return ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num);
+    });
     final hasDropAddr = _dropAddrCtrl.text.trim().isNotEmpty;
 
     return Container(
@@ -6990,12 +7097,38 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     // 3. When not typing: Scrollable list of nearby grocery, kirana & vegetable stores
                     if (displayedStores.isNotEmpty) ...[
                       const SizedBox(height: 10),
+                      if (hasSelectedItems)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0FDF4),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFBBF7D0)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.auto_awesome_rounded, size: 14, color: Color(0xFF15803D)),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Showing shops matching: ${selectedItemCats.join(', ')} (${_selectedGroceryItems.length} items)',
+                                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Expanded(
                             child: Text(
-                              'NEARBY GROCERY, KIRANA & VEGETABLE STORES (${displayedStores.length}):',
+                              hasSelectedItems
+                                  ? 'RECOMMENDED STORES FOR YOUR ITEMS (${displayedStores.length}):'
+                                  : 'NEARBY GROCERY, KIRANA & VEGETABLE STORES (${displayedStores.length}):',
                               style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,

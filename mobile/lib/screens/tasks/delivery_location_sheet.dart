@@ -4,6 +4,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:latlong2/latlong.dart' hide Path;
 import '../../services/location_search_service.dart';
 import '../../services/location_service.dart';
+import '../../services/storage_service.dart';
 import '../../widgets/location_suggestions_dropdown.dart';
 import '../../widgets/map_location_picker.dart';
 import 'vehicle_selection_screen.dart';
@@ -103,9 +104,14 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
   bool _calculatingRoute = false;
   String? _errorMessage;
 
+  List<Map<String, dynamic>> _savedLocations = [];
+  String? _selectedPickupSavedLocId;
+  String? _selectedDropSavedLocId;
+
   @override
   void initState() {
     super.initState();
+    _loadSavedLocations();
     if (widget.initialPickupAddress != null && widget.initialPickupAddress!.isNotEmpty) {
       _pickupCtrl.text = widget.initialPickupAddress!;
     }
@@ -115,6 +121,738 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
       _dropCtrl.text = widget.initialDropAddress!;
     }
     _dropLocation = widget.initialDropLocation;
+  }
+
+  void _loadSavedLocations() {
+    final list = StorageService.getSavedLocations();
+    if (mounted) {
+      setState(() => _savedLocations = list);
+    } else {
+      _savedLocations = list;
+    }
+  }
+
+  IconData _iconForLabel(String label) {
+    final l = label.toLowerCase();
+    if (l.contains('home')) return Icons.home_rounded;
+    if (l.contains('work') || l.contains('office')) return Icons.work_rounded;
+    return Icons.location_on_rounded;
+  }
+
+  Color _colorForLabel(String label) {
+    final l = label.toLowerCase();
+    if (l.contains('home')) return const Color(0xFF2563EB);
+    if (l.contains('work') || l.contains('office')) return const Color(0xFF0D9488);
+    return const Color(0xFFE11D48);
+  }
+
+  bool _isAddressSaved(String address) {
+    final clean = address.trim().toLowerCase();
+    if (clean.isEmpty) return false;
+    return _savedLocations.any((l) => (l['address'] as String? ?? '').trim().toLowerCase() == clean);
+  }
+
+  void _selectSavedLocation(Map<String, dynamic> loc, {required bool isPickup}) {
+    final id = loc['id']?.toString();
+    final addr = loc['address'] as String? ?? '';
+    final flat = loc['flat'] as String? ?? '';
+    final lat = (loc['lat'] as num?)?.toDouble();
+    final lng = (loc['lng'] as num?)?.toDouble();
+
+    setState(() {
+      if (isPickup) {
+        _selectedPickupSavedLocId = id;
+        _pickupCtrl.text = addr;
+        _pickupDetailCtrl.text = flat;
+        if (lat != null && lng != null) {
+          _pickupLocation = LatLng(lat, lng);
+        }
+        _pickupSuggestions = [];
+        _pickupFocus.unfocus();
+      } else {
+        _selectedDropSavedLocId = id;
+        _dropCtrl.text = addr;
+        _dropDetailCtrl.text = flat;
+        if (lat != null && lng != null) {
+          _dropLocation = LatLng(lat, lng);
+        }
+        _dropSuggestions = [];
+        _dropFocus.unfocus();
+      }
+      _errorMessage = null;
+    });
+
+    if (lat == null || lng == null) {
+      if (addr.isNotEmpty) {
+        LocationSearchService.geocodeAddress(addr).then((coords) {
+          if (coords != null && mounted) {
+            setState(() {
+              if (isPickup) {
+                _pickupLocation = coords;
+              } else {
+                _dropLocation = coords;
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+
+  void _clearSavedLocationSelection({required bool isPickup}) {
+    setState(() {
+      if (isPickup) {
+        _selectedPickupSavedLocId = null;
+      } else {
+        _selectedDropSavedLocId = null;
+      }
+    });
+  }
+
+  Future<void> _openSaveLocationDialog({required bool isPickup}) async {
+    final currentAddr = isPickup ? _pickupCtrl.text.trim() : _dropCtrl.text.trim();
+    final currentDetail = isPickup ? _pickupDetailCtrl.text.trim() : _dropDetailCtrl.text.trim();
+
+    final addrCtrl = TextEditingController(text: currentAddr);
+    final detailCtrl = TextEditingController(text: currentDetail);
+    String selectedType = 'Home';
+    final nameCtrl = TextEditingController(text: 'Home');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 10),
+          contentPadding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.bookmark_rounded, color: Color(0xFF2563EB), size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                isPickup ? 'Save Pickup Location' : 'Save Drop Location',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Label as:',
+                  style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: ['Home', 'Work', 'Other'].map((t) {
+                    final sel = selectedType == t;
+                    final icon = t == 'Home'
+                        ? Icons.home_rounded
+                        : (t == 'Work' ? Icons.work_rounded : Icons.location_on_rounded);
+                    return Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: InkWell(
+                          onTap: () {
+                            setDlgState(() {
+                              selectedType = t;
+                              if (t != 'Other') {
+                                nameCtrl.text = t;
+                              } else if (nameCtrl.text == 'Home' || nameCtrl.text == 'Work') {
+                                nameCtrl.clear();
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(10),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: sel ? const Color(0xFF2563EB) : const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: sel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(icon, size: 14, color: sel ? Colors.white : const Color(0xFF475569)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  t,
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: sel ? Colors.white : const Color(0xFF334155),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: nameCtrl,
+                  style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                  decoration: InputDecoration(
+                    labelText: 'Address Name',
+                    labelStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    hintText: selectedType == 'Other' ? 'e.g. Warehouse, Gym, Mom\'s' : selectedType,
+                    hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                    prefixIcon: const Icon(Icons.label_outline_rounded, size: 18, color: Color(0xFF64748B)),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: addrCtrl,
+                  maxLines: 2,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF0F172A)),
+                  decoration: InputDecoration(
+                    labelText: 'Address',
+                    labelStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    hintText: 'Enter complete address...',
+                    hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                    prefixIcon: const Padding(
+                      padding: EdgeInsets.only(bottom: 18),
+                      child: Icon(Icons.place_outlined, size: 18, color: Color(0xFF64748B)),
+                    ),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: detailCtrl,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Color(0xFF0F172A)),
+                  decoration: InputDecoration(
+                    labelText: 'Flat / Building / Landmark (Optional)',
+                    labelStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
+                    hintText: 'e.g. Flat 402, B Wing, Near Metro',
+                    hintStyle: const TextStyle(fontSize: 12.5, color: Color(0xFF94A3B8)),
+                    prefixIcon: const Icon(Icons.apartment_rounded, size: 18, color: Color(0xFF64748B)),
+                    isDense: true,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFFE2E8F0))),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B), fontWeight: FontWeight.w600)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (addrCtrl.text.trim().isEmpty) return;
+                Navigator.pop(ctx, true);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2563EB),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
+              ),
+              child: const Text('Save Location', style: TextStyle(fontWeight: FontWeight.w700)),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+    final label = nameCtrl.text.trim().isEmpty ? selectedType : nameCtrl.text.trim();
+    final finalAddr = addrCtrl.text.trim();
+    final finalDetail = detailCtrl.text.trim();
+
+    if (isPickup) {
+      _pickupCtrl.text = finalAddr;
+      _pickupDetailCtrl.text = finalDetail;
+    } else {
+      _dropCtrl.text = finalAddr;
+      _dropDetailCtrl.text = finalDetail;
+    }
+
+    LatLng? coords = isPickup ? _pickupLocation : _dropLocation;
+    if (coords == null && finalAddr.isNotEmpty) {
+      try {
+        final geocoded = await LocationSearchService.geocodeAddress(finalAddr);
+        if (geocoded != null) {
+          coords = geocoded;
+          if (isPickup) {
+            _pickupLocation = coords;
+          } else {
+            _dropLocation = coords;
+          }
+        }
+      } catch (_) {}
+    }
+
+    final newId = DateTime.now().millisecondsSinceEpoch.toString();
+    final newLoc = {
+      'id': newId,
+      'label': label,
+      'address': finalAddr,
+      'flat': finalDetail,
+      'area': '',
+      'lat': coords?.latitude,
+      'lng': coords?.longitude,
+    };
+
+    await StorageService.addSavedLocation(newLoc);
+    _loadSavedLocations();
+    if (mounted) {
+      setState(() {
+        if (isPickup) {
+          _selectedPickupSavedLocId = newId;
+        } else {
+          _selectedDropSavedLocId = newId;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('“$label” saved to locations!'),
+          duration: const Duration(seconds: 2),
+          backgroundColor: const Color(0xFF0F1E36),
+        ),
+      );
+    }
+  }
+
+  void _showManageSavedLocationsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.65,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFCBD5E1),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Manage Saved Locations',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: Color(0xFF0F172A)),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Select or remove your saved addresses',
+                  style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: _savedLocations.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(24.0),
+                            child: Text('No saved locations', style: TextStyle(color: Color(0xFF94A3B8))),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: _savedLocations.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (ctx, idx) {
+                            final loc = _savedLocations[idx];
+                            final id = loc['id']?.toString() ?? '';
+                            final label = loc['label'] as String? ?? 'Saved';
+                            final addr = loc['address'] as String? ?? '';
+                            final flat = loc['flat'] as String?;
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: _colorForLabel(label).withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(_iconForLabel(label), size: 18, color: _colorForLabel(label)),
+                              ),
+                              title: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
+                              subtitle: Text(
+                                [if (flat != null && flat.isNotEmpty) flat, addr].join(', '),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444), size: 20),
+                                onPressed: () async {
+                                  await StorageService.deleteSavedLocation(id);
+                                  _loadSavedLocations();
+                                  setSheetState(() {});
+                                  if (mounted) setState(() {});
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSavedLocationsDropdown({required bool isPickup}) {
+    final selectedId = isPickup ? _selectedPickupSavedLocId : _selectedDropSavedLocId;
+    Map<String, dynamic>? selectedLoc;
+    if (selectedId != null) {
+      try {
+        selectedLoc = _savedLocations.firstWhere((l) => l['id']?.toString() == selectedId);
+      } catch (_) {}
+    }
+    final hasSaved = _savedLocations.isNotEmpty;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Saved Locations',
+        position: PopupMenuPosition.under,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(14),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        elevation: 6,
+        color: Colors.white,
+        offset: const Offset(0, 6),
+        onSelected: (val) async {
+          if (val == '__save_new__') {
+            await _openSaveLocationDialog(isPickup: isPickup);
+          } else if (val == '__manage__') {
+            _showManageSavedLocationsSheet();
+          } else {
+            try {
+              final loc = _savedLocations.firstWhere((l) => l['id']?.toString() == val);
+              _selectSavedLocation(loc, isPickup: isPickup);
+            } catch (_) {}
+          }
+        },
+        itemBuilder: (context) {
+          final List<PopupMenuEntry<String>> items = [];
+
+          // Header
+          items.add(
+            const PopupMenuItem<String>(
+              enabled: false,
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.bookmark_rounded, size: 15, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Text(
+                    'SAVED LOCATIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF475569),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          items.add(const PopupMenuDivider(height: 1));
+
+          if (!hasSaved) {
+            items.add(
+              const PopupMenuItem<String>(
+                enabled: false,
+                height: 44,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    'No saved locations yet.\nTap below to save current address.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                  ),
+                ),
+              ),
+            );
+          } else {
+            for (final loc in _savedLocations) {
+              final id = loc['id']?.toString() ?? '';
+              final label = loc['label'] as String? ?? 'Saved';
+              final addr = loc['address'] as String? ?? '';
+              final isSelected = selectedLoc != null && selectedLoc['id']?.toString() == id;
+
+              final icon = _iconForLabel(label);
+              final iconColor = _colorForLabel(label);
+
+              items.add(
+                PopupMenuItem<String>(
+                  value: id,
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: iconColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(icon, size: 16, color: iconColor),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF334155),
+                              ),
+                            ),
+                            if (addr.isNotEmpty)
+                              Text(
+                                addr,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (isSelected)
+                        const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF16A34A)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          items.add(const PopupMenuDivider(height: 1));
+
+          // Save current address action
+          items.add(
+            PopupMenuItem<String>(
+              value: '__save_new__',
+              height: 44,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.add_location_alt_rounded, size: 16, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      '+ Save Address (Home, Work, Other)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+          if (hasSaved) {
+            items.add(
+              PopupMenuItem<String>(
+                value: '__manage__',
+                height: 40,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.settings_outlined, size: 15, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Manage Saved Locations...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return items;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: selectedLoc != null ? const Color(0xFFF8FAFC) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selectedLoc != null ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+              width: selectedLoc != null ? 1.3 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selectedLoc != null
+                    ? _iconForLabel(selectedLoc['label'] as String? ?? 'Other')
+                    : Icons.bookmark_outline_rounded,
+                size: 18,
+                color: selectedLoc != null ? const Color(0xFF2563EB) : const Color(0xFF475569),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            selectedLoc != null ? 'SAVED LOCATION' : 'SAVED LOCATIONS',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                        if (selectedLoc != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Text(
+                                selectedLoc['label'] as String? ?? 'Saved',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      selectedLoc != null
+                          ? (selectedLoc['address'] as String? ?? selectedLoc['label'] as String? ?? '')
+                          : (hasSaved
+                              ? 'Choose from Home, Work, Other'
+                              : 'Tap to save delivery location'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: selectedLoc != null ? FontWeight.w700 : FontWeight.w500,
+                        color: selectedLoc != null ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (selectedLoc != null)
+                GestureDetector(
+                  onTap: () {
+                    _clearSavedLocationSelection(isPickup: isPickup);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down_rounded, size: 22, color: Color(0xFF475569)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -132,6 +870,9 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
 
   void _onPickupChanged(String query) {
     _pickupDebounce?.cancel();
+    if (_selectedPickupSavedLocId != null) {
+      setState(() => _selectedPickupSavedLocId = null);
+    }
     final q = query.trim();
     if (q.length < 2) {
       setState(() {
@@ -159,6 +900,9 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
 
   void _onDropChanged(String query) {
     _dropDebounce?.cancel();
+    if (_selectedDropSavedLocId != null) {
+      setState(() => _selectedDropSavedLocId = null);
+    }
     final q = query.trim();
     if (q.length < 2) {
       setState(() {
@@ -188,6 +932,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
     _pickupCtrl.text = result.fullAddress;
     _pickupLocation = result.toLatLng();
     setState(() {
+      _selectedPickupSavedLocId = null;
       _pickupSuggestions = [];
       _searchingPickup = false;
       _errorMessage = null;
@@ -199,6 +944,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
     _dropCtrl.text = result.fullAddress;
     _dropLocation = result.toLatLng();
     setState(() {
+      _selectedDropSavedLocId = null;
       _dropSuggestions = [];
       _searchingDrop = false;
       _errorMessage = null;
@@ -217,6 +963,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
         return;
       }
       _pickupLocation = loc;
+      _selectedPickupSavedLocId = null;
       try {
         final places = await placemarkFromCoordinates(loc.latitude, loc.longitude).timeout(const Duration(seconds: 6));
         if (mounted && places.isNotEmpty) {
@@ -251,6 +998,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
         return;
       }
       _dropLocation = loc;
+      _selectedDropSavedLocId = null;
       try {
         final places = await placemarkFromCoordinates(loc.latitude, loc.longitude).timeout(const Duration(seconds: 6));
         if (mounted && places.isNotEmpty) {
@@ -285,6 +1033,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
     if (result != null && mounted) {
       final addr = result['address'] as String?;
       setState(() {
+        _selectedPickupSavedLocId = null;
         _pickupLocation = result['location'] as LatLng?;
         if (addr != null && addr.isNotEmpty) _pickupCtrl.text = addr;
         _errorMessage = null;
@@ -303,6 +1052,7 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
     if (result != null && mounted) {
       final addr = result['address'] as String?;
       setState(() {
+        _selectedDropSavedLocId = null;
         _dropLocation = result['location'] as LatLng?;
         if (addr != null && addr.isNotEmpty) _dropCtrl.text = addr;
         _errorMessage = null;
@@ -412,7 +1162,10 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 420),
+        constraints: BoxConstraints(
+          maxWidth: 420,
+          maxHeight: MediaQuery.of(context).size.height * 0.90,
+        ),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -640,6 +1393,11 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Top Row: Saved Locations Dropdown Card (matching user reference image) ──
+          _buildSavedLocationsDropdown(isPickup: isPickup),
+
+          const SizedBox(height: 10),
+
           // Top Row: Icon + Title + Action buttons (GPS and Map)
           Row(
             children: [
@@ -784,6 +1542,58 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
               ),
             ],
           ),
+
+          // ── Quick Save Address Prompt if text entered and not yet in saved locations ──
+          if (mainController.text.trim().isNotEmpty &&
+              !_isAddressSaved(mainController.text.trim())) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBFDBFE)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.bookmark_outline_rounded, size: 18, color: Color(0xFF2563EB)),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Save as Home, Work, or Other for next time?',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E40AF),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  InkWell(
+                    onTap: () => _openSaveLocationDialog(isPickup: isPickup),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2563EB),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text(
+                        'Save',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -3269,9 +3269,51 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       }
     }
 
+    // For delivery / grocery tasks, ensure pickup location is genuinely resolved and distinct from drop
+    if (_isDelivery) {
+      if (_pickupLocation == null && _pickupAddrCtrl.text.trim().isNotEmpty) {
+        final geocoded = await LocationSearchService.geocodeAddress(_pickupAddrCtrl.text.trim());
+        if (geocoded != null) {
+          _pickupLocation = geocoded;
+        } else {
+          final area = _extractAreaName(_dropAddrCtrl.text);
+          final geocoded2 = await LocationSearchService.geocodeAddress('${_pickupAddrCtrl.text.trim()}, $area');
+          if (geocoded2 != null) {
+            _pickupLocation = geocoded2;
+          }
+        }
+      }
+      if (!mounted) return;
+      if (_pickupLocation == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(Task.isGroceryCategory(_selectedCategory)
+                ? 'Please select a valid store from the list or pick on map'
+                : 'Please set a valid pickup location'),
+            backgroundColor: AppColors.danger,
+          ),
+        );
+        return;
+      }
+      if (_dropLocation != null && _pickupLocation != null) {
+        final dMeters = const Distance().distance(_pickupLocation!, _dropLocation!);
+        if (dMeters < 50) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(Task.isGroceryCategory(_selectedCategory)
+                  ? 'Store address and delivery address cannot be the same location.'
+                  : 'Pickup and drop addresses cannot be the same location.'),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+          return;
+        }
+      }
+    }
+
     final LatLng? taskLocation = _isFreelancer
         ? null
-        : (_isDelivery ? (_pickupLocation ?? _location) : _location);
+        : (_isDelivery ? _pickupLocation : _location);
     if (!_isFreelancer && taskLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -5850,7 +5892,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _suggestedGroceryStoresList = realStores.where((s) {
           final d = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
           final st = ((s['straightKm'] ?? 0.0) as num).toDouble();
-          if (d > 10.0 || st > 8.0) return false;
+          if (d > 10.0 || st > 10.0) return false;
           return s['hasAllItems'] == true ||
             LocationSearchService.isAllItemsStore(
               s['name'] as String? ?? '',
@@ -5858,6 +5900,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               s['amenity'] as String? ?? '',
             );
         }).toList();
+        if (!_userPickedStoreManually && _selectedGroceryStoreName == null && _suggestedGroceryStoresList.isNotEmpty) {
+          _selectGroceryStore(_suggestedGroceryStoresList.first, isManual: false);
+        }
       });
     }).catchError((_) {
       if (mounted && seq == _storeFetchSeq) {
@@ -5932,7 +5977,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       for (final m in matches) {
         final d = ((m['distanceKm'] ?? m['straightKm'] ?? 0.0) as num).toDouble();
         final st = ((m['straightKm'] ?? 0.0) as num).toDouble();
-        if (d > 10.0 || st > 8.0) continue;
+        if (d > 10.0 || st > 10.0) continue;
         if (!merged.any((ex) => (ex['name'] as String).toLowerCase() == (m['name'] as String).toLowerCase())) {
           merged.add(m);
         }
@@ -6011,7 +6056,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
   }
 
-  void _selectGroceryStore(Map<String, dynamic> store) {
+  void _selectGroceryStore(Map<String, dynamic> store, {bool isManual = true}) {
     final dist = (store['distanceKm'] as num).toDouble().clamp(0.1, 10.0);
     final double? storeLat = (store['lat'] as num?)?.toDouble();
     final double? storeLng = (store['lng'] as num?)?.toDouble();
@@ -6022,7 +6067,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         : (addr.isNotEmpty ? addr : name);
 
     setState(() {
-      _userPickedStoreManually = true;
+      _userPickedStoreManually = isManual;
       _selectedGroceryStoreName = name;
       _calculatedDistanceKm = dist;
       _pickupAddrCtrl.text = fullStoreAddr;
@@ -6030,6 +6075,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation = LatLng(storeLat, storeLng);
       } else {
         _pickupLocation = null;
+        LocationSearchService.geocodeAddress(fullStoreAddr).then((loc) {
+          if (loc != null && mounted && _selectedGroceryStoreName == name) {
+            setState(() => _pickupLocation = loc);
+          }
+        });
       }
       _isStoreDropdownOpen = false;
       _storeSearchCtrl.clear();
@@ -6244,7 +6294,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         .where((s) {
           final d = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
           final st = ((s['straightKm'] ?? 0.0) as num).toDouble();
-          if (d > 10.0 || st > 8.0) return false;
+          if (d > 10.0 || st > 10.0) return false;
           return s['hasAllItems'] == true ||
               LocationSearchService.isAllItemsStore(
                 s['name'] as String? ?? '',

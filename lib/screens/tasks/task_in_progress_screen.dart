@@ -429,17 +429,48 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
     });
   }
 
-  Future<void> _openNavigationTo(double? lat, double? lng, String? query) async {
+  Future<void> _openNavigationTo(double? lat, double? lng, String? query, {bool isStorePickup = false}) async {
     Uri uri;
-    if (lat != null && lng != null && lat != 0 && lng != 0) {
+    final cleanQuery = query?.trim() ?? '';
+    final hasValidQuery = cleanQuery.isNotEmpty &&
+        cleanQuery != 'Store location' &&
+        cleanQuery != 'Pickup location' &&
+        cleanQuery != 'Delivery Location' &&
+        cleanQuery != 'Local Area' &&
+        cleanQuery != 'Selected Store';
+
+    // If pickup coordinates mistakenly match drop coordinates (e.g. poster's home),
+    // they are invalid for the store -> must use store address query!
+    final bool coordsMatchDrop = _task != null &&
+        _task!.dropLatitude != null &&
+        _task!.dropLongitude != null &&
+        lat != null &&
+        lng != null &&
+        (lat - _task!.dropLatitude!).abs() < 0.001 &&
+        (lng - _task!.dropLongitude!).abs() < 0.001;
+
+    if (coordsMatchDrop && hasValidQuery) {
+      // Coords corrupted/identical to drop location -> navigate strictly to store address!
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=${Uri.encodeComponent(cleanQuery)}'
+          '&travelmode=driving');
+    } else if (isStorePickup && hasValidQuery) {
+      // For grocery/store pickup: navigating by store name & address directs helper
+      // directly to the named shop/supermarket on Google Maps instead of a residential house.
+      uri = Uri.parse(
+          'https://www.google.com/maps/dir/?api=1'
+          '&destination=${Uri.encodeComponent(cleanQuery)}'
+          '&travelmode=driving');
+    } else if (lat != null && lng != null && lat != 0 && lng != 0 && !coordsMatchDrop) {
       uri = Uri.parse(
           'https://www.google.com/maps/dir/?api=1'
           '&destination=$lat,$lng'
           '&travelmode=driving');
-    } else if (query != null && query.trim().isNotEmpty) {
+    } else if (hasValidQuery) {
       uri = Uri.parse(
           'https://www.google.com/maps/dir/?api=1'
-          '&destination=${Uri.encodeComponent(query.trim())}'
+          '&destination=${Uri.encodeComponent(cleanQuery)}'
           '&travelmode=driving');
     } else {
       if (mounted) {
@@ -460,10 +491,20 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
 
   Future<void> _openNavigation() async {
     if (_task == null) return;
-    final uri = Uri.parse(
-        'https://www.google.com/maps/dir/?api=1'
-        '&destination=${_task!.latitude},${_task!.longitude}'
-        '&travelmode=driving');
+    final cleanAddr = _task!.address?.trim() ?? '';
+    final hasValidAddr = cleanAddr.isNotEmpty &&
+        cleanAddr != 'Local Area' &&
+        cleanAddr != 'Task Location';
+
+    final uri = (hasValidAddr)
+        ? Uri.parse(
+            'https://www.google.com/maps/dir/?api=1'
+            '&destination=${Uri.encodeComponent(cleanAddr)}'
+            '&travelmode=driving')
+        : Uri.parse(
+            'https://www.google.com/maps/dir/?api=1'
+            '&destination=${_task!.latitude},${_task!.longitude}'
+            '&travelmode=driving');
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else if (mounted) {
@@ -1192,6 +1233,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
                                       task.latitude,
                                       task.longitude,
                                       pickupAddr,
+                                      isStorePickup: isGrocery,
                                     ),
                                   ),
                                 ],

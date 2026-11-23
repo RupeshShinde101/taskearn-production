@@ -3784,6 +3784,8 @@ def get_task(task_id):
                     'lng': task.get('drop_location_lng'),
                     'address': task.get('drop_location_address') or ''
                 } if (task.get('drop_location_lat') or task.get('drop_location_address')) else None,
+                'drop_location_lat': float(task['drop_location_lat']) if task.get('drop_location_lat') is not None else None,
+                'drop_location_lng': float(task['drop_location_lng']) if task.get('drop_location_lng') is not None else None,
                 'pickup_address': task.get('location_address') or '',
                 'drop_address': task.get('drop_location_address') or '',
                 'drop_location_address': task.get('drop_location_address') or '',

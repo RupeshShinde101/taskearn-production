@@ -639,7 +639,13 @@ class LocationSearchService {
         lowerName.contains('furniture') ||
         lowerName.contains('jewel') ||
         lowerName.contains('mobile shop') ||
-        lowerName.contains('repair')) {
+        lowerName.contains('repair') ||
+        lowerName.contains('watch') ||
+        lowerName.contains('bypass') ||
+        lowerName.contains('expressway') ||
+        lowerName.contains('highway') ||
+        lowerName.contains('flyover') ||
+        lowerName.contains('bridge')) {
       return false;
     }
 
@@ -832,7 +838,49 @@ class LocationSearchService {
     return '';
   }
 
-  /// Fetches nearby stores using official Google Places API if an API key is configured.
+  static final Map<String, String> _reverseAddressCache = {};
+
+  /// Reverse geocodes coordinates to a clean, real road + locality + city string.
+  /// Never fabricates fake addresses or substitutes delivery areas.
+  static Future<String> reverseGeocodeRoadAndSuburb(double lat, double lng) async {
+    final cacheKey = '${lat.toStringAsFixed(4)},${lng.toStringAsFixed(4)}';
+    if (_reverseAddressCache.containsKey(cacheKey)) {
+      return _reverseAddressCache[cacheKey]!;
+    }
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+        'lat': lat.toStringAsFixed(6),
+        'lon': lng.toStringAsFixed(6),
+        'format': 'json',
+        'addressdetails': '1',
+      });
+      final resp = await http.get(uri, headers: {
+        'User-Agent': 'Workmate4u/1.0 (com.workmate4u.workmate4u)',
+        'Accept-Language': 'en',
+      }).timeout(const Duration(seconds: 4));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final addr = data['address'] as Map<String, dynamic>? ?? {};
+        final road = (addr['road'] ?? addr['pedestrian'] ?? addr['footway'] ?? '').toString().trim();
+        final sub = (addr['suburb'] ?? addr['neighbourhood'] ?? addr['town'] ?? addr['village'] ?? '').toString().trim();
+        final city = (addr['city'] ?? addr['county'] ?? addr['state_district'] ?? '').toString().trim();
+        final parts = <String>[];
+        if (road.isNotEmpty) parts.add(road);
+        if (sub.isNotEmpty && sub != road) parts.add(sub);
+        if (city.isNotEmpty && city != sub) parts.add(city);
+        final result = parts.isNotEmpty
+            ? parts.join(', ')
+            : (data['display_name']?.toString().split(',').take(3).join(', ').trim() ?? '');
+        if (result.isNotEmpty) {
+          _reverseAddressCache[cacheKey] = result;
+          return result;
+        }
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  /// Fetches nearby stores using official Google Places API (New & Legacy).
   static Future<List<Map<String, dynamic>>> _fetchGooglePlacesStores(
     LatLng center, {
     required double radiusKm,
@@ -841,8 +889,77 @@ class LocationSearchService {
     final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
     if (apiKey.isEmpty) return [];
 
+    final radiusMeters = (radiusKm * 1000).toInt().clamp(1000, 10000);
+
+    // 1. Google Places API (New) - v1/places:searchNearby
     try {
-      final radiusMeters = (radiusKm * 1000).toInt().clamp(1000, 10000);
+      final newUri = Uri.parse('https://places.googleapis.com/v1/places:searchNearby');
+      final newBody = jsonEncode({
+        'includedTypes': ['grocery_store', 'supermarket'],
+        'locationRestriction': {
+          'circle': {
+            'center': {
+              'latitude': center.latitude,
+              'longitude': center.longitude,
+            },
+            'radius': radiusMeters.toDouble(),
+          }
+        },
+        'maxResultCount': 20,
+      });
+      final newResp = await http.post(
+        newUri,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.types',
+        },
+        body: newBody,
+      ).timeout(const Duration(seconds: 6));
+
+      if (newResp.statusCode == 200) {
+        final data = jsonDecode(newResp.body) as Map<String, dynamic>;
+        final places = data['places'] as List<dynamic>? ?? [];
+        if (places.isNotEmpty) {
+          final list = <Map<String, dynamic>>[];
+          for (final p in places) {
+            if (p is! Map<String, dynamic>) continue;
+            final dispObj = p['displayName'] as Map<String, dynamic>? ?? {};
+            final name = (dispObj['text'] as String?)?.trim() ?? '';
+            if (name.isEmpty) continue;
+
+            final loc = p['location'] as Map<String, dynamic>? ?? {};
+            final lat = (loc['latitude'] as num?)?.toDouble();
+            final lng = (loc['longitude'] as num?)?.toDouble();
+            if (lat == null || lng == null) continue;
+
+            final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
+            if (straightKm > (radiusKm / 1.25)) continue;
+
+            final address = (p['shortFormattedAddress'] ?? p['formattedAddress'] as String?) ?? 'Local Store';
+            final rating = (p['rating'] as num?)?.toDouble() ?? 0.0;
+
+            final store = _buildStoreMap(
+              rawName: name,
+              shopType: 'supermarket',
+              amenity: 'marketplace',
+              address: address,
+              lat: lat,
+              lng: lng,
+              straightKm: straightKm,
+              radiusKm: radiusKm,
+              importance: (rating / 5.0).clamp(0.5, 1.0),
+            );
+            store['fromGoogleMaps'] = true;
+            list.add(store);
+          }
+          if (list.isNotEmpty) return list;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback to Legacy Google Places API (nearbysearch)
+    try {
       final uri = Uri.parse(
         'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
         '?location=${center.latitude},${center.longitude}'
@@ -850,51 +967,133 @@ class LocationSearchService {
         '&keyword=${Uri.encodeComponent(query)}'
         '&key=$apiKey',
       );
-      final resp = await http.get(uri).timeout(const Duration(seconds: 7));
-      if (resp.statusCode != 200) return [];
-      final data = jsonDecode(resp.body) as Map<String, dynamic>;
-      final results = data['results'] as List<dynamic>? ?? [];
+      final resp = await http.get(uri).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final results = data['results'] as List<dynamic>? ?? [];
 
-      final list = <Map<String, dynamic>>[];
-      for (final r in results) {
-        if (r is! Map<String, dynamic>) continue;
-        final name = (r['name'] as String?)?.trim() ?? '';
-        if (name.isEmpty) continue;
+        final list = <Map<String, dynamic>>[];
+        for (final r in results) {
+          if (r is! Map<String, dynamic>) continue;
+          final name = (r['name'] as String?)?.trim() ?? '';
+          if (name.isEmpty) continue;
 
-        final geom = r['geometry'] as Map<String, dynamic>? ?? {};
-        final loc = geom['location'] as Map<String, dynamic>? ?? {};
-        final lat = (loc['lat'] as num?)?.toDouble();
-        final lng = (loc['lng'] as num?)?.toDouble();
-        if (lat == null || lng == null) continue;
+          final geom = r['geometry'] as Map<String, dynamic>? ?? {};
+          final loc = geom['location'] as Map<String, dynamic>? ?? {};
+          final lat = (loc['lat'] as num?)?.toDouble();
+          final lng = (loc['lng'] as num?)?.toDouble();
+          if (lat == null || lng == null) continue;
 
-        final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
-        if (straightKm > (radiusKm / 1.25)) continue;
+          final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
+          if (straightKm > (radiusKm / 1.25)) continue;
 
-        final vicinity = (r['vicinity'] as String?) ?? 'Local Store';
-        final rating = (r['rating'] as num?)?.toDouble() ?? 0.0;
+          final vicinity = (r['vicinity'] as String?) ?? 'Local Store';
+          final rating = (r['rating'] as num?)?.toDouble() ?? 0.0;
 
-        final store = _buildStoreMap(
-          rawName: name,
-          shopType: 'supermarket',
-          amenity: 'marketplace',
-          address: vicinity,
-          lat: lat,
-          lng: lng,
-          straightKm: straightKm,
-          radiusKm: radiusKm,
-          importance: (rating / 5.0).clamp(0.5, 1.0),
-        );
-        store['fromGoogleMaps'] = true;
-        list.add(store);
+          final store = _buildStoreMap(
+            rawName: name,
+            shopType: 'supermarket',
+            amenity: 'marketplace',
+            address: vicinity,
+            lat: lat,
+            lng: lng,
+            straightKm: straightKm,
+            radiusKm: radiusKm,
+            importance: (rating / 5.0).clamp(0.5, 1.0),
+          );
+          store['fromGoogleMaps'] = true;
+          list.add(store);
+        }
+        return list;
       }
-      return list;
-    } catch (_) {
-      return [];
-    }
+    } catch (_) {}
+
+    return [];
+  }
+
+  /// Searches Google Places by text query (New & Legacy).
+  static Future<List<Map<String, dynamic>>> _fetchGooglePlacesTextSearch(
+    LatLng center,
+    String query, {
+    required double radiusKm,
+  }) async {
+    final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
+    if (apiKey.isEmpty) return [];
+
+    final radiusMeters = (radiusKm * 1000).toInt().clamp(1000, 10000);
+
+    // 1. Places API (New) - v1/places:searchText
+    try {
+      final newUri = Uri.parse('https://places.googleapis.com/v1/places:searchText');
+      final newBody = jsonEncode({
+        'textQuery': query,
+        'locationBias': {
+          'circle': {
+            'center': {
+              'latitude': center.latitude,
+              'longitude': center.longitude,
+            },
+            'radius': radiusMeters.toDouble(),
+          }
+        },
+        'maxResultCount': 15,
+      });
+      final newResp = await http.post(
+        newUri,
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': apiKey,
+          'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.shortFormattedAddress,places.location,places.rating,places.types',
+        },
+        body: newBody,
+      ).timeout(const Duration(seconds: 6));
+
+      if (newResp.statusCode == 200) {
+        final data = jsonDecode(newResp.body) as Map<String, dynamic>;
+        final places = data['places'] as List<dynamic>? ?? [];
+        if (places.isNotEmpty) {
+          final list = <Map<String, dynamic>>[];
+          for (final p in places) {
+            if (p is! Map<String, dynamic>) continue;
+            final dispObj = p['displayName'] as Map<String, dynamic>? ?? {};
+            final name = (dispObj['text'] as String?)?.trim() ?? '';
+            if (name.isEmpty) continue;
+
+            final loc = p['location'] as Map<String, dynamic>? ?? {};
+            final lat = (loc['latitude'] as num?)?.toDouble();
+            final lng = (loc['longitude'] as num?)?.toDouble();
+            if (lat == null || lng == null) continue;
+
+            final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
+            if (straightKm > (radiusKm / 1.25)) continue;
+
+            final address = (p['shortFormattedAddress'] ?? p['formattedAddress'] as String?) ?? 'Local Store';
+            final rating = (p['rating'] as num?)?.toDouble() ?? 0.0;
+
+            final store = _buildStoreMap(
+              rawName: name,
+              shopType: 'supermarket',
+              amenity: 'marketplace',
+              address: address,
+              lat: lat,
+              lng: lng,
+              straightKm: straightKm,
+              radiusKm: radiusKm,
+              importance: (rating / 5.0).clamp(0.5, 1.0),
+            );
+            store['fromGoogleMaps'] = true;
+            list.add(store);
+          }
+          if (list.isNotEmpty) return list;
+        }
+      }
+    } catch (_) {}
+
+    return [];
   }
 
   /// Resolves Google Maps share links (maps.app.goo.gl, goo.gl/maps, google.com/maps)
-  /// directly extracting place name, coordinates, and real distance.
+  /// directly extracting place name, real coordinates, and reverse-geocoded genuine address.
   static Future<Map<String, dynamic>?> resolveGoogleMapsUrl(
     String rawUrl, {
     LatLng? userLocation,
@@ -949,11 +1148,17 @@ class LocationSearchService {
         straightKm = _haversineKm(userLocation.latitude, userLocation.longitude, lat, lng);
       }
 
+      // Reverse-geocode to get the store's REAL road, locality & city
+      String realAddress = await reverseGeocodeRoadAndSuburb(lat, lng);
+      if (realAddress.isEmpty) {
+        realAddress = 'Near $storeName';
+      }
+
       final store = _buildStoreMap(
         rawName: storeName,
-        shopType: 'greengrocer',
+        shopType: 'supermarket',
         amenity: 'marketplace',
-        address: 'Google Maps Verified Store',
+        address: realAddress,
         lat: lat,
         lng: lng,
         straightKm: straightKm,
@@ -969,248 +1174,6 @@ class LocationSearchService {
       client.close(force: true);
     }
   }
-
-  /// Google Maps Verified local business registry for Pune and nearby clusters.
-  /// Guarantees that local micro-vendors and kirana/vegetable shops (like Bhagyalaxmi
-  /// and Shree Swami Samarth) show up accurately with zero latency.
-  static final List<Map<String, dynamic>> _googleMapsVerifiedStores = [
-    {
-      'name': 'Shree Swami Samarth Vegetables And Fruits',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Narhe - Dhayari Road, Dhayari, Pune, 411041',
-      'lat': 18.4601629,
-      'lng': 73.7856384,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.98,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Bhagyalaxmi Vegitable',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Kolhewadi Road, Dhayari, Pune, 411041',
-      'lat': 18.4578255,
-      'lng': 73.7829013,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.98,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Dayal Vegetable and Fruit Mart',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Kolhewadi Road, Haveli Subdistrict, Pune, 411024',
-      'lat': 18.4521,
-      'lng': 73.7770,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.92,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Sri Samarth Krupa Fruit and Bhaji Market',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Kolhewadi Road, Haveli, Pune, 411024',
-      'lat': 18.4510,
-      'lng': 73.7750,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.90,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Kaal Bhairavnath Vegetable Market',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Dhayari Road, Anandnagar, Pune, 411041',
-      'lat': 18.4480,
-      'lng': 73.8050,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.89,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Mataji Supermarket',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'Kolhewadi Road, Dhayari, Pune, 411024',
-      'lat': 18.4515,
-      'lng': 73.7760,
-      'categories': [
-        'Vegetables & Fruits',
-        'Dairy & Breakfast',
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages',
-        'Cleaning & Household'
-      ],
-      'importance': 0.94,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Poona Supermarket',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'Dhayari Road, Anandnagar, Pune, 411051',
-      'lat': 18.4490,
-      'lng': 73.8040,
-      'categories': [
-        'Vegetables & Fruits',
-        'Dairy & Breakfast',
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages',
-        'Cleaning & Household'
-      ],
-      'importance': 0.95,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Balaji Market',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'Vadgaon Budruk - Narhe Road, Pune, 411051',
-      'lat': 18.4620,
-      'lng': 73.8240,
-      'categories': [
-        'Vegetables & Fruits',
-        'Dairy & Breakfast',
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages'
-      ],
-      'importance': 0.92,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Shree Datta Krupa Vegetables and Fruits Market',
-      'shopType': 'greengrocer',
-      'amenity': 'marketplace',
-      'address': 'Vadgaon Budruk - Narhe Road, Pune, 411051',
-      'lat': 18.4550,
-      'lng': 73.8250,
-      'categories': ['Vegetables & Fruits'],
-      'importance': 0.88,
-      'hasAllItems': false,
-      'tag': 'Fresh Vegetables & Produce',
-    },
-    {
-      'name': 'Kerala Basket - South Indian Supermarket',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'DSK Vishwa Road, Dhayari, Pune, 411041',
-      'lat': 18.4520,
-      'lng': 73.7780,
-      'categories': [
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages',
-        'Dairy & Breakfast'
-      ],
-      'importance': 0.90,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Patanjali Supermarket',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'DSK Vishwa Road, Dhayari, Pune, 411041',
-      'lat': 18.4525,
-      'lng': 73.7785,
-      'categories': ['Staples & Dals', 'Oils & Masalas', 'Dairy & Breakfast'],
-      'importance': 0.90,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Chamunda Kirana Store',
-      'shopType': 'convenience',
-      'amenity': '',
-      'address': 'Katraj Ambegaon Khurd Road, Katraj, Pune, 411046',
-      'lat': 18.4560,
-      'lng': 73.8400,
-      'categories': [
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Dairy & Breakfast',
-        'Snacks & Beverages'
-      ],
-      'importance': 0.88,
-      'hasAllItems': false,
-      'tag': 'Kirana & Grocery',
-    },
-    {
-      'name': 'Keshatawar Provision Store',
-      'shopType': 'convenience',
-      'amenity': '',
-      'address': 'Vithal Mandir Road, Karve Nagar, Pune, 411051',
-      'lat': 18.4800,
-      'lng': 73.8200,
-      'categories': ['Staples & Dals', 'Oils & Masalas', 'Snacks & Beverages'],
-      'importance': 0.87,
-      'hasAllItems': false,
-      'tag': 'Kirana & Grocery',
-    },
-    {
-      'name': 'Ukirande Kirana',
-      'shopType': 'convenience',
-      'amenity': '',
-      'address': 'Golwalkar Guruji Path, Sahakar Nagar, Pune, 411009',
-      'lat': 18.4850,
-      'lng': 73.8450,
-      'categories': ['Staples & Dals', 'Oils & Masalas', 'Snacks & Beverages'],
-      'importance': 0.86,
-      'hasAllItems': false,
-      'tag': 'Kirana & Grocery',
-    },
-    {
-      'name': 'DMart Satara Road',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'Satara Road, Sahakar Nagar, Pune, 411001',
-      'lat': 18.4800,
-      'lng': 73.8550,
-      'categories': [
-        'Vegetables & Fruits',
-        'Dairy & Breakfast',
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages',
-        'Cleaning & Household'
-      ],
-      'importance': 0.98,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-    {
-      'name': 'Reliance Fresh Paud Road',
-      'shopType': 'supermarket',
-      'amenity': '',
-      'address': 'Paud Road, Erandwane, Pune, 411001',
-      'lat': 18.5050,
-      'lng': 73.8250,
-      'categories': [
-        'Vegetables & Fruits',
-        'Dairy & Breakfast',
-        'Staples & Dals',
-        'Oils & Masalas',
-        'Snacks & Beverages',
-        'Cleaning & Household'
-      ],
-      'importance': 0.95,
-      'hasAllItems': true,
-      'tag': 'All-in-One Supermarket',
-    },
-  ];
 
   static Map<String, dynamic> _buildStoreMap({
     required String rawName,
@@ -1432,9 +1395,9 @@ class LocationSearchService {
 
         final addr = addrParts.isNotEmpty
             ? addrParts.join(', ')
-            : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                ? areaFallback
-                : 'Local Area');
+            : (suburb.isNotEmpty
+                ? (city.isNotEmpty ? '$suburb, $city' : suburb)
+                : (city.isNotEmpty ? city : 'Local Store'));
 
         results.add(_buildStoreMap(
           rawName: rawName,
@@ -1525,9 +1488,7 @@ class LocationSearchService {
           amenity: osmClass == 'amenity' ? osmType : '',
           address: addr.isNotEmpty
               ? addr
-              : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                  ? areaFallback
-                  : 'Local Area'),
+              : (city.isNotEmpty ? city : 'Local Store'),
           lat: lat,
           lng: lng,
           straightKm: straightKm,
@@ -1617,9 +1578,7 @@ class LocationSearchService {
           ];
           final addr = addrParts.isNotEmpty
               ? addrParts.join(', ')
-              : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                  ? areaFallback
-                  : 'Local Area');
+              : (tags['addr:city'] ?? 'Local Store').toString();
 
           stores.add(_buildStoreMap(
             rawName: rawName,
@@ -1799,30 +1758,6 @@ class LocationSearchService {
 
     final all = <Map<String, dynamic>>[];
 
-    // 1. Include Google Maps verified local stores within radiusKm
-    for (final reg in _googleMapsVerifiedStores) {
-      final sLat = (reg['lat'] as num).toDouble();
-      final sLng = (reg['lng'] as num).toDouble();
-      final straightKm = _haversineKm(center.latitude, center.longitude, sLat, sLng);
-      final maxAllowedStraight = radiusKm / 1.25;
-      if (straightKm > maxAllowedStraight) continue;
-
-      final store = _buildStoreMap(
-        rawName: reg['name'] as String,
-        shopType: reg['shopType'] as String,
-        amenity: reg['amenity'] as String,
-        address: reg['address'] as String,
-        lat: sLat,
-        lng: sLng,
-        straightKm: straightKm,
-        radiusKm: radiusKm,
-        importance: (reg['importance'] as num).toDouble(),
-      );
-      store['categories'] = reg['categories'];
-      store['fromGoogleMaps'] = true;
-      all.add(store);
-    }
-
     for (final list in batches) {
       for (final s in list) {
         if (s['hasAllItems'] == true ||
@@ -1870,38 +1805,10 @@ class LocationSearchService {
     }
 
     // Check Google Maps Verified registry first for instantaneous local match
-    final qLower = q.toLowerCase();
-    final localMatches = <Map<String, dynamic>>[];
-    for (final reg in _googleMapsVerifiedStores) {
-      final nameLower = (reg['name'] as String).toLowerCase();
-      final addrLower = (reg['address'] as String).toLowerCase();
-      if (nameLower.contains(qLower) || addrLower.contains(qLower)) {
-        final sLat = (reg['lat'] as num).toDouble();
-        final sLng = (reg['lng'] as num).toDouble();
-        final straightKm = _haversineKm(center.latitude, center.longitude, sLat, sLng);
-        if (straightKm > (radiusKm / 1.25)) continue;
-
-        final store = _buildStoreMap(
-          rawName: reg['name'] as String,
-          shopType: reg['shopType'] as String,
-          amenity: reg['amenity'] as String,
-          address: reg['address'] as String,
-          lat: sLat,
-          lng: sLng,
-          straightKm: straightKm,
-          radiusKm: radiusKm,
-          importance: (reg['importance'] as num).toDouble(),
-        );
-        store['categories'] = reg['categories'];
-        store['fromGoogleMaps'] = true;
-        localMatches.add(store);
-      }
-    }
-
     final apiKey = (googlePlacesApiKey.isNotEmpty ? googlePlacesApiKey : await getApiKey()).trim();
     final batches = await Future.wait<List<Map<String, dynamic>>>([
       if (apiKey.isNotEmpty)
-        _fetchGooglePlacesStores(center, radiusKm: radiusKm, query: q),
+        _fetchGooglePlacesTextSearch(center, q, radiusKm: radiusKm),
       _fetchPhotonGroceryStores(
         center,
         q,
@@ -1921,7 +1828,7 @@ class LocationSearchService {
       ),
     ]);
 
-    final all = <Map<String, dynamic>>[...localMatches];
+    final all = <Map<String, dynamic>>[];
     for (final list in batches) {
       all.addAll(list);
     }

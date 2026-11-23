@@ -5991,7 +5991,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       setState(() {
         _userPickedStoreManually = true;
         _pickupLocation = picked;
-        _pickupAddrCtrl.text = '$storeName, $addr';
+        final fullPickedAddr = addr.isNotEmpty && !addr.toLowerCase().startsWith(storeName.toLowerCase())
+            ? '$storeName, $addr'
+            : (addr.isNotEmpty ? addr : storeName);
+        _pickupAddrCtrl.text = fullPickedAddr;
         _selectedGroceryStoreName = storeName;
         _calculatedDistanceKm = distKm;
         _suggestedGroceryStoresList.removeWhere((s) => s['name'] == storeName);
@@ -6012,11 +6015,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final dist = (store['distanceKm'] as num).toDouble().clamp(0.1, 10.0);
     final double? storeLat = (store['lat'] as num?)?.toDouble();
     final double? storeLng = (store['lng'] as num?)?.toDouble();
+    final addr = (store['address'] as String?)?.trim() ?? '';
+    final name = (store['name'] as String?)?.trim() ?? 'Grocery Store';
+    final fullStoreAddr = addr.isNotEmpty && !addr.toLowerCase().startsWith(name.toLowerCase())
+        ? '$name, $addr'
+        : (addr.isNotEmpty ? addr : name);
+
     setState(() {
       _userPickedStoreManually = true;
-      _selectedGroceryStoreName = store['name'] as String;
+      _selectedGroceryStoreName = name;
       _calculatedDistanceKm = dist;
-      _pickupAddrCtrl.text = '${store['name']}, ${store['address']}';
+      _pickupAddrCtrl.text = fullStoreAddr;
       if (storeLat != null && storeLng != null && storeLat != 0.0 && storeLng != 0.0) {
         _pickupLocation = LatLng(storeLat, storeLng);
       } else {
@@ -7064,17 +7073,35 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                           child: Row(
                                             children: [
                                               Expanded(
-                                                child: Text(
-                                                  store['name'] as String,
-                                                  style: TextStyle(
-                                                    fontSize: 13,
-                                                    fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                                                    color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
-                                                    height: 1.25,
-                                                  ),
-                                                  maxLines: 2,
-                                                  softWrap: true,
-                                                  overflow: TextOverflow.ellipsis,
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      store['name'] as String,
+                                                      style: TextStyle(
+                                                        fontSize: 13,
+                                                        fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                                        color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                                        height: 1.25,
+                                                      ),
+                                                      maxLines: 1,
+                                                      overflow: TextOverflow.ellipsis,
+                                                    ),
+                                                    if ((store['address'] as String? ?? '').isNotEmpty &&
+                                                        store['address'] != 'Local Area') ...[
+                                                      const SizedBox(height: 2),
+                                                      Text(
+                                                        store['address'] as String,
+                                                        style: const TextStyle(
+                                                          fontSize: 10.5,
+                                                          fontWeight: FontWeight.w500,
+                                                          color: Color(0xFF64748B),
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow: TextOverflow.ellipsis,
+                                                      ),
+                                                    ],
+                                                  ],
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
@@ -7194,17 +7221,35 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.center,
                                       children: [
                                         Expanded(
-                                          child: Text(
-                                            store['name'] as String,
-                                            style: TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                                              color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
-                                              height: 1.25,
-                                            ),
-                                            maxLines: 2,
-                                            softWrap: true,
-                                            overflow: TextOverflow.ellipsis,
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                store['name'] as String,
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                                  color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                                  height: 1.25,
+                                                ),
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              if ((store['address'] as String? ?? '').isNotEmpty &&
+                                                  store['address'] != 'Local Area') ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  store['address'] as String,
+                                                  style: const TextStyle(
+                                                    fontSize: 10.5,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color(0xFF64748B),
+                                                  ),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ],
+                                            ],
                                           ),
                                         ),
                                         const SizedBox(width: 10),

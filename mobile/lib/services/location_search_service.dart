@@ -821,7 +821,7 @@ class LocationSearchService {
     Map<String, dynamic>? extraTags,
   }) {
     final roadEstKm = double.parse(
-      (straightKm * 1.25).clamp(0.1, radiusKm * 1.35).toStringAsFixed(1),
+      (straightKm * 1.25).clamp(0.1, radiusKm).toStringAsFixed(1),
     );
     final lowerName = rawName.toLowerCase();
     final lowerType = shopType.toLowerCase();
@@ -959,7 +959,8 @@ class LocationSearchService {
         final lng = (coords[0] as num).toDouble();
         final lat = (coords[1] as num).toDouble();
         final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
-        if (straightKm > radiusKm) continue;
+        final maxAllowedStraight = radiusKm / 1.25;
+        if (straightKm > maxAllowedStraight) continue;
 
         final rawName = (props['name'] as String?)?.trim() ?? '';
         if (rawName.isEmpty || rawName.length < 2) continue;
@@ -1056,7 +1057,8 @@ class LocationSearchService {
         if (lat == null || lng == null) continue;
 
         final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
-        if (straightKm > radiusKm) continue;
+        final maxAllowedStraight = radiusKm / 1.25;
+        if (straightKm > maxAllowedStraight) continue;
 
         final dispName = (it['display_name'] as String?)?.trim() ?? '';
         if (dispName.isEmpty) continue;
@@ -1172,7 +1174,8 @@ class LocationSearchService {
           if (lat == null || lng == null) continue;
 
           final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
-          if (straightKm > radiusKm) continue;
+          final maxAllowedStraight = radiusKm / 1.25;
+          if (straightKm > maxAllowedStraight) continue;
 
           final addrParts = <String>[
             if ((tags['addr:housenumber'] ?? '').toString().trim().isNotEmpty)
@@ -1221,6 +1224,10 @@ class LocationSearchService {
 
     final unique = <Map<String, dynamic>>[];
     for (final s in rawStores) {
+      final sDist = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
+      final sStraight = ((s['straightKm'] ?? 0.0) as num).toDouble();
+      if (sDist > 10.0 || sStraight > 8.0) continue;
+
       final nameNorm = (s['name'] as String)
           .toLowerCase()
           .replaceAll(RegExp(r'[^a-z0-9]'), '');
@@ -1353,7 +1360,13 @@ class LocationSearchService {
       }
     }
 
-    final deduped = _mergeAndDedupeStores(all, maxResults: 40);
+    final deduped = _mergeAndDedupeStores(all, maxResults: 60)
+        .where((s) {
+          final dist = ((s['distanceKm'] ?? 0.0) as num).toDouble();
+          final straight = ((s['straightKm'] ?? 0.0) as num).toDouble();
+          return dist <= radiusKm && straight <= (radiusKm / 1.25);
+        })
+        .toList();
     // Sort strictly from top rated/prominent to lowest rated (without mentioning rate)
     deduped.sort((a, b) =>
         ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));
@@ -1395,7 +1408,13 @@ class LocationSearchService {
       all.addAll(list);
     }
 
-    final deduped = _mergeAndDedupeStores(all, maxResults: 25);
+    final deduped = _mergeAndDedupeStores(all, maxResults: 35)
+        .where((s) {
+          final dist = ((s['distanceKm'] ?? 0.0) as num).toDouble();
+          final straight = ((s['straightKm'] ?? 0.0) as num).toDouble();
+          return dist <= radiusKm && straight <= (radiusKm / 1.25);
+        })
+        .toList();
     // Sort strictly from top rated/prominent to lowest rated (without mentioning rate)
     deduped.sort((a, b) =>
         ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));

@@ -719,12 +719,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           if (isGrocery || currVal < exactPrice || (_lastAutoBudgetText != null && _budgetCtrl.text.trim() == _lastAutoBudgetText)) {
             _syncAutoBudget(exactPrice);
           }
+          final cappedRoadKm = isGrocery ? roadKm.clamp(0.1, 10.0) : roadKm;
           setState(() {
-            _calculatedDistanceKm = roadKm;
+            _calculatedDistanceKm = cappedRoadKm;
             if (isGrocery && _selectedGroceryStoreName != null) {
               for (final s in _suggestedGroceryStoresList) {
                 if (s['name'] == _selectedGroceryStoreName) {
-                  s['distanceKm'] = roadKm;
+                  s['distanceKm'] = cappedRoadKm;
                   break;
                 }
               }
@@ -5846,14 +5847,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       setState(() {
         _loadingNearbyStores = false;
         _hasFetchedNearbyStores = true;
-        _suggestedGroceryStoresList = realStores.where((s) =>
-          s['hasAllItems'] == true ||
-          LocationSearchService.isAllItemsStore(
-            s['name'] as String? ?? '',
-            s['shopType'] as String? ?? '',
-            s['amenity'] as String? ?? '',
-          )
-        ).toList();
+        _suggestedGroceryStoresList = realStores.where((s) {
+          final d = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
+          final st = ((s['straightKm'] ?? 0.0) as num).toDouble();
+          if (d > 10.0 || st > 8.0) return false;
+          return s['hasAllItems'] == true ||
+            LocationSearchService.isAllItemsStore(
+              s['name'] as String? ?? '',
+              s['shopType'] as String? ?? '',
+              s['amenity'] as String? ?? '',
+            );
+        }).toList();
       });
     }).catchError((_) {
       if (mounted && seq == _storeFetchSeq) {
@@ -5904,6 +5908,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
       final merged = <Map<String, dynamic>>[...inMem];
       for (final m in matches) {
+        final d = ((m['distanceKm'] ?? m['straightKm'] ?? 0.0) as num).toDouble();
+        final st = ((m['straightKm'] ?? 0.0) as num).toDouble();
+        if (d > 10.0 || st > 8.0) continue;
         if (!merged.any((ex) => (ex['name'] as String).toLowerCase() == (m['name'] as String).toLowerCase())) {
           merged.add(m);
         }
@@ -5945,7 +5952,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           _dropLocation!.latitude,
           _dropLocation!.longitude,
         );
-        distKm = double.parse(((m / 1000.0) * 1.25).clamp(0.2, 50.0).toStringAsFixed(1));
+        distKm = double.parse(((m / 1000.0) * 1.25).clamp(0.2, 10.0).toStringAsFixed(1));
       }
 
       final customStore = {
@@ -5980,7 +5987,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _selectGroceryStore(Map<String, dynamic> store) {
-    final dist = (store['distanceKm'] as num).toDouble();
+    final dist = (store['distanceKm'] as num).toDouble().clamp(0.1, 10.0);
     final double? storeLat = (store['lat'] as num?)?.toDouble();
     final double? storeLng = (store['lng'] as num?)?.toDouble();
     setState(() {
@@ -6042,9 +6049,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         final geocoded = await LocationSearchService.geocodeAddress(queryWithArea);
         if (geocoded != null) {
           final distFromDrop = const Distance().as(LengthUnit.Kilometer, center, geocoded);
-          if (distFromDrop <= 12.0) {
+          if (distFromDrop <= 10.0) {
             customLoc = geocoded;
-            customDist = distFromDrop;
+            customDist = distFromDrop.clamp(0.1, 10.0);
           }
         }
       } catch (_) {}
@@ -6053,7 +6060,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     setState(() {
       _userPickedStoreManually = true;
       _selectedGroceryStoreName = trimmed;
-      _calculatedDistanceKm = customDist;
+      _calculatedDistanceKm = customDist.clamp(0.1, 10.0);
       _pickupAddrCtrl.text = trimmed;
       _pickupLocation = customLoc;
       _isStoreDropdownOpen = false;
@@ -6183,16 +6190,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       },
     );
 
-    final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble());
+    final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble()).clamp(0.1, 10.0);
     final isSearchingQuery = _storeSearchCtrl.text.trim().isNotEmpty;
     final displayedStores = (isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList)
-        .where((s) =>
-            s['hasAllItems'] == true ||
-            LocationSearchService.isAllItemsStore(
-              s['name'] as String? ?? '',
-              s['shopType'] as String? ?? '',
-              s['amenity'] as String? ?? '',
-            ))
+        .where((s) {
+          final d = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
+          final st = ((s['straightKm'] ?? 0.0) as num).toDouble();
+          if (d > 10.0 || st > 8.0) return false;
+          return s['hasAllItems'] == true ||
+              LocationSearchService.isAllItemsStore(
+                s['name'] as String? ?? '',
+                s['shopType'] as String? ?? '',
+                s['amenity'] as String? ?? '',
+              );
+        })
         .toList();
     // Sort strictly from top rated to low rated (without mentioning rate in UI)
     displayedStores.sort((a, b) =>
@@ -6545,6 +6556,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         children: [
                           Text(
                             'Store Address',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -6553,6 +6566,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                           Text(
                             'BUY FROM STORE (PICKUP)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
@@ -6662,21 +6677,25 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Wrap(
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  spacing: 6,
+                                  runSpacing: 2,
                                   children: [
                                     const Text(
                                       'SELECTED STORE',
                                       style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF15803D), letterSpacing: 0.4),
                                     ),
-                                    const SizedBox(width: 6),
                                     Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                       decoration: BoxDecoration(
                                         color: const Color(0xFFDCFCE7),
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
                                         currentStore['tag'] as String? ?? 'Verified Store',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
                                       ),
                                     ),
@@ -6899,7 +6918,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   itemBuilder: (context, index) {
                                     final store = displayedStores[index];
                                     final isSel = _selectedGroceryStoreName == store['name'];
-                                    final sDist = (store['distanceKm'] as num).toDouble();
+                                    final sDist = ((store['distanceKm'] as num).toDouble()).clamp(0.1, 10.0);
                                     return Container(
                                       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                       decoration: BoxDecoration(
@@ -7001,7 +7020,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             itemBuilder: (context, index) {
                               final store = displayedStores[index];
                               final isSel = _selectedGroceryStoreName == store['name'];
-                              final sDist = (store['distanceKm'] as num).toDouble();
+                              final sDist = ((store['distanceKm'] as num).toDouble()).clamp(0.1, 10.0);
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 6),
                                 decoration: BoxDecoration(

@@ -21,6 +21,7 @@ import '../../widgets/profile_mode_switch_dialog.dart';
 import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/task_posted_success_dialog.dart';
 import '../../widgets/vehicle_task_posting_dialog.dart';
+import 'delivery_location_sheet.dart';
 
 class PostTaskScreen extends StatefulWidget {
   final String? initialCategory;
@@ -695,6 +696,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       );
     }
     switch (group.label) {
+      case 'Delivery and Transport':
       case 'Delivery & Moving':
         return (
           bgAsset: 'assets/images/cat_delivery.jpg',
@@ -4312,6 +4314,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     return GestureDetector(
       onTap: () {
+        if (groupName == 'Delivery and Transport' || groupName == 'Delivery & Moving') {
+          setState(() {
+            _applySelectedCategory('delivery');
+          });
+          DeliveryLocationSheet.show(
+            context,
+            initialPickupAddress: _pickupAddrCtrl.text.isNotEmpty ? _pickupAddrCtrl.text : null,
+            initialPickupLocation: _pickupLocation,
+            initialDropAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+            initialDropLocation: _dropLocation,
+            initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+          );
+          return;
+        }
         if (group.subCategories.length <= 1) {
           setState(() {
             _applySelectedCategory(defaultId);
@@ -4429,8 +4445,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   Widget _buildCategorySection() {
     final categories = [
       (
-        label: 'Delivery & Moving',
-        groupName: 'Delivery & Moving',
+        label: 'Delivery and Transport',
+        groupName: 'Delivery and Transport',
         defaultId: 'delivery',
         image: 'assets/images/cat_3d_delivery.png',
       ),

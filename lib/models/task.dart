@@ -2465,7 +2465,7 @@ class TaskCategoryGroup {
       categoryIds: ['cleaning', 'household', 'cooking', 'laundry', 'gardening', 'beauty'],
     ),
     TaskCategoryGroup(
-      label: 'Delivery & Moving',
+      label: 'Delivery and Transport',
       icon: '🚚',
       categoryIds: ['delivery', 'moving'],
     ),

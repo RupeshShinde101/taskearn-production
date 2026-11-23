@@ -30,7 +30,7 @@ class BrowseCategoryConfig {
 
   static const List<BrowseCategoryConfig> all = [
     BrowseCategoryConfig(
-      label: 'Delivery & Moving',
+      label: 'Delivery and Transport',
       subtitle: 'Moving, delivery, transport',
       categoryIds: ['delivery', 'moving', 'transport', 'pickup'],
       imageAsset: 'assets/images/cat_3d_delivery.png',

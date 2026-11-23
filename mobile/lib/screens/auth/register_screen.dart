@@ -250,16 +250,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                         ],
                       ),
                     ),
-                          const Text(
-                            '.',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              color: Color(0xFF475569),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                     const SizedBox(height: 16),
 
                     // ── OR divider ──────────────────────────────────────

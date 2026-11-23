@@ -817,6 +817,8 @@ class LocationSearchService {
     required double lng,
     required double straightKm,
     required double radiusKm,
+    double importance = 0.0,
+    Map<String, dynamic>? extraTags,
   }) {
     final roadEstKm = double.parse(
       (straightKm * 1.25).clamp(0.1, radiusKm * 1.35).toStringAsFixed(1),
@@ -849,8 +851,6 @@ class LocationSearchService {
     } else if (lowerType == 'supermarket' ||
         lowerType == 'hypermarket' ||
         lowerName.contains('supermarket') ||
-        lowerName.contains('dmart') ||
-        lowerName.contains('smart') ||
         lowerName.contains('bazaar') ||
         lowerName.contains('mart')) {
       categoryLabel = 'All-in-One Supermarket';
@@ -870,6 +870,39 @@ class LocationSearchService {
       color = const Color(0xFF4F46E5);
     }
 
+    // Dynamic rating score calculation:
+    // Ranks stores from top rated/prominence to lowest without requiring public rating numbers.
+    double ratingScore = 0.0;
+    if (importance > 0) {
+      ratingScore += (importance.clamp(0.0, 1.0) * 50.0);
+    }
+    if (lowerType == 'supermarket' || lowerType == 'hypermarket') {
+      ratingScore += 20.0;
+    } else if (lowerType == 'greengrocer' || lowerType == 'vegetables' || lowerType == 'farm') {
+      ratingScore += 18.0;
+    } else if (lowerType == 'convenience' || lowerType == 'grocery' || lowerType == 'general') {
+      ratingScore += 15.0;
+    } else {
+      ratingScore += 10.0;
+    }
+    if (address.isNotEmpty && address != 'Nearby Area' && address != 'Local Area') {
+      ratingScore += 10.0;
+      if (address.contains(',')) ratingScore += 5.0;
+    }
+    if (extraTags != null) {
+      if ((extraTags['opening_hours'] ?? '').toString().isNotEmpty) ratingScore += 6.0;
+      if ((extraTags['phone'] ?? extraTags['contact:phone'] ?? '').toString().isNotEmpty) ratingScore += 6.0;
+      if ((extraTags['brand'] ?? extraTags['operator'] ?? '').toString().isNotEmpty) ratingScore += 6.0;
+      if ((extraTags['website'] ?? extraTags['contact:website'] ?? '').toString().isNotEmpty) ratingScore += 4.0;
+      final rawRating = double.tryParse((extraTags['stars'] ?? extraTags['rating'] ?? '').toString());
+      if (rawRating != null && rawRating > 0) {
+        ratingScore += (rawRating.clamp(1.0, 5.0) * 8.0);
+      }
+    }
+    final effectiveRadius = radiusKm > 0 ? radiusKm : 10.0;
+    final distBonus = ((effectiveRadius - straightKm.clamp(0.0, effectiveRadius)) / effectiveRadius) * 15.0;
+    ratingScore += distBonus;
+
     return {
       'name': rawName,
       'shopType': shopType,
@@ -884,6 +917,7 @@ class LocationSearchService {
       'lng': lng,
       'fromMap': true,
       'hasAllItems': isAllItem,
+      'ratingScore': ratingScore,
       'allCategoriesBadge': '✓ Milk, Veg, Kirana, Snacks & Drinks Available',
     };
   }
@@ -965,11 +999,13 @@ class LocationSearchService {
           addrParts.add(postcode);
         }
 
+        final importance = (props['importance'] as num?)?.toDouble() ?? 0.0;
+
         final addr = addrParts.isNotEmpty
             ? addrParts.join(', ')
             : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                ? '$areaFallback, Pune'
-                : 'Pune, Maharashtra');
+                ? areaFallback
+                : 'Local Area');
 
         results.add(_buildStoreMap(
           rawName: rawName,
@@ -980,6 +1016,7 @@ class LocationSearchService {
           lng: lng,
           straightKm: straightKm,
           radiusKm: radiusKm,
+          importance: importance,
         ));
       }
     } catch (_) {}
@@ -1050,6 +1087,8 @@ class LocationSearchService {
             ? addrParts.join(', ')
             : dispName.split(',').skip(1).take(3).map((s) => s.trim()).join(', ');
 
+        final importance = double.tryParse(it['importance']?.toString() ?? '') ?? 0.0;
+
         results.add(_buildStoreMap(
           rawName: rawName,
           shopType: osmClass == 'shop' ? osmType : '',
@@ -1057,12 +1096,13 @@ class LocationSearchService {
           address: addr.isNotEmpty
               ? addr
               : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                  ? '$areaFallback, Pune'
-                  : 'Pune, Maharashtra'),
+                  ? areaFallback
+                  : 'Local Area'),
           lat: lat,
           lng: lng,
           straightKm: straightKm,
           radiusKm: radiusKm,
+          importance: importance,
         ));
       }
     } catch (_) {}
@@ -1147,8 +1187,8 @@ class LocationSearchService {
           final addr = addrParts.isNotEmpty
               ? addrParts.join(', ')
               : (areaFallback.isNotEmpty && areaFallback != 'Nearby Area'
-                  ? '$areaFallback, Pune'
-                  : 'Pune, Maharashtra');
+                  ? areaFallback
+                  : 'Local Area');
 
           stores.add(_buildStoreMap(
             rawName: rawName,
@@ -1159,6 +1199,7 @@ class LocationSearchService {
             lng: lng,
             straightKm: straightKm,
             radiusKm: radiusKm,
+            extraTags: tags,
           ));
         }
         return stores;
@@ -1187,15 +1228,18 @@ class LocationSearchService {
       final lng = s['lng'] as double;
 
       bool isDup = false;
-      for (final ex in unique) {
+      int? dupIdx;
+      for (int i = 0; i < unique.length; i++) {
+        final ex = unique[i];
         final exNameNorm = (ex['name'] as String)
             .toLowerCase()
             .replaceAll(RegExp(r'[^a-z0-9]'), '');
         final distM = _approxDistanceMeters(lat, lng, ex['lat'] as double, ex['lng'] as double);
 
-        // Same store name within 250m (e.g., OSM node + way for same DMart)
+        // Same store name within 250m (e.g., OSM node + way for same store)
         if (nameNorm == exNameNorm && distM < 250) {
           isDup = true;
+          dupIdx = i;
           break;
         }
         // Very close typo/duplicate pin (< 45m) with similar prefix
@@ -1206,6 +1250,7 @@ class LocationSearchService {
                 exNameNorm.contains(nameNorm) ||
                 nameNorm.substring(0, 3) == exNameNorm.substring(0, 3))) {
           isDup = true;
+          dupIdx = i;
           break;
         }
       }
@@ -1213,6 +1258,12 @@ class LocationSearchService {
       if (!isDup) {
         unique.add(s);
         if (unique.length >= maxResults) break;
+      } else if (dupIdx != null) {
+        final existingScore = (unique[dupIdx]['ratingScore'] as num?)?.toDouble() ?? 0.0;
+        final newScore = (s['ratingScore'] as num?)?.toDouble() ?? 0.0;
+        if (newScore > existingScore) {
+          unique[dupIdx] = s;
+        }
       }
     }
     return unique;
@@ -1240,16 +1291,15 @@ class LocationSearchService {
       'sabji',
       'bhaji',
       'भाजी दुकान',
-      'dmart',
-      'reliance smart',
       'provision',
+      'provision store',
       'mandi',
       'किराणा',
       'किराणा स्टोअर',
       'भाजीपाला',
-      'mart',
       'super market',
       'general store',
+      'daily needs',
     ];
 
     final futures = <Future<List<Map<String, dynamic>>>>[];
@@ -1263,15 +1313,15 @@ class LocationSearchService {
       ));
     }
 
-    // Complementary Nominatim queries for maximum coverage
+    // Complementary Nominatim queries for maximum coverage (generic categories only)
     for (final q in [
       'supermarket',
       'grocery',
       'kirana',
       'vegetable',
       'vegetable shop',
+      'greengrocer',
       'bhaji',
-      'dmart',
       'provision store',
       'sabzi'
     ]) {
@@ -1304,10 +1354,9 @@ class LocationSearchService {
     }
 
     final deduped = _mergeAndDedupeStores(all, maxResults: 40);
-    // Sort strictly from closest to longest range!
+    // Sort strictly from top rated/prominent to lowest rated (without mentioning rate)
     deduped.sort((a, b) =>
-        ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num)
-            .compareTo((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num));
+        ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));
     return deduped;
   }
 
@@ -1347,10 +1396,9 @@ class LocationSearchService {
     }
 
     final deduped = _mergeAndDedupeStores(all, maxResults: 25);
-    // Sort strictly from closest to longest range!
+    // Sort strictly from top rated/prominent to lowest rated (without mentioning rate)
     deduped.sort((a, b) =>
-        ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num)
-            .compareTo((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num));
+        ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));
     return deduped;
   }
 }

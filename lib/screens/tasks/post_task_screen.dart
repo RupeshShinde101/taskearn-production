@@ -92,6 +92,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   String? _selectedGroceryStoreName;
   final _customStoreCtrl = TextEditingController();
   final _storeSearchCtrl = TextEditingController();
+  final _storeSearchFocus = FocusNode();
   Timer? _storeSearchDebounce;
   List<Map<String, dynamic>> _storeSearchResults = [];
   bool _searchingStoresByName = false;
@@ -103,6 +104,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   // ─── Saved locations ────────────────────────────────────
   List<Map<String, dynamic>> _savedLocations = [];
   String? _selectedGrocerySavedLocId;
+  String? _selectedTaskSavedLocId;
   bool _showSavePrompt       = false; // non-delivery
   bool _showPickupSavePrompt = false; // pickup
   bool _showDropSavePrompt   = false; // drop
@@ -564,6 +566,16 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _onAddressChanged(String text) {
+    if (_selectedTaskSavedLocId != null) {
+      try {
+        final current = _savedLocations.firstWhere((l) => l['id']?.toString() == _selectedTaskSavedLocId);
+        if ((current['address'] as String? ?? '').trim().toLowerCase() != text.trim().toLowerCase()) {
+          _selectedTaskSavedLocId = null;
+        }
+      } catch (_) {
+        _selectedTaskSavedLocId = null;
+      }
+    }
     _addressDebounce?.cancel();
     final q = text.trim();
     if (q.length < 2) {
@@ -594,6 +606,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
   }
 
   void _selectAddressSuggestion(LocationSearchResult s) {
+    _selectedTaskSavedLocId = null;
     _addressCtrl.text = s.fullAddress;
     _location = s.toLatLng();
     _locationLabel = s.fullAddress;
@@ -1416,6 +1429,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     _storeSearchDebounce?.cancel();
     _customStoreCtrl.dispose();
     _storeSearchCtrl.dispose();
+    _storeSearchFocus.dispose();
     _pickupFocus.dispose();
     _dropFocus.removeListener(_onDropFocusChanged);
     _dropFocus.dispose();
@@ -1442,6 +1456,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final lat = (loc['lat'] as num?)?.toDouble();
     final lng = (loc['lng'] as num?)?.toDouble();
     setState(() {
+      _selectedTaskSavedLocId = loc['id']?.toString();
       _location = (lat != null && lng != null) ? LatLng(lat, lng) : null;
       _locationLabel = loc['address'] as String?;
       _addressCtrl.text = (loc['address'] as String?) ?? '';
@@ -1449,6 +1464,13 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       _areaCtrl.text = (loc['area'] as String?) ?? '';
       _showSavePrompt = false;
     });
+  }
+
+  void _selectTaskSavedLocation(Map<String, dynamic> loc) {
+    setState(() {
+      _selectedTaskSavedLocId = loc['id']?.toString();
+    });
+    _fillFromSaved(loc);
   }
 
   IconData _iconForLabel(String label) {
@@ -2065,6 +2087,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   if (_selectedGrocerySavedLocId == loc['id']?.toString()) {
                                     _selectedGrocerySavedLocId = null;
                                   }
+                                  if (_selectedTaskSavedLocId == loc['id']?.toString()) {
+                                    _selectedTaskSavedLocId = null;
+                                  }
                                   setSheetState(() {});
                                   setState(() {});
                                 },
@@ -2073,7 +2098,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                           onTap: () {
                             Navigator.pop(ctx);
-                            _selectGrocerySavedLocation(loc);
+                            if (Task.isGroceryCategory(_selectedCategory)) {
+                              _selectGrocerySavedLocation(loc);
+                            } else {
+                              _selectTaskSavedLocation(loc);
+                            }
                           },
                         );
                       },
@@ -2103,9 +2132,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               (l['address'] as String? ?? '').trim().toLowerCase() ==
               _dropAddrCtrl.text.trim().toLowerCase(),
         );
-        if (selectedLoc != null) {
-          _selectedGrocerySavedLocId = selectedLoc['id']?.toString();
-        }
+        _selectedGrocerySavedLocId = selectedLoc['id']?.toString();
       } catch (_) {}
     }
 
@@ -2400,6 +2427,335 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   onTap: () {
                     setState(() {
                       _selectedGrocerySavedLocId = null;
+                    });
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF64748B)),
+                  ),
+                ),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_drop_down_rounded, size: 22, color: Color(0xFF475569)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskSavedLocationsDropdown() {
+    Map<String, dynamic>? selectedLoc;
+    if (_selectedTaskSavedLocId != null) {
+      try {
+        selectedLoc = _savedLocations.firstWhere(
+          (l) => l['id']?.toString() == _selectedTaskSavedLocId,
+        );
+      } catch (_) {}
+    }
+    if (selectedLoc == null && _addressCtrl.text.trim().isNotEmpty) {
+      try {
+        selectedLoc = _savedLocations.firstWhere(
+          (l) =>
+              (l['address'] as String? ?? '').trim().toLowerCase() ==
+              _addressCtrl.text.trim().toLowerCase(),
+        );
+        _selectedTaskSavedLocId = selectedLoc['id']?.toString();
+      } catch (_) {}
+    }
+
+    final hasSaved = _savedLocations.isNotEmpty;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xFFCBD5E1), width: 1),
+          ),
+          color: Colors.white,
+          elevation: 6,
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'Select Saved Location',
+        offset: const Offset(0, 48),
+        onSelected: (val) async {
+          if (val == '__save_new__') {
+            await _showSaveDialog();
+          } else if (val == '__manage__') {
+            _showManageSavedLocationsSheet();
+          } else {
+            try {
+              final loc = _savedLocations.firstWhere((l) => l['id']?.toString() == val);
+              _selectTaskSavedLocation(loc);
+            } catch (_) {}
+          }
+        },
+        itemBuilder: (context) {
+          final List<PopupMenuEntry<String>> items = [];
+
+          items.add(
+            const PopupMenuItem<String>(
+              enabled: false,
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.bookmark_rounded, size: 15, color: Color(0xFF2563EB)),
+                  SizedBox(width: 8),
+                  Text(
+                    'SAVED LOCATIONS',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF475569),
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+          items.add(const PopupMenuDivider(height: 1));
+
+          if (!hasSaved) {
+            items.add(
+              const PopupMenuItem<String>(
+                enabled: false,
+                height: 44,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    'No saved locations yet.\nTap below to save current address.',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8)),
+                  ),
+                ),
+              ),
+            );
+          } else {
+            for (final loc in _savedLocations) {
+              final id = loc['id']?.toString() ?? '';
+              final label = loc['label'] as String? ?? 'Saved';
+              final addr = loc['address'] as String? ?? '';
+              final isSelected = selectedLoc != null && selectedLoc['id']?.toString() == id;
+
+              IconData icon = Icons.location_on_rounded;
+              Color iconColor = const Color(0xFF64748B);
+              final l = label.toLowerCase();
+              if (l.contains('home')) {
+                icon = Icons.home_rounded;
+                iconColor = const Color(0xFF2563EB);
+              } else if (l.contains('work') || l.contains('office')) {
+                icon = Icons.work_rounded;
+                iconColor = const Color(0xFF0D9488);
+              } else {
+                icon = Icons.pin_drop_rounded;
+                iconColor = const Color(0xFFE11D48);
+              }
+
+              items.add(
+                PopupMenuItem<String>(
+                  value: id,
+                  height: 48,
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: iconColor.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(icon, size: 16, color: iconColor),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                color: isSelected ? const Color(0xFF0F172A) : const Color(0xFF334155),
+                              ),
+                            ),
+                            if (addr.isNotEmpty)
+                              Text(
+                                addr,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (isSelected)
+                        const Icon(Icons.check_circle_rounded, size: 18, color: Color(0xFF16A34A)),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          items.add(const PopupMenuDivider(height: 1));
+
+          items.add(
+            PopupMenuItem<String>(
+              value: '__save_new__',
+              height: 44,
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Icon(Icons.add_location_alt_rounded, size: 16, color: Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      '+ Save Address (Home, Work, Other)',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+
+          if (hasSaved) {
+            items.add(
+              PopupMenuItem<String>(
+                value: '__manage__',
+                height: 40,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(Icons.settings_outlined, size: 15, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(width: 10),
+                    const Text(
+                      'Manage Saved Locations...',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return items;
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selectedLoc != null ? const Color(0xFF93C5FD) : const Color(0xFFCBD5E1),
+              width: selectedLoc != null ? 1.4 : 1.0,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                selectedLoc != null
+                    ? _iconForLabel(selectedLoc['label'] as String? ?? 'Other')
+                    : Icons.bookmark_outline_rounded,
+                size: 17,
+                color: selectedLoc != null ? const Color(0xFF2563EB) : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            selectedLoc != null ? 'SAVED LOCATION' : 'SAVED LOCATIONS',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ),
+                        if (selectedLoc != null) ...[
+                          const SizedBox(width: 6),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Text(
+                                selectedLoc['label'] as String? ?? 'Saved',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2563EB),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      selectedLoc != null
+                          ? (selectedLoc['address'] as String? ?? selectedLoc['label'] as String? ?? '')
+                          : (hasSaved
+                              ? 'Choose from Home, Work, Other'
+                              : 'Tap to save task location'),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: selectedLoc != null ? FontWeight.w700 : FontWeight.w500,
+                        color: selectedLoc != null ? const Color(0xFF0F172A) : const Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (selectedLoc != null)
+                GestureDetector(
+                  onTap: () {
+                    setState(() {
+                      _selectedTaskSavedLocId = null;
                     });
                   },
                   child: Container(
@@ -5441,9 +5797,19 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     return area.isEmpty ? 'Nearby Area' : area;
   }
 
-  void _updateSuggestedStoresForDrop(String dropAddr, LatLng? dropLoc) {
+  void _updateSuggestedStoresForDrop(String dropAddr, LatLng? dropLoc) async {
     final area = _extractAreaName(dropAddr);
     if (dropLoc == null) {
+      if (dropAddr.trim().length >= 3) {
+        try {
+          final geocoded = await LocationSearchService.geocodeAddress(dropAddr.trim());
+          if (geocoded != null && mounted) {
+            _dropLocation = geocoded;
+            _updateSuggestedStoresForDrop(dropAddr, geocoded);
+            return;
+          }
+        } catch (_) {}
+      }
       if (mounted) {
         setState(() {
           _loadingNearbyStores = false;
@@ -5628,7 +5994,11 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _pickupLocation = null;
       }
       _isStoreDropdownOpen = false;
+      _storeSearchCtrl.clear();
+      _storeSearchResults = [];
+      _searchingStoresByName = false;
     });
+    _storeSearchFocus.unfocus();
     final travelFare = Task.calculateDistancePrice(dist, 'groceries');
     const handlingFee = 40.0;
     final totalBudget = travelFare + handlingFee;
@@ -5668,7 +6038,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     double customDist = 2.0;
     if (center != null) {
       try {
-        final queryWithArea = '$trimmed, ${_extractAreaName(_dropAddrCtrl.text)}, Pune';
+        final queryWithArea = '$trimmed, ${_extractAreaName(_dropAddrCtrl.text)}';
         final geocoded = await LocationSearchService.geocodeAddress(queryWithArea);
         if (geocoded != null) {
           final distFromDrop = const Distance().as(LengthUnit.Kilometer, center, geocoded);
@@ -5824,10 +6194,9 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               s['amenity'] as String? ?? '',
             ))
         .toList();
-    // Sort strictly from closest to longest range
+    // Sort strictly from top rated to low rated (without mentioning rate in UI)
     displayedStores.sort((a, b) =>
-        ((a['distanceKm'] ?? a['straightKm'] ?? 0.0) as num)
-            .compareTo((b['distanceKm'] ?? b['straightKm'] ?? 0.0) as num));
+        ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num));
     final hasDropAddr = _dropAddrCtrl.text.trim().isNotEmpty;
 
     return Container(
@@ -6165,7 +6534,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 ),
 
                 // ─────────────────────────────────────────────────────────────
-                // STORE ADDRESS (PICKUP) - ENTER SHOP NAME AT THE TOP
+                // STORE ADDRESS (PICKUP) - COLLAPSIBLE STORE SELECTION
                 // ─────────────────────────────────────────────────────────────
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
@@ -6194,14 +6563,44 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         ],
                       ),
                     ),
-                    if (hasSelectedStore && _storeSearchCtrl.text.isNotEmpty)
+                    if (hasSelectedStore && !_isStoreDropdownOpen)
                       InkWell(
                         onTap: () {
-                          _storeSearchCtrl.clear();
                           setState(() {
+                            _isStoreDropdownOpen = true;
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFBFDBFE)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Change Shop',
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Color(0xFF2563EB)),
+                            ],
+                          ),
+                        ),
+                      )
+                    else if (hasSelectedStore && _isStoreDropdownOpen)
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            _isStoreDropdownOpen = false;
+                            _storeSearchCtrl.clear();
                             _storeSearchResults = [];
                             _searchingStoresByName = false;
                           });
+                          _storeSearchFocus.unfocus();
                         },
                         borderRadius: BorderRadius.circular(8),
                         child: Container(
@@ -6210,251 +6609,80 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                             color: const Color(0xFFF1F5F9),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Text(
-                            'Clear',
-                            style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'Done',
+                                style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                              ),
+                              SizedBox(width: 4),
+                              Icon(Icons.keyboard_arrow_up_rounded, size: 16, color: Color(0xFF475569)),
+                            ],
                           ),
                         ),
                       ),
                   ],
                 ),
 
-                // 1. Enter Shop Name Input (MOVED TO TOP OF STORE SECTION)
-                Container(
-                  margin: const EdgeInsets.only(top: 8),
-                  child: TextField(
-                    controller: _storeSearchCtrl,
-                    onChanged: _onStoreSearchChanged,
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                    decoration: InputDecoration(
-                      hintText: 'Enter shop name',
-                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
-                      suffixIcon: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_searchingStoresByName)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 8),
-                              child: SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
-                              ),
-                            )
-                          else if (_storeSearchCtrl.text.isNotEmpty)
-                            IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
-                              onPressed: () {
-                                _storeSearchCtrl.clear();
-                                setState(() {
-                                  _storeSearchResults = [];
-                                  _searchingStoresByName = false;
-                                });
-                              },
-                            ),
-                          IconButton(
-                            icon: const Icon(Icons.map_rounded, size: 19, color: Color(0xFF16A34A)),
-                            tooltip: 'Pick on Map',
-                            onPressed: _pickStoreFromGoogleMap,
-                          ),
-                        ],
-                      ),
-                      isDense: true,
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.4),
-                      ),
-                    ),
-                  ),
-                ),
-
-                // 2. While typing: Suggest related shops right below!
-                if (_storeSearchCtrl.text.trim().isNotEmpty) ...[
+                // When store is selected and dropdown is collapsed: Show ONLY Selected Store Card
+                if (hasSelectedStore && !_isStoreDropdownOpen) ...[
                   Container(
-                    margin: const EdgeInsets.only(top: 6),
+                    margin: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
                       color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (_searchingStoresByName && displayedStores.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 14),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB))),
-                                SizedBox(width: 10),
-                                Text('Searching matching stores...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                              ],
-                            ),
-                          )
-                        else if (displayedStores.isEmpty && !_searchingStoresByName)
-                          Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'Use "${_storeSearchCtrl.text.trim()}" as custom store',
-                                    style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
-                                  ),
-                                ),
-                                ElevatedButton(
-                                  onPressed: () => _setCustomGroceryStore(_storeSearchCtrl.text.trim()),
-                                  style: ElevatedButton.styleFrom(
-                                    minimumSize: Size.zero,
-                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                    backgroundColor: const Color(0xFF2563EB),
-                                    foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  ),
-                                  child: const Text('Select', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                                ),
-                              ],
-                            ),
-                          )
-                        else ...[
-                          Padding(
-                            padding: const EdgeInsets.only(left: 12, top: 8, bottom: 4),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    'SUGGESTED SHOPS (${displayedStores.length}):',
-                                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                const Text(
-                                  'Scroll to view all',
-                                  style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Container(
-                            constraints: const BoxConstraints(maxHeight: 220),
-                            child: Scrollbar(
-                              thumbVisibility: displayedStores.length > 3,
-                              child: ListView.builder(
-                                shrinkWrap: true,
-                                physics: const ClampingScrollPhysics(),
-                                itemCount: displayedStores.length,
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                itemBuilder: (context, index) {
-                                  final store = displayedStores[index];
-                                  final isSel = _selectedGroceryStoreName == store['name'];
-                                  final sDist = (store['distanceKm'] as num).toDouble();
-                                  return Container(
-                                    margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
-                                      borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                        color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                                        width: isSel ? 1.4 : 1.0,
-                                      ),
-                                    ),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(8),
-                                      onTap: () {
-                                        if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
-                                          _suggestedGroceryStoresList.insert(0, store);
-                                        }
-                                        _selectGroceryStore(store);
-                                        _storeSearchCtrl.text = store['name'] as String;
-                                      },
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                                        child: Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(
-                                                store['name'] as String,
-                                                style: TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                                                  color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
-                                                  height: 1.25,
-                                                ),
-                                                maxLines: 2,
-                                                softWrap: true,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF1F5F9),
-                                                borderRadius: BorderRadius.circular(6),
-                                              ),
-                                              child: Text(
-                                                '${sDist.toStringAsFixed(1)} km',
-                                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
-                                              ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Icon(
-                                              isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                                              color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                                              size: 18,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  // 3. When not typing: Show currently selected store card
-                  if (hasSelectedStore)
-                    Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFBBF7D0), width: 1.2),
-                      ),
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _isStoreDropdownOpen = true;
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(10),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              currentStore['icon'] as IconData? ?? Icons.storefront_rounded,
+                              size: 20,
+                              color: const Color(0xFF15803D),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'SELECTED STORE',
-                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF15803D)),
+                                Row(
+                                  children: [
+                                    const Text(
+                                      'SELECTED STORE',
+                                      style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Color(0xFF15803D), letterSpacing: 0.4),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDCFCE7),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        currentStore['tag'] as String? ?? 'Verified Store',
+                                        style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: Color(0xFF166534)),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 3),
                                 Text(
                                   currentStore['name'] as String,
                                   style: const TextStyle(
@@ -6467,132 +6695,382 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   softWrap: true,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                if ((currentStore['address'] as String? ?? '').isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    currentStore['address'] as String,
+                                    style: const TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFDCFCE7),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFF86EFAC)),
-                            ),
-                            child: Text(
-                              '${dist.toStringAsFixed(1)} km',
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF15803D),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFDCFCE7),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFF86EFAC)),
+                                ),
+                                child: Text(
+                                  '${dist.toStringAsFixed(1)} km',
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF15803D),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFEFF6FF),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Change',
+                                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                                    ),
+                                    SizedBox(width: 2),
+                                    Icon(Icons.keyboard_arrow_down_rounded, size: 14, color: Color(0xFF2563EB)),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
                     ),
-
-                  // 4. Scrollable list of nearby grocery and kirana stores
-                  if (displayedStores.isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            'NEARBY GROCERY, KIRANA & VEGETABLE STORES (${displayedStores.length}):',
-                            style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Scroll to view all',
-                          style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    Container(
-                      constraints: const BoxConstraints(maxHeight: 250),
-                      child: Scrollbar(
-                        thumbVisibility: displayedStores.length > 3,
-                        child: ListView.builder(
-                          shrinkWrap: true,
-                          physics: const ClampingScrollPhysics(),
-                          itemCount: displayedStores.length,
-                          itemBuilder: (context, index) {
-                            final store = displayedStores[index];
-                            final isSel = _selectedGroceryStoreName == store['name'];
-                            final sDist = (store['distanceKm'] as num).toDouble();
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 6),
-                              decoration: BoxDecoration(
-                                color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                  color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
-                                  width: isSel ? 1.4 : 1.0,
+                  ),
+                ] else ...[
+                  // 1. Enter Shop Name Input
+                  Container(
+                    margin: const EdgeInsets.only(top: 8),
+                    child: TextField(
+                      controller: _storeSearchCtrl,
+                      focusNode: _storeSearchFocus,
+                      onChanged: _onStoreSearchChanged,
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                      decoration: InputDecoration(
+                        hintText: 'Enter shop name',
+                        hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                        prefixIcon: const Icon(Icons.search_rounded, size: 18, color: Color(0xFF2563EB)),
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_searchingStoresByName)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 8),
+                                child: SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB)),
                                 ),
-                              ),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(10),
-                                onTap: () {
-                                  if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
-                                    _suggestedGroceryStoresList.insert(0, store);
-                                  }
-                                  _selectGroceryStore(store);
+                              )
+                            else if (_storeSearchCtrl.text.isNotEmpty)
+                              IconButton(
+                                icon: const Icon(Icons.clear_rounded, size: 18, color: Color(0xFF64748B)),
+                                onPressed: () {
+                                  _storeSearchCtrl.clear();
+                                  setState(() {
+                                    _storeSearchResults = [];
+                                    _searchingStoresByName = false;
+                                  });
                                 },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.center,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          store['name'] as String,
-                                          style: TextStyle(
-                                            fontSize: 13.5,
-                                            fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
-                                            color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
-                                            height: 1.25,
-                                          ),
-                                          maxLines: 2,
-                                          softWrap: true,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF1F5F9),
-                                          borderRadius: BorderRadius.circular(6),
-                                        ),
-                                        child: Text(
-                                          '${sDist.toStringAsFixed(1)} km',
-                                          style: const TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700,
-                                            color: Color(0xFF475569),
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Icon(
-                                        isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                                        color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
-                                        size: 18,
-                                      ),
-                                    ],
-                                  ),
-                                ),
                               ),
-                            );
-                          },
+                            IconButton(
+                              icon: const Icon(Icons.map_rounded, size: 19, color: Color(0xFF16A34A)),
+                              tooltip: 'Pick on Map',
+                              onPressed: _pickStoreFromGoogleMap,
+                            ),
+                          ],
+                        ),
+                        isDense: true,
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.4),
                         ),
                       ),
                     ),
+                  ),
+
+                  // 2. While typing: Suggest related shops right below!
+                  if (_storeSearchCtrl.text.trim().isNotEmpty) ...[
+                    Container(
+                      margin: const EdgeInsets.only(top: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFCBD5E1)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_searchingStoresByName && displayedStores.isEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 14),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF2563EB))),
+                                  SizedBox(width: 10),
+                                  Text('Searching matching stores...', style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                                ],
+                              ),
+                            )
+                          else if (displayedStores.isEmpty && !_searchingStoresByName)
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Use "${_storeSearchCtrl.text.trim()}" as custom store',
+                                      style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                    ),
+                                  ),
+                                  ElevatedButton(
+                                    onPressed: () => _setCustomGroceryStore(_storeSearchCtrl.text.trim()),
+                                    style: ElevatedButton.styleFrom(
+                                      minimumSize: Size.zero,
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                      backgroundColor: const Color(0xFF2563EB),
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    ),
+                                    child: const Text('Select', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else ...[
+                            Padding(
+                              padding: const EdgeInsets.only(left: 12, top: 8, bottom: 4),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'SUGGESTED SHOPS (${displayedStores.length}):',
+                                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Scroll to view all',
+                                    style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              constraints: const BoxConstraints(maxHeight: 220),
+                              child: Scrollbar(
+                                thumbVisibility: displayedStores.length > 3,
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const ClampingScrollPhysics(),
+                                  itemCount: displayedStores.length,
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  itemBuilder: (context, index) {
+                                    final store = displayedStores[index];
+                                    final isSel = _selectedGroceryStoreName == store['name'];
+                                    final sDist = (store['distanceKm'] as num).toDouble();
+                                    return Container(
+                                      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                          width: isSel ? 1.4 : 1.0,
+                                        ),
+                                      ),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(8),
+                                        onTap: () {
+                                          if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                            _suggestedGroceryStoresList.insert(0, store);
+                                          }
+                                          _selectGroceryStore(store);
+                                        },
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  store['name'] as String,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                                    color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                                    height: 1.25,
+                                                  ),
+                                                  maxLines: 2,
+                                                  softWrap: true,
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFF1F5F9),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  '${sDist.toStringAsFixed(1)} km',
+                                                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Color(0xFF475569)),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Icon(
+                                                isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                                color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                                                size: 18,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ] else ...[
+                    // 3. When not typing: Scrollable list of nearby grocery, kirana & vegetable stores
+                    if (displayedStores.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'NEARBY GROCERY, KIRANA & VEGETABLE STORES (${displayedStores.length}):',
+                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF64748B)),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Scroll to view all',
+                            style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w600, color: Color(0xFF94A3B8)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Container(
+                        constraints: const BoxConstraints(maxHeight: 250),
+                        child: Scrollbar(
+                          thumbVisibility: displayedStores.length > 3,
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            physics: const ClampingScrollPhysics(),
+                            itemCount: displayedStores.length,
+                            itemBuilder: (context, index) {
+                              final store = displayedStores[index];
+                              final isSel = _selectedGroceryStoreName == store['name'];
+                              final sDist = (store['distanceKm'] as num).toDouble();
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 6),
+                                decoration: BoxDecoration(
+                                  color: isSel ? const Color(0xFFEFF6FF) : Colors.white,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: isSel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
+                                    width: isSel ? 1.4 : 1.0,
+                                  ),
+                                ),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTap: () {
+                                    if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                      _suggestedGroceryStoresList.insert(0, store);
+                                    }
+                                    _selectGroceryStore(store);
+                                  },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                    child: Row(
+                                      crossAxisAlignment: CrossAxisAlignment.center,
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            store['name'] as String,
+                                            style: TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: isSel ? FontWeight.w800 : FontWeight.w600,
+                                              color: isSel ? const Color(0xFF1E3A8A) : const Color(0xFF1E293B),
+                                              height: 1.25,
+                                            ),
+                                            maxLines: 2,
+                                            softWrap: true,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFFF1F5F9),
+                                            borderRadius: BorderRadius.circular(6),
+                                          ),
+                                          child: Text(
+                                            '${sDist.toStringAsFixed(1)} km',
+                                            style: const TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF475569),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Icon(
+                                          isSel ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                                          color: isSel ? const Color(0xFF2563EB) : const Color(0xFFCBD5E1),
+                                          size: 18,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ],
               ],
@@ -7012,263 +7490,341 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   ),
                 ],
               ] else ...[
+                // NON-DELIVERY CATEGORY LOCATION SECTION (GROCERY BOX STYLE + DROPDOWN)
                 Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF102A56).withValues(alpha: 0.03),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Header inside location card
-                      Row(
-                        children: [
-                          Container(
-                            width: 38,
-                            height: 38,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(10),
+                      // Top Route / Location Journey Header
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                          border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Task Location',
+                                    style: TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                  SizedBox(height: 2),
+                                  Text(
+                                    'Where the helper or technician will visit',
+                                    style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                                  ),
+                                ],
+                              ),
                             ),
-                            child: const Icon(
-                              Icons.location_on_rounded,
-                              color: Color(0xFF2563EB),
-                              size: 20,
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    _location != null ? Icons.check_circle_rounded : Icons.place_rounded,
+                                    size: 12,
+                                    color: const Color(0xFF2563EB),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _location != null ? 'Location Pinned' : 'On-Site Visit',
+                                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                          ],
+                        ),
+                      ),
+
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header Row: Service Address title + "+ Save Location" action button
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
-                                Text(
-                                  'Task Location',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF0F172A),
-                                    letterSpacing: -0.2,
+                                const Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Service Address',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF0F172A),
+                                        ),
+                                      ),
+                                      Text(
+                                        'TASK WORK LOCATION',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: Color(0xFF2563EB),
+                                          letterSpacing: 0.3,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Where the helper or technician will visit',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF64748B),
-                                    fontWeight: FontWeight.w500,
+                                const SizedBox(width: 8),
+                                InkWell(
+                                  onTap: _showSaveDialog,
+                                  borderRadius: BorderRadius.circular(8),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.bookmark_add_outlined, size: 14, color: Color(0xFF2563EB)),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          'Save Location',
+                                          style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: Color(0xFF2563EB)),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
 
-                      // ── Saved addresses chips ───────────────────────────────
-                      if (_savedLocations.isNotEmpty) ...[
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
-                            children: [
-                              const Text(
-                                'Saved:',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Color(0xFF64748B),
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            // Location Subcard - Full Width
+                            Container(
+                              margin: const EdgeInsets.only(top: 8),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
                               ),
-                              const SizedBox(width: 8),
-                              ..._savedLocations.map((loc) => Padding(
-                                    padding: const EdgeInsets.only(right: 8),
-                                    child: GestureDetector(
-                                      onTap: () => _fillFromSaved(loc),
-                                      onLongPress: () => _addressOptions(loc),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 12, vertical: 7),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFEFF6FF),
-                                          borderRadius: BorderRadius.circular(20),
-                                          border: Border.all(
-                                              color: const Color(0xFFBFDBFE)),
-                                        ),
-                                        child: Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Icon(
-                                                _iconForLabel(
-                                                    loc['label'] as String),
-                                                size: 14,
-                                                color: const Color(0xFF2563EB)),
-                                            const SizedBox(width: 5),
-                                            Text(
-                                              loc['label'] as String,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                color: Color(0xFF1D4ED8),
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // ── SAVED LOCATIONS DROPDOWN (HOME, WORK, OTHER) ──
+                                  _buildTaskSavedLocationsDropdown(),
+                                  const SizedBox(height: 8),
+
+                                  TextFormField(
+                                    controller: _addressCtrl,
+                                    focusNode: _addressFocus,
+                                    onChanged: _onAddressChanged,
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      labelText: 'Address / Landmark *',
+                                      labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                      hintText: 'Type locality, landmark or address',
+                                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                      prefixIcon: const Icon(Icons.location_on_rounded, size: 18, color: Color(0xFF2563EB)),
+                                      suffixIcon: _AddressActionButtons(
+                                        isLoading: _gettingLocation,
+                                        accentColor: const Color(0xFF2563EB),
+                                        onGps: () async {
+                                          _selectedTaskSavedLocId = null;
+                                          await _getLocation();
+                                        },
+                                        onMap: () async {
+                                          _selectedTaskSavedLocId = null;
+                                          await _pickLocationFromMap();
+                                        },
+                                      ),
+                                      suffixIconConstraints: const BoxConstraints(maxHeight: 48),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFF2563EB), width: 1.4),
                                       ),
                                     ),
-                                  )),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-
-                      // ── Address / Landmark ──────────────────────────────────────
-                      TextFormField(
-                        controller: _addressCtrl,
-                        focusNode: _addressFocus,
-                        readOnly: false,
-                        onChanged: _onAddressChanged,
-                        decoration: InputDecoration(
-                          labelText: 'Address / Landmark *',
-                          hintText: 'Type locality, landmark or address',
-                          prefixIcon: const Icon(Icons.location_on_rounded, color: Color(0xFF2563EB)),
-                          suffixIcon: _AddressActionButtons(
-                            isLoading: _gettingLocation,
-                            accentColor: const Color(0xFF2563EB),
-                            onGps: _getLocation,
-                            onMap: _pickLocationFromMap,
-                          ),
-                          suffixIconConstraints:
-                              const BoxConstraints(maxHeight: 48),
-                        ),
-                      ),
-                      LocationSuggestionsDropdown(
-                        suggestions: _addressSuggestions,
-                        isLoading: _searchingAddress,
-                        accentColor: const Color(0xFF2563EB),
-                        onSelect: _selectAddressSuggestion,
-                        onDismiss: () => setState(() => _addressSuggestions = []),
-                      ),
-                      if (_location != null) ...[
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFECFDF5),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFA7F3D0)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF059669)),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  _locationLabel != null
-                                      ? 'Pinned: $_locationLabel'
-                                      : 'Pinned GPS Location (${_location!.latitude.toStringAsFixed(4)}, ${_location!.longitude.toStringAsFixed(4)})',
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF065F46),
                                   ),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
 
-                      // ── Flat / House / Building name ───────────────────────
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _flatNameCtrl,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Flat / House / Building name (optional)',
-                          hintText: 'e.g. Flat 2B, Sunrise Apartments',
-                          prefixIcon: Icon(Icons.home_outlined),
-                        ),
-                      ),
-
-                      // ── Area / Sector / Locality ───────────────────────────
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: _areaCtrl,
-                        textCapitalization: TextCapitalization.words,
-                        decoration: const InputDecoration(
-                          labelText: 'Area / Sector / Locality',
-                          hintText: 'e.g. Baner, Pune',
-                          prefixIcon: Icon(Icons.map_outlined),
-                        ),
-                      ),
-
-                      // ── Save address prompt ────────────────────────────────
-                      if (_showSavePrompt && _location != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFECFDF5),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: const Color(0xFFA7F3D0)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.bookmark_add_outlined,
-                                  size: 18, color: Color(0xFF059669)),
-                              const SizedBox(width: 8),
-                              const Expanded(
-                                child: Text(
-                                  'Save this address for future tasks?',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: Color(0xFF065F46)),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: _showSaveDialog,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF059669),
-                                    borderRadius: BorderRadius.circular(8),
+                                  LocationSuggestionsDropdown(
+                                    suggestions: _addressSuggestions,
+                                    isLoading: _searchingAddress,
+                                    accentColor: const Color(0xFF2563EB),
+                                    onSelect: (s) {
+                                      _selectedTaskSavedLocId = null;
+                                      _selectAddressSuggestion(s);
+                                    },
+                                    onDismiss: () => setState(() => _addressSuggestions = []),
                                   ),
-                                  child: const Text('SAVE',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white)),
-                                ),
+
+                                  if (_location != null) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFECFDF5),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: const Color(0xFFA7F3D0)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.check_circle_rounded, size: 14, color: Color(0xFF059669)),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              _locationLabel != null
+                                                  ? 'Pinned: $_locationLabel'
+                                                  : 'Pinned GPS Location (${_location!.latitude.toStringAsFixed(4)}, ${_location!.longitude.toStringAsFixed(4)})',
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w600,
+                                                color: Color(0xFF065F46),
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+
+                                  // Inline Quick Save Banner
+                                  if (_showSavePrompt && _location != null) ...[
+                                    const SizedBox(height: 8),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFEFF6FF),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          const Icon(Icons.bookmark_add_outlined, size: 16, color: Color(0xFF2563EB)),
+                                          const SizedBox(width: 8),
+                                          const Expanded(
+                                            child: Text(
+                                              'Save as Home, Work, or Other for next time?',
+                                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E3A8A)),
+                                            ),
+                                          ),
+                                          GestureDetector(
+                                            onTap: _showSaveDialog,
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFF2563EB),
+                                                borderRadius: BorderRadius.circular(6),
+                                              ),
+                                              child: const Text(
+                                                'Save',
+                                                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+
+                                  // Flat & Area inputs
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    controller: _flatNameCtrl,
+                                    textCapitalization: TextCapitalization.words,
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      labelText: 'Flat / House / Building name (optional)',
+                                      labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                      hintText: 'e.g. Flat 2B, Sunrise Apartments',
+                                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                      prefixIcon: const Icon(Icons.home_outlined, size: 18),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 8),
+                                  TextFormField(
+                                    controller: _areaCtrl,
+                                    textCapitalization: TextCapitalization.words,
+                                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF0F172A)),
+                                    decoration: InputDecoration(
+                                      isDense: true,
+                                      filled: true,
+                                      fillColor: Colors.white,
+                                      labelText: 'Area / Sector / Locality',
+                                      labelStyle: const TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                                      hintText: 'e.g. Baner, Pune',
+                                      hintStyle: const TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                                      prefixIcon: const Icon(Icons.map_outlined, size: 18),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 6),
-                              GestureDetector(
-                                onTap: () =>
-                                    setState(() => _showSavePrompt = false),
-                                child: const Icon(Icons.close,
-                                    size: 16, color: AppColors.gray),
-                              ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ],
                   ),
                 ),

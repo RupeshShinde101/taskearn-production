@@ -2338,30 +2338,38 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                   children: [
                     Row(
                       children: [
-                        Text(
-                          selectedLoc != null ? 'SAVED LOCATION' : 'SAVED LOCATION (HOME, WORK, OTHER)',
-                          style: const TextStyle(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF64748B),
-                            letterSpacing: 0.3,
+                        Flexible(
+                          child: Text(
+                            selectedLoc != null ? 'SAVED LOCATION' : 'SAVED LOCATIONS',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF64748B),
+                              letterSpacing: 0.3,
+                            ),
                           ),
                         ),
                         if (selectedLoc != null) ...[
                           const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFBFDBFE)),
-                            ),
-                            child: Text(
-                              selectedLoc['label'] as String? ?? 'Saved',
-                              style: const TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF2563EB),
+                          Flexible(
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: Text(
+                                selectedLoc['label'] as String? ?? 'Saved',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF2563EB),
+                                ),
                               ),
                             ),
                           ),
@@ -2373,7 +2381,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       selectedLoc != null
                           ? (selectedLoc['address'] as String? ?? selectedLoc['label'] as String? ?? '')
                           : (hasSaved
-                              ? 'Select saved location (Home, Work, Other)'
+                              ? 'Choose from Home, Work, Other'
                               : 'Tap to save delivery location'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -5929,6 +5937,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         children: [
                           Text(
                             'Delivery Address',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w800,
@@ -5937,6 +5947,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                           ),
                           Text(
                             'DELIVER TO HOME (DROP)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 10.5,
                               fontWeight: FontWeight.w700,
@@ -5947,6 +5959,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                         ],
                       ),
                     ),
+                    const SizedBox(width: 8),
                     InkWell(
                       onTap: _saveGroceryDeliveryLocation,
                       borderRadius: BorderRadius.circular(8),
@@ -6074,9 +6087,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                               const Expanded(
                                 child: Text(
                                   'Save as Home, Work, or Other for next time?',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF)),
                                 ),
                               ),
+                              const SizedBox(width: 6),
                               InkWell(
                                 onTap: _saveGroceryDeliveryLocation,
                                 borderRadius: BorderRadius.circular(6),

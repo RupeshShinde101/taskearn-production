@@ -809,6 +809,71 @@ class LocationSearchService {
 
 
 
+  /// Google Maps / Places API Key (from Google Cloud Console).
+  /// Pass `--dart-define=GOOGLE_MAPS_API_KEY=YOUR_KEY` or set it directly in code.
+  static String googlePlacesApiKey = const String.fromEnvironment('GOOGLE_MAPS_API_KEY', defaultValue: '');
+
+  /// Fetches nearby stores using official Google Places API if an API key is configured.
+  static Future<List<Map<String, dynamic>>> _fetchGooglePlacesStores(
+    LatLng center, {
+    required double radiusKm,
+    String query = 'grocery',
+  }) async {
+    final apiKey = googlePlacesApiKey.trim();
+    if (apiKey.isEmpty) return [];
+
+    try {
+      final radiusMeters = (radiusKm * 1000).toInt().clamp(1000, 10000);
+      final uri = Uri.parse(
+        'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
+        '?location=${center.latitude},${center.longitude}'
+        '&radius=$radiusMeters'
+        '&keyword=${Uri.encodeComponent(query)}'
+        '&key=$apiKey',
+      );
+      final resp = await http.get(uri).timeout(const Duration(seconds: 7));
+      if (resp.statusCode != 200) return [];
+      final data = jsonDecode(resp.body) as Map<String, dynamic>;
+      final results = data['results'] as List<dynamic>? ?? [];
+
+      final list = <Map<String, dynamic>>[];
+      for (final r in results) {
+        if (r is! Map<String, dynamic>) continue;
+        final name = (r['name'] as String?)?.trim() ?? '';
+        if (name.isEmpty) continue;
+
+        final geom = r['geometry'] as Map<String, dynamic>? ?? {};
+        final loc = geom['location'] as Map<String, dynamic>? ?? {};
+        final lat = (loc['lat'] as num?)?.toDouble();
+        final lng = (loc['lng'] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+
+        final straightKm = _haversineKm(center.latitude, center.longitude, lat, lng);
+        if (straightKm > (radiusKm / 1.25)) continue;
+
+        final vicinity = (r['vicinity'] as String?) ?? 'Local Store';
+        final rating = (r['rating'] as num?)?.toDouble() ?? 0.0;
+
+        final store = _buildStoreMap(
+          rawName: name,
+          shopType: 'supermarket',
+          amenity: 'marketplace',
+          address: vicinity,
+          lat: lat,
+          lng: lng,
+          straightKm: straightKm,
+          radiusKm: radiusKm,
+          importance: (rating / 5.0).clamp(0.5, 1.0),
+        );
+        store['fromGoogleMaps'] = true;
+        list.add(store);
+      }
+      return list;
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Resolves Google Maps share links (maps.app.goo.gl, goo.gl/maps, google.com/maps)
   /// directly extracting place name, coordinates, and real distance.
   static Future<Map<String, dynamic>?> resolveGoogleMapsUrl(
@@ -1587,19 +1652,29 @@ class LocationSearchService {
             .replaceAll(RegExp(r'[^a-z0-9]'), '');
         final distM = _approxDistanceMeters(lat, lng, ex['lat'] as double, ex['lng'] as double);
 
-        // Same store name within 250m (e.g., OSM node + way for same store)
-        if (nameNorm == exNameNorm && distM < 250) {
-          isDup = true;
-          dupIdx = i;
-          break;
+        // 1. Exact normalized store name:
+        // Non-chain stores: identical name is ALWAYS a duplicate in a 10km area.
+        // Major chains (DMart, Reliance Fresh): deduplicate if within 3 km.
+        final isChain = nameNorm.contains('dmart') || nameNorm.contains('reliance');
+        if (nameNorm == exNameNorm) {
+          if (!isChain || distM < 3000) {
+            isDup = true;
+            dupIdx = i;
+            break;
+          }
         }
-        // Very close typo/duplicate pin (< 45m) with similar prefix
-        if (distM < 45 &&
-            nameNorm.length >= 4 &&
-            exNameNorm.length >= 4 &&
-            (nameNorm.contains(exNameNorm) ||
-                exNameNorm.contains(nameNorm) ||
-                nameNorm.substring(0, 3) == exNameNorm.substring(0, 3))) {
+
+        // 2. Fuzzy name match within 1500m (e.g. "Chamunda Kirana" vs "Chamunda Kirana store")
+        if (distM < 1500 && nameNorm.length >= 6 && exNameNorm.length >= 6) {
+          if (nameNorm.contains(exNameNorm) || exNameNorm.contains(nameNorm)) {
+            isDup = true;
+            dupIdx = i;
+            break;
+          }
+        }
+
+        // 3. Very close pin (< 75m)
+        if (distM < 75) {
           isDup = true;
           dupIdx = i;
           break;
@@ -1610,10 +1685,16 @@ class LocationSearchService {
         unique.add(s);
         if (unique.length >= maxResults) break;
       } else if (dupIdx != null) {
-        final existingScore = (unique[dupIdx]['ratingScore'] as num?)?.toDouble() ?? 0.0;
-        final newScore = (s['ratingScore'] as num?)?.toDouble() ?? 0.0;
-        if (newScore > existingScore) {
+        final existingFromGoogle = unique[dupIdx]['fromGoogleMaps'] == true;
+        final newFromGoogle = s['fromGoogleMaps'] == true;
+        if (newFromGoogle && !existingFromGoogle) {
           unique[dupIdx] = s;
+        } else if (!existingFromGoogle) {
+          final existingScore = (unique[dupIdx]['ratingScore'] as num?)?.toDouble() ?? 0.0;
+          final newScore = (s['ratingScore'] as num?)?.toDouble() ?? 0.0;
+          if (newScore > existingScore) {
+            unique[dupIdx] = s;
+          }
         }
       }
     }
@@ -1654,6 +1735,12 @@ class LocationSearchService {
     ];
 
     final futures = <Future<List<Map<String, dynamic>>>>[];
+    if (googlePlacesApiKey.isNotEmpty) {
+      futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'grocery'));
+      futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'supermarket'));
+      futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'vegetables'));
+      futures.add(_fetchGooglePlacesStores(center, radiusKm: radiusKm, query: 'kirana'));
+    }
     for (final q in queries) {
       futures.add(_fetchPhotonGroceryStores(
         center,
@@ -1792,6 +1879,8 @@ class LocationSearchService {
     }
 
     final batches = await Future.wait<List<Map<String, dynamic>>>([
+      if (googlePlacesApiKey.isNotEmpty)
+        _fetchGooglePlacesStores(center, radiusKm: radiusKm, query: q),
       _fetchPhotonGroceryStores(
         center,
         q,

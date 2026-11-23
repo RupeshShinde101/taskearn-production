@@ -5893,7 +5893,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         if (!mounted) return;
         setState(() => _searchingStoresByName = false);
         if (resolved != null) {
-          if (!_suggestedGroceryStoresList.any((s) => s['name'] == resolved['name'])) {
+          final resNorm = (resolved['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+          if (!_suggestedGroceryStoresList.any((s) => (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == resNorm)) {
             _suggestedGroceryStoresList.insert(0, resolved);
           }
           _selectGroceryStore(resolved);
@@ -6051,7 +6052,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         trimmed.contains('goo.gl/maps')) {
       final resolved = await LocationSearchService.resolveGoogleMapsUrl(trimmed, userLocation: center);
       if (mounted && resolved != null) {
-        if (!_suggestedGroceryStoresList.any((s) => s['name'] == resolved['name'])) {
+        final resNorm = (resolved['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (!_suggestedGroceryStoresList.any((s) => (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == resNorm)) {
           _suggestedGroceryStoresList.insert(0, resolved);
         }
         _selectGroceryStore(resolved);
@@ -6067,7 +6069,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       );
       if (mounted && matches.isNotEmpty) {
         final best = matches.first;
-        if (!_suggestedGroceryStoresList.any((s) => s['name'] == best['name'])) {
+        final bestNorm = (best['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+        if (!_suggestedGroceryStoresList.any((s) => (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == bestNorm)) {
           _suggestedGroceryStoresList.insert(0, best);
         }
         _selectGroceryStore(best);
@@ -6228,7 +6231,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
     final dist = (_calculatedDistanceKm ?? (currentStore['distanceKm'] as num).toDouble()).clamp(0.1, 10.0);
     final isSearchingQuery = _storeSearchCtrl.text.trim().isNotEmpty;
-    final displayedStores = (isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList)
+    var displayedStores = (isSearchingQuery ? _storeSearchResults : _suggestedGroceryStoresList)
         .where((s) {
           final d = ((s['distanceKm'] ?? s['straightKm'] ?? 0.0) as num).toDouble();
           final st = ((s['straightKm'] ?? 0.0) as num).toDouble();
@@ -6315,6 +6318,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (distComp != 0) return distComp;
       return ((b['ratingScore'] ?? 0.0) as num).compareTo((a['ratingScore'] ?? 0.0) as num);
     });
+
+    // Deduplication pass: ensure zero repeated/duplicate stores in the UI list
+    final seenNamesInUi = <String>{};
+    final dedupedList = <Map<String, dynamic>>[];
+    for (final s in displayedStores) {
+      final norm = (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+      if (seenNamesInUi.add(norm)) {
+        dedupedList.add(s);
+      }
+    }
+    displayedStores = dedupedList;
     final hasDropAddr = _dropAddrCtrl.text.trim().isNotEmpty;
 
     return Container(
@@ -7039,7 +7053,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                       child: InkWell(
                                         borderRadius: BorderRadius.circular(8),
                                         onTap: () {
-                                          if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                          final stNorm = (store['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+                                          if (!_suggestedGroceryStoresList.any((s) => (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == stNorm)) {
                                             _suggestedGroceryStoresList.insert(0, store);
                                           }
                                           _selectGroceryStore(store);
@@ -7167,7 +7182,8 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(10),
                                   onTap: () {
-                                    if (!_suggestedGroceryStoresList.any((s) => s['name'] == store['name'])) {
+                                    final stNorm = (store['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+                                    if (!_suggestedGroceryStoresList.any((s) => (s['name'] as String).toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '') == stNorm)) {
                                       _suggestedGroceryStoresList.insert(0, store);
                                     }
                                     _selectGroceryStore(store);

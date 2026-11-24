@@ -12,6 +12,7 @@ import '../../utils/image_utils.dart';
 import '../../widgets/gradient_button.dart';
 import '../../widgets/confirm_payment_dialog.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
+import '../../widgets/hero_map_background.dart';
 import '../tasks/edit_task_screen.dart';
 
 class TaskDetailScreen extends StatefulWidget {
@@ -412,37 +413,101 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       final requiresLiveGps = !Task.isFreelancerCategory(task.category);
       bottomBar = SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (requiresLiveGps) ...[
                 Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    const Icon(Icons.my_location_rounded,
-                        size: 13, color: Color(0xFF059669)),
-                    const SizedBox(width: 6),
-                    const Flexible(
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFDCFCE7),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.gps_fixed_rounded,
+                        size: 14,
+                        color: Color(0xFF10B981),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
                       child: Text(
                         'By accepting, you agree to share your live GPS location with the Task Poster while this task is active.',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: 11.5,
                           color: Color(0xFF64748B),
                           fontWeight: FontWeight.w500,
-                          height: 1.3,
+                          height: 1.35,
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
               ],
-              GradientButton(
-                label: 'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
-                loading: _accepting,
-                onPressed: _accepting ? () {} : _accept,
-                icon: Icons.check_circle_outline,
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton(
+                  onPressed: _accepting ? null : _accept,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF0066FF),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shadowColor: const Color(0xFF0066FF).withValues(alpha: 0.35),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    padding: EdgeInsets.zero,
+                  ),
+                  child: Ink(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF0066FF), Color(0xFF0052CC)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Container(
+                      alignment: Alignment.center,
+                      child: _accepting
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.check_circle_outline_rounded,
+                                  color: Colors.white,
+                                  size: 21,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Accept Task – ₹${task.budget.toStringAsFixed(0)}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -584,384 +649,798 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     }
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF8FAFC),
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Task Details'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        centerTitle: true,
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 14),
+          child: Center(
+            child: InkWell(
+              onTap: () => Navigator.of(context).pop(),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF).withValues(alpha: 0.9),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_back_rounded,
+                  color: Color(0xFF1D4ED8),
+                  size: 20,
+                ),
+              ),
+            ),
+          ),
+        ),
+        title: const Text(
+          'Task Details',
+          style: TextStyle(
+            fontSize: 19,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+          ),
+        ),
         actions: [
           if (canEdit)
-            IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Edit Task',
-              onPressed: () async {
-                final updated = await Navigator.of(context, rootNavigator: true).push<bool>(
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (_) => EditTaskScreen(task: task),
+            Padding(
+              padding: const EdgeInsets.only(right: 14),
+              child: Center(
+                child: InkWell(
+                  onTap: () async {
+                    final updated = await Navigator.of(context, rootNavigator: true).push<bool>(
+                      MaterialPageRoute(
+                        fullscreenDialog: true,
+                        builder: (_) => EditTaskScreen(task: task),
+                      ),
+                    );
+                    if (updated == true && mounted) _loadTask();
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF).withValues(alpha: 0.9),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.edit_outlined,
+                      color: Color(0xFF1D4ED8),
+                      size: 19,
+                    ),
                   ),
-                );
-                if (updated == true && mounted) _loadTask();
-              },
+                ),
+              ),
             ),
         ],
       ),
-      body: RefreshIndicator(
-        onRefresh: _loadTask,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // ── Active-task warning banner (helper only) ──────────────
-              if (hasActiveTask && !isPoster && !isAssignedHelper) ...[
-                GestureDetector(
-                  onTap: activeTask != null
-                      ? () => context
-                          .push('/task-in-progress/${activeTask.id}')
-                      : null,
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          AppColors.warning,
-                          Color(0xFFD97706),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.assignment_late_outlined,
-                            color: Colors.white, size: 22),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+      body: Stack(
+        children: [
+          // Subtle Hero Map Background at the top
+          const Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 240,
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: HeroMapBackgroundPainter(
+                  fadeBottom: true,
+                  beaconTop: 45,
+                  beaconRightOffset: 120,
+                  beaconLeftMinFactor: 0.5,
+                  mapCenterYFactor: 0.45,
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: RefreshIndicator(
+              onRefresh: _loadTask,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Active-task warning banner (helper only) ──────────────
+                    if (hasActiveTask && !isPoster && !isAssignedHelper) ...[
+                      GestureDetector(
+                        onTap: activeTask != null
+                            ? () => context.push('/task-in-progress/${activeTask.id}')
+                            : null,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [AppColors.warning, Color(0xFFD97706)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Row(
                             children: [
-                              const Text(
-                                'You have an active task',
-                                style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13),
-                              ),
-                              if (activeTask != null)
-                                Text(
-                                  activeTask.title,
-                                  style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontSize: 12),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
+                              const Icon(Icons.assignment_late_outlined, color: Colors.white, size: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'You have an active task',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                    if (activeTask != null)
+                                      Text(
+                                        activeTask.title,
+                                        style: const TextStyle(color: Colors.white70, fontSize: 12),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
                                 ),
+                              ),
+                              const Icon(Icons.chevron_right, color: Colors.white70, size: 22),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right,
-                            color: Colors.white70, size: 22),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 14),
-              ],
-
-              // Status & distance row
-              Row(
-                children: [
-                  _StatusBadge(status: task.status),
-                  const Spacer(),
-                  if (task.distanceKm != null)
-                    Row(
-                      children: [
-                        const Icon(Icons.location_on, size: 14, color: AppColors.gray),
-                        Text(
-                          ' ${task.distanceKm!.toStringAsFixed(1)} km',
-                          style: const TextStyle(color: AppColors.gray, fontSize: 12),
-                        ),
-                      ],
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              // Title
-              Text(task.title,
-                  style: const TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.w800, color: AppColors.dark)),
-              const SizedBox(height: 10),
-
-              // Category & budget
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(task.category,
-                        style: const TextStyle(
-                            color: AppColors.primary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ),
-                  const Spacer(),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      const Text(
-                        'Task Budget',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: AppColors.gray,
-                          fontWeight: FontWeight.w500,
-                        ),
                       ),
-                      const SizedBox(height: 2),
-                      Text('₹${task.budget.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                              fontSize: 26, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                      const SizedBox(height: 14),
                     ],
-                  ),
-                ],
-              ),
 
-              const Divider(height: 28),
-
-              // Description (hidden for grocery tasks — grocery tasks show only clean item cards)
-              if (!Task.isGroceryCategory(task.category)) ...[
-                const Text(
-                  'Description',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 19,
-                    color: Color(0xFF102A56),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _DescriptionCard(text: task.description),
-              ],
-
-              Builder(builder: (context) {
-                final isGrocery = Task.isGroceryCategory(task.category);
-                if (!isGrocery) return const SizedBox.shrink();
-                final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
-                    ? task.groceryItems!
-                    : GroceryCatalog.parseGroceryItems(null, task.description);
-                if (groceryItems.isEmpty) return const SizedBox.shrink();
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.shopping_basket_rounded,
-                              size: 19, color: Color(0xFF15803D)),
-                        ),
-                        const SizedBox(width: 10),
-                        const Expanded(
-                          child: Text(
-                            'Grocery Items',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              fontSize: 19,
-                              color: Color(0xFF102A56),
-                              letterSpacing: -0.2,
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFF86EFAC)),
-                          ),
-                          child: Text(
-                            '${groceryItems.length} ${groceryItems.length == 1 ? 'Item' : 'Items'}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF166534),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    _GroceryItemsCard(items: groceryItems),
-                  ],
-                );
-              }),
-
-              // Helper info (if assigned)
-              if (task.helperName != null) ...[
-                const Divider(height: 28),
-                const Text(
-                  'Assigned Helper',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 19,
-                    color: Color(0xFF102A56),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                _UserRow(
-                  name: task.helperName!,
-                  rating: task.helperRating,
-                  avatarColor: AppColors.success,
-                ),
-                // Contact buttons — shown to poster only when helper phone is available
-                if (isPoster && task.helperPhone != null && task.helperPhone!.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.call, size: 18),
-                          label: const Text('Call'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.success,
-                            side: const BorderSide(color: AppColors.success),
-                          ),
-                          onPressed: () async {
-                            final uri = Uri(scheme: 'tel', path: task.helperPhone);
-                            try {
-                              await launchUrl(uri,
-                                  mode: LaunchMode.externalApplication);
-                            } catch (_) {}
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
-                          label: const Text('Chat'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF6366F1),
-                            side: const BorderSide(color: Color(0xFF6366F1)),
-                          ),
-                          onPressed: () {
-                            context.push(
-                              '/chat/${task.id}',
-                              extra: {
-                                'taskId': task.id,
-                                'taskTitle': task.title,
-                                'otherName': task.helperName ?? 'Helper',
-                                'otherRole': 'Helper',
-                                'otherPhone': task.helperPhone,
-                                'category': task.category,
-                                'budget': task.budget,
-                                'status': task.status,
-                                'isPoster': true,
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-
-              // Completion proof
-              if (task.completionProof != null) ...[
-                const Divider(height: 28),
-                const Text(
-                  'Completion Proof',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 19,
-                    color: Color(0xFF102A56),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: AspectRatio(
-                    aspectRatio: 4 / 3,
-                    child: Image.network(
-                      task.completionProof!,
+                    // ── Card 1: Task Overview Card ──
+                    Container(
                       width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.contain,
-                      loadingBuilder: (context, child, loadingProgress) {
-                        if (loadingProgress == null) return child;
-                        final total = loadingProgress.expectedTotalBytes;
-                        final received = loadingProgress.cumulativeBytesLoaded;
-                        return Container(
-                          color: const Color(0xFFF1F5F9),
-                          child: Center(
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        border: Border.all(color: const Color(0xFFE2E8F0).withValues(alpha: 0.7)),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                            blurRadius: 18,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Left side
+                          Expanded(
                             child: Column(
-                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                CircularProgressIndicator(
-                                  value: total != null ? received / total : null,
-                                  color: AppColors.primary,
-                                  strokeWidth: 3,
+                                // Status badge (e.g. Open)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFE0EDFF),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    _getStatusLabel(task.status),
+                                    style: const TextStyle(
+                                      color: Color(0xFF2563EB),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                                 ),
                                 const SizedBox(height: 10),
-                                const Text('Loading proof image…',
-                                    style: TextStyle(color: AppColors.gray, fontSize: 12)),
+                                // Task Title
+                                Text(
+                                  task.title,
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF0F172A),
+                                    letterSpacing: -0.4,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                // Category badge
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _getCategoryIcon(task.category),
+                                        size: 16,
+                                        color: const Color(0xFF2563EB),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        task.category.toLowerCase(),
+                                        style: const TextStyle(
+                                          color: Color(0xFF2563EB),
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ],
                             ),
                           ),
-                        );
-                      },
-                      errorBuilder: (_, __, ___) => Container(
-                        color: AppColors.light,
-                        child: const Center(
-                          child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
-                        ),
+                          // Subtle Vertical Divider
+                          Container(
+                            height: 70,
+                            width: 1,
+                            color: const Color(0xFFF1F5F9),
+                            margin: const EdgeInsets.symmetric(horizontal: 14),
+                          ),
+                          // Right side: Task Budget
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Text(
+                                'Task Budget',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                '₹${task.budget.toStringAsFixed(0)}',
+                                style: const TextStyle(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w900,
+                                  color: Color(0xFF0284C7),
+                                  letterSpacing: -0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ),
-              ],
 
-              // Timeline info
-              const Divider(height: 28),
-              const Text(
-                'Timeline',
-                style: TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 19,
-                  color: Color(0xFF102A56),
-                  letterSpacing: -0.2,
+                    // ── Card 2: Description Card ──
+                    if (!Task.isGroceryCategory(task.category)) ...[
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(top: 14),
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(color: const Color(0xFFE2E8F0).withValues(alpha: 0.7)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF0F172A).withValues(alpha: 0.04),
+                              blurRadius: 18,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Header
+                            Row(
+                              children: [
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFEFF6FF),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.article_outlined,
+                                    size: 20,
+                                    color: Color(0xFF2563EB),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                const Text(
+                                  'Description',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0F172A),
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            // Tinted Inner Container
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(color: const Color(0xFFEDF2F7)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ..._buildDescriptionBullets(task.description, task.distanceKm),
+                                  const SizedBox(height: 12),
+                                  _buildBulletRow(
+                                    RichText(
+                                      text: TextSpan(
+                                        style: const TextStyle(
+                                          fontSize: 13.5,
+                                          color: Color(0xFF64748B),
+                                          height: 1.45,
+                                        ),
+                                        children: [
+                                          const TextSpan(
+                                            text: 'Posted: ',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF64748B),
+                                            ),
+                                          ),
+                                          TextSpan(
+                                            text: _TimelineRow.format(task.createdAt),
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w700,
+                                              color: Color(0xFF0F172A),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                  if (task.acceptedAt != null) ...[
+                                    const SizedBox(height: 12),
+                                    _buildBulletRow(
+                                      RichText(
+                                        text: TextSpan(
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            color: Color(0xFF64748B),
+                                            height: 1.45,
+                                          ),
+                                          children: [
+                                            const TextSpan(
+                                              text: 'Accepted: ',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: _TimelineRow.format(task.acceptedAt!),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (task.completedAt != null) ...[
+                                    const SizedBox(height: 12),
+                                    _buildBulletRow(
+                                      RichText(
+                                        text: TextSpan(
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            color: Color(0xFF64748B),
+                                            height: 1.45,
+                                          ),
+                                          children: [
+                                            const TextSpan(
+                                              text: 'Completed: ',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                            ),
+                                            TextSpan(
+                                              text: _TimelineRow.format(task.completedAt!),
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF0F172A),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Grocery Items Card (if grocery task)
+                    Builder(builder: (context) {
+                      final isGrocery = Task.isGroceryCategory(task.category);
+                      if (!isGrocery) return const SizedBox.shrink();
+                      final groceryItems = (task.groceryItems != null && task.groceryItems!.isNotEmpty)
+                          ? task.groceryItems!
+                          : GroceryCatalog.parseGroceryItems(null, task.description);
+                      if (groceryItems.isEmpty) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 34,
+                                  height: 34,
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.shopping_basket_rounded,
+                                      size: 19, color: Color(0xFF15803D)),
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'Grocery Items',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 19,
+                                      color: Color(0xFF102A56),
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDCFCE7),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFF86EFAC)),
+                                  ),
+                                  child: Text(
+                                    '${groceryItems.length} ${groceryItems.length == 1 ? 'Item' : 'Items'}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF166534),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            _GroceryItemsCard(items: groceryItems),
+                          ],
+                        ),
+                      );
+                    }),
+
+                    // Helper Info (if assigned)
+                    if (task.helperName != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Assigned Helper',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _UserRow(
+                              name: task.helperName!,
+                              rating: task.helperRating,
+                              avatarColor: AppColors.success,
+                            ),
+                            if (isPoster && task.helperPhone != null && task.helperPhone!.isNotEmpty) ...[
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.call, size: 18),
+                                      label: const Text('Call'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: AppColors.success,
+                                        side: const BorderSide(color: AppColors.success),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () async {
+                                        final uri = Uri(scheme: 'tel', path: task.helperPhone);
+                                        try {
+                                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                        } catch (_) {}
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+                                      label: const Text('Chat'),
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: const Color(0xFF6366F1),
+                                        side: const BorderSide(color: Color(0xFF6366F1)),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                      ),
+                                      onPressed: () {
+                                        context.push(
+                                          '/chat/${task.id}',
+                                          extra: {
+                                            'taskId': task.id,
+                                            'taskTitle': task.title,
+                                            'otherName': task.helperName ?? 'Helper',
+                                            'otherRole': 'Helper',
+                                            'otherPhone': task.helperPhone,
+                                            'category': task.category,
+                                            'budget': task.budget,
+                                            'status': task.status,
+                                            'isPoster': true,
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // Completion proof (if any)
+                    if (task.completionProof != null) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Completion Proof',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 17,
+                                color: Color(0xFF102A56),
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: AspectRatio(
+                                aspectRatio: 4 / 3,
+                                child: Image.network(
+                                  task.completionProof!,
+                                  width: double.infinity,
+                                  height: double.infinity,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: AppColors.light,
+                                    child: const Center(
+                                      child: Text('Proof submitted', style: TextStyle(color: AppColors.gray)),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    const SizedBox(height: 20),
+                  ],
                 ),
               ),
-              const SizedBox(height: 8),
-              _TimelineRow('Posted', task.createdAt),
-              if (task.acceptedAt != null) _TimelineRow('Accepted', task.acceptedAt!),
-              if (task.completedAt != null) _TimelineRow('Completed', task.completedAt!),
-
-              const SizedBox(height: 100),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
       bottomNavigationBar: bottomBar,
     );
+  }
+
+  String _getStatusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'open':
+      case 'posted':
+        return 'Open';
+      case 'accepted':
+        return 'Accepted';
+      case 'in_progress':
+        return 'In Progress';
+      case 'completed':
+      case 'verify_pending':
+        return 'Completed';
+      case 'verified':
+      case 'paid':
+      case 'done':
+        return 'Verified';
+      case 'cancelled':
+        return 'Cancelled';
+      default:
+        return status.isNotEmpty ? status[0].toUpperCase() + status.substring(1) : 'Open';
+    }
+  }
+
+  IconData _getCategoryIcon(String category) {
+    final cat = category.toLowerCase();
+    if (cat.contains('laundry') || cat.contains('cloth')) return Icons.dry_cleaning_outlined;
+    if (cat.contains('clean')) return Icons.cleaning_services_outlined;
+    if (cat.contains('cook')) return Icons.restaurant_outlined;
+    if (cat.contains('grocer') || cat.contains('shop')) return Icons.shopping_bag_outlined;
+    if (cat.contains('deliver') || cat.contains('transport') || cat.contains('tempo') || cat.contains('truck')) {
+      return Icons.local_shipping_outlined;
+    }
+    if (cat.contains('plumb')) return Icons.plumbing_outlined;
+    if (cat.contains('electr')) return Icons.electrical_services_outlined;
+    if (cat.contains('carpent')) return Icons.carpenter_outlined;
+    if (cat.contains('paint')) return Icons.format_paint_outlined;
+    if (cat.contains('garden')) return Icons.yard_outlined;
+    if (cat.contains('pet')) return Icons.pets_outlined;
+    if (cat.contains('tutor')) return Icons.school_outlined;
+    if (cat.contains('photo') || cat.contains('video')) return Icons.camera_alt_outlined;
+    if (cat.contains('move') || cat.contains('pack')) return Icons.inventory_2_outlined;
+    return Icons.work_outline_rounded;
+  }
+
+  Widget _buildBulletRow(Widget content) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          margin: const EdgeInsets.only(top: 6),
+          width: 7,
+          height: 7,
+          decoration: const BoxDecoration(
+            color: Color(0xFF2563EB),
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: content),
+      ],
+    );
+  }
+
+  List<Widget> _buildDescriptionBullets(String rawDescription, double? distanceKm) {
+    final cleanText = rawDescription
+        .replaceAll(RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true), '')
+        .replaceAll(RegExp(r'\[ROUTE\].*?\[/ROUTE\]', dotAll: true), '')
+        .trim();
+
+    final lines = cleanText
+        .split('\n')
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+
+    final widgets = <Widget>[];
+
+    for (final line in lines) {
+      Widget content;
+      final qMarkIdx = line.indexOf('?');
+      if (qMarkIdx != -1 && qMarkIdx < line.length - 1) {
+        final qPart = line.substring(0, qMarkIdx + 1).trim();
+        final aPart = line.substring(qMarkIdx + 1).replaceFirst(RegExp(r'^[:\s]+'), '').trim();
+        if (aPart.isNotEmpty) {
+          content = RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.45),
+              children: [
+                TextSpan(text: '$qPart '),
+                TextSpan(
+                  text: aPart,
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+                ),
+              ],
+            ),
+          );
+        } else {
+          content = Text(
+            line,
+            style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.45, fontWeight: FontWeight.w500),
+          );
+        }
+      } else if (line.contains(':') && !line.startsWith('http')) {
+        final colonIdx = line.indexOf(':');
+        final kPart = line.substring(0, colonIdx).trim();
+        final vPart = line.substring(colonIdx + 1).trim();
+        content = RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.45),
+            children: [
+              TextSpan(text: '$kPart: ', style: const TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+              TextSpan(
+                text: vPart,
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              ),
+            ],
+          ),
+        );
+      } else {
+        content = Text(
+          line.replaceFirst(RegExp(r'^[-•*→]\s*'), ''),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF334155), height: 1.45, fontWeight: FontWeight.w500),
+        );
+      }
+
+      if (widgets.isNotEmpty) {
+        widgets.add(const SizedBox(height: 12));
+      }
+      widgets.add(_buildBulletRow(content));
+    }
+
+    if (distanceKm != null) {
+      if (widgets.isNotEmpty) {
+        widgets.add(const SizedBox(height: 12));
+      }
+      widgets.add(_buildBulletRow(
+        RichText(
+          text: TextSpan(
+            style: const TextStyle(fontSize: 14, color: Color(0xFF64748B), height: 1.45),
+            children: [
+              const TextSpan(text: 'Distance: ', style: TextStyle(fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+              TextSpan(
+                text: '${distanceKm.toStringAsFixed(1)} km away',
+                style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
+              ),
+            ],
+          ),
+        ),
+      ));
+    }
+
+    return widgets;
   }
 }
 
@@ -1114,111 +1593,6 @@ class _GroceryItemsCard extends StatelessWidget {
   }
 }
 
-// ── Smart description card ───────────────────────────────────────────────────
-
-class _DescriptionCard extends StatelessWidget {
-  final String text;
-  const _DescriptionCard({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    final cleanText = text.replaceAll(RegExp(r'\[GROCERY_ITEMS\].*?\[/GROCERY_ITEMS\]', dotAll: true), '').trim();
-    final lines = cleanText.split('\n').map((l) => l.trim()).toList();
-    final widgets = <Widget>[];
-    int i = 0;
-    while (i < lines.length) {
-      final line = lines[i];
-      if (line.isEmpty) {
-        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 6));
-        i++; continue;
-      }
-      // Q: pattern
-      final qm = RegExp(r'^[Qq](uestion)?[:.] *(.+)').firstMatch(line);
-      if (qm != null) {
-        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 14));
-        widgets.add(_DRow(badge: 'Q', color: AppColors.primary, text: qm.group(2)!.trim(), bold: true));
-        if (i + 1 < lines.length) {
-          final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(lines[i + 1].trim());
-          if (am != null) {
-            widgets.add(const SizedBox(height: 6));
-            widgets.add(Padding(
-              padding: const EdgeInsets.only(left: 28),
-              child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false),
-            ));
-            i += 2; continue;
-          }
-        }
-        i++; continue;
-      }
-      // A: standalone
-      final am = RegExp(r'^[Aa](nswer)?[:.] *(.+)').firstMatch(line);
-      if (am != null) {
-        widgets.add(const SizedBox(height: 6));
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(left: 28),
-          child: _DRow(badge: 'A', color: AppColors.success, text: am.group(2)!.trim(), bold: false),
-        ));
-        i++; continue;
-      }
-      // Bullet
-      if (RegExp(r'^[-•*→] +').hasMatch(line)) {
-        widgets.add(const SizedBox(height: 4));
-        widgets.add(Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(padding: const EdgeInsets.only(top: 5), child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle))),
-            const SizedBox(width: 8),
-            Expanded(child: Text(line.replaceFirst(RegExp(r'^[-•*→] +'), ''), style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.6))),
-          ],
-        ));
-        i++; continue;
-      }
-      // Key: Value
-      final kv = RegExp(r'^([A-Za-z][A-Za-z /]{0,28}): +(.+)$').firstMatch(line);
-      if (kv != null) {
-        if (widgets.isNotEmpty) widgets.add(const SizedBox(height: 7));
-        widgets.add(Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${kv.group(1)!}:', style: const TextStyle(color: Color(0xFF111827), fontSize: 13, fontWeight: FontWeight.w700)),
-            const SizedBox(width: 5),
-            Expanded(child: Text(kv.group(2)!, style: const TextStyle(color: Color(0xFF4B5563), fontSize: 13, height: 1.55))),
-          ],
-        ));
-        i++; continue;
-      }
-      widgets.add(Text(line, style: const TextStyle(color: Color(0xFF374151), fontSize: 13.5, height: 1.65)));
-      i++;
-    }
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
-      ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets),
-    );
-  }
-}
-
-class _DRow extends StatelessWidget {
-  final String badge, text;
-  final Color color;
-  final bool bold;
-  const _DRow({required this.badge, required this.color, required this.text, required this.bold});
-  @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(5)), child: Text(badge, style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800))),
-      const SizedBox(width: 8),
-      Expanded(child: Text(text, style: TextStyle(color: bold ? const Color(0xFF111827) : const Color(0xFF4B5563), fontSize: 13.5, fontWeight: bold ? FontWeight.w600 : FontWeight.w400, height: 1.55))),
-    ],
-  );
-}
-
 class _UserRow extends StatelessWidget {
   final String name;
   final String? avatar;
@@ -1277,7 +1651,7 @@ class _TimelineRow extends StatelessWidget {
   final DateTime time;
   const _TimelineRow(this.label, this.time);
 
-  String _format(DateTime d) {
+  static String format(DateTime d) {
     // Convert to IST using the absolute epoch value.
     // microsecondsSinceEpoch is always UTC-based regardless of isUtc flag
     // or device timezone — this prevents any double-conversion on MIUI devices.
@@ -1333,73 +1707,8 @@ class _TimelineRow extends StatelessWidget {
           const Icon(Icons.circle, size: 8, color: AppColors.primary),
           const SizedBox(width: 10),
           Text('$label: ', style: const TextStyle(color: AppColors.gray, fontSize: 13)),
-          Text(_format(time), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+          Text(format(time), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
         ],
-      ),
-    );
-  }
-}
-
-class _StatusBadge extends StatelessWidget {
-  final String status;
-  const _StatusBadge({required this.status});
-
-  Color get _color {
-    switch (status) {
-      case 'posted':
-      case 'open':
-        return AppColors.primary;
-      case 'accepted':
-      case 'in_progress':
-        return AppColors.warning;
-      case 'completed':
-        return const Color(0xFFFF6B35);
-      case 'verified':
-      case 'done':
-      case 'paid':
-        return AppColors.success;
-      case 'cancelled':
-        return AppColors.danger;
-      default:
-        return AppColors.gray;
-    }
-  }
-
-  String get _label {
-    switch (status) {
-      case 'posted':
-      case 'open':
-        return 'Open';
-      case 'accepted':
-        return 'Accepted';
-      case 'in_progress':
-        return 'In Progress';
-      case 'completed':
-        return 'Awaiting Verification';
-      case 'verified':
-        return 'Verified ✓';
-      case 'done':
-      case 'paid':
-        return 'Completed';
-      case 'cancelled':
-        return 'Cancelled';
-      default:
-        return status;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _color.withValues(alpha: 0.3)),
-      ),
-      child: Text(
-        _label,
-        style: TextStyle(color: _color, fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
   }

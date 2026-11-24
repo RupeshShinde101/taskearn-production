@@ -26,11 +26,21 @@ import 'delivery_location_sheet.dart';
 class PostTaskScreen extends StatefulWidget {
   final String? initialCategory;
   final List<SelectedGroceryItem>? initialGroceryItems;
+  final bool autoOpenCategoryPopup;
+
+  /// Signal set by HomeScreen before navigating to auto-select and open the category popup
+  static String? jumpToCategory;
+  static bool autoOpenCategoryPopupSignal = false;
+  static bool isParentCategorySignal = false;
+
+  final bool isParentCategory;
 
   const PostTaskScreen({
     super.key,
     this.initialCategory,
     this.initialGroceryItems,
+    this.autoOpenCategoryPopup = false,
+    this.isParentCategory = false,
   });
 
   @override
@@ -845,7 +855,29 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
 
   /// Show Option 5 centered dialog popup with category-specific illustrated
   /// banner background and crisp hairline-divided single-line rows.
-  Future<void> _showSubCategorySheet(TaskCategoryGroup group, {TaskCategoryGroup? parentGroup}) async {
+  Future<void> _showSubCategorySheet(
+    TaskCategoryGroup group, {
+    TaskCategoryGroup? parentGroup,
+    bool highlightSelected = true,
+  }) async {
+    // Intercept Delivery and Transport - remove old child category popup and show only Location sheet
+    if (group.label == 'Delivery and Transport' ||
+        group.label == 'Delivery & Moving' ||
+        group.categoryIds.contains('delivery')) {
+      setState(() {
+        _applySelectedCategory('delivery');
+      });
+      await DeliveryLocationSheet.show(
+        context,
+        initialPickupAddress: _pickupAddrCtrl.text.isNotEmpty ? _pickupAddrCtrl.text : null,
+        initialPickupLocation: _pickupLocation,
+        initialDropAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+        initialDropLocation: _dropLocation,
+        initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+      );
+      return;
+    }
+
     FocusScope.of(context).unfocus();
     final theme = _categoryPopupTheme(group, parentGroup: parentGroup);
     final breadcrumb = parentGroup != null
@@ -1076,11 +1108,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                                   itemBuilder: (_, i) {
                                     final c = group.subCategories[i];
                                     final isFreelancerEntry = c.id == 'freelancer';
-                                    final sel = isFreelancerEntry
+                                    final isItemMatched = isFreelancerEntry
                                         ? (_selectedCategory == 'freelancer' ||
                                             TaskCategoryGroup.freelancerChildIds
                                                 .contains(_selectedCategory))
                                         : _selectedCategory == c.id;
+                                    final sel = highlightSelected && isItemMatched;
                                     final grad = _squircleGradientFor(c.id);
                                     final iconAsset =
                                         TaskCategory.subcatAssetFor(c.id);
@@ -1316,6 +1349,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           await _openGroceryItemPicker();
         }
       }
+    } else if (mounted && _selectedCategory.isEmpty && group.categoryIds.isNotEmpty) {
+      setState(() {
+        _applySelectedCategory(group.categoryIds.first);
+      });
     }
   }
 
@@ -1342,8 +1379,81 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     if (widget.initialGroceryItems != null && widget.initialGroceryItems!.isNotEmpty) {
       _selectedGroceryItems = List.from(widget.initialGroceryItems!);
     }
-    if (widget.initialCategory != null && widget.initialCategory!.isNotEmpty) {
-      _applySelectedCategory(widget.initialCategory!);
+
+    final initialCat = widget.initialCategory ?? PostTaskScreen.jumpToCategory;
+    final shouldOpenPopup = widget.autoOpenCategoryPopup || PostTaskScreen.autoOpenCategoryPopupSignal;
+    final isExplicitParent = widget.isParentCategory || PostTaskScreen.isParentCategorySignal;
+    PostTaskScreen.jumpToCategory = null;
+    PostTaskScreen.autoOpenCategoryPopupSignal = false;
+    PostTaskScreen.isParentCategorySignal = false;
+
+    TaskCategoryGroup? targetGroup;
+    bool isParent = isExplicitParent;
+    String? resolvedChildCat;
+
+    if (initialCat != null && initialCat.trim().isNotEmpty) {
+      final key = initialCat.trim();
+      final keyLower = key.toLowerCase();
+      final keyNorm = Task.normalizeCategoryKey(key);
+
+      // Check if it's a parent group label (e.g. 'Repair', 'Delivery and Transport', etc.)
+      for (final g in TaskCategoryGroup.all) {
+        if (g.label.toLowerCase() == keyLower ||
+            Task.normalizeCategoryKey(g.label) == keyNorm ||
+            ((keyLower == 'repair' || keyNorm == 'repair') && g.label == 'Repair') ||
+            ((keyLower == 'delivery' || keyLower == 'delivery and transport' || keyLower == 'delivery & transport') &&
+                (g.label == 'Delivery and Transport' || g.label == 'Delivery & Moving'))) {
+          targetGroup = g;
+          isParent = true;
+          break;
+        }
+      }
+
+      // If not a parent group, find which group contains this child category
+      if (targetGroup == null) {
+        for (final g in TaskCategoryGroup.all) {
+          if (g.containsCategory(keyNorm) || g.containsCategory(keyLower)) {
+            targetGroup = g;
+            isParent = isExplicitParent;
+            resolvedChildCat = g.categoryIds.firstWhere(
+              (id) => id.toLowerCase() == keyLower || id == keyNorm,
+              orElse: () => keyNorm,
+            );
+            break;
+          }
+        }
+      }
+
+      // Check freelancer subcategories
+      if (targetGroup == null && TaskCategoryGroup.freelancerChildIds.contains(keyNorm)) {
+        targetGroup = TaskCategoryGroup.freelancerGroup;
+        isParent = false;
+        resolvedChildCat = keyNorm;
+      }
+
+      // Check repair subcategories
+      if (targetGroup == null && Task.isRepairCategory(keyNorm)) {
+        targetGroup = TaskCategoryGroup.all.firstWhere((g) => g.label == 'Repair');
+        isParent = false;
+        resolvedChildCat = keyNorm;
+      }
+
+      if (isParent) {
+        final isDelivery = targetGroup != null &&
+            (targetGroup.label == 'Delivery and Transport' ||
+             targetGroup.label == 'Delivery & Moving' ||
+             targetGroup.categoryIds.contains('delivery'));
+        if (isDelivery) {
+          _applySelectedCategory('delivery');
+        } else {
+          // Parent category (e.g. Repair): do NOT select any child category initially
+          _selectedCategory = '';
+        }
+      } else if (resolvedChildCat != null) {
+        _applySelectedCategory(resolvedChildCat);
+      } else {
+        _applySelectedCategory(keyNorm);
+      }
     } else if (Task.isGroceryCategory(_selectedCategory)) {
       _initGroceryDefaults();
     }
@@ -1370,7 +1480,37 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           return;
         }
       }
-      if (widget.initialCategory != null &&
+      if (shouldOpenPopup && targetGroup != null && mounted) {
+        await Future.delayed(const Duration(milliseconds: 280));
+        if (mounted) {
+          final isDelivery = targetGroup.label == 'Delivery and Transport' ||
+              targetGroup.label == 'Delivery & Moving' ||
+              targetGroup.categoryIds.contains('delivery');
+          if (isDelivery) {
+            setState(() {
+              _applySelectedCategory('delivery');
+            });
+            await DeliveryLocationSheet.show(
+              context,
+              initialPickupAddress: _pickupAddrCtrl.text.isNotEmpty ? _pickupAddrCtrl.text : null,
+              initialPickupLocation: _pickupLocation,
+              initialDropAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+              initialDropLocation: _dropLocation,
+              initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+            );
+          } else {
+            final parentGroup = (targetGroup == TaskCategoryGroup.freelancerGroup)
+                ? TaskCategoryGroup.all.firstWhere((g) => g.label == 'Professional')
+                : null;
+            await _showSubCategorySheet(
+              targetGroup,
+              parentGroup: parentGroup,
+              highlightSelected: !isParent,
+            );
+          }
+        }
+      } else if (!shouldOpenPopup &&
+          widget.initialCategory != null &&
           Task.isGroceryCategory(widget.initialCategory!) &&
           _selectedGroceryItems.isEmpty &&
           (widget.initialGroceryItems == null || widget.initialGroceryItems!.isEmpty) &&

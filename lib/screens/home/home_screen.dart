@@ -16,6 +16,7 @@ import '../../utils/image_utils.dart';
 import '../../widgets/hero_map_background.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
 import '../browse/browse_screen.dart';
+import '../tasks/post_task_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final List<Task>? initialNearbyTasks;
@@ -1023,8 +1024,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
+                    children: [
+                      const Text(
                         'Popular Task Categories for You',
                         style: TextStyle(
                           fontSize: 16,
@@ -1033,13 +1034,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           letterSpacing: -0.3,
                         ),
                       ),
-                      SizedBox(height: 2),
-                      Text(
-                        'Tap any category to view available tasks',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
+                      const SizedBox(height: 2),
+                      Consumer<AuthProvider>(
+                        builder: (_, auth, __) => Text(
+                          auth.isPosterMode
+                              ? 'Tap any category to post a task'
+                              : 'Tap any category to view available tasks',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                     ],
@@ -1047,7 +1052,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(width: 8),
                 GestureDetector(
-                  onTap: () => context.go('/browse'),
+                  onTap: () {
+                    final auth = context.read<AuthProvider>();
+                    if (auth.isPosterMode) {
+                      context.push('/post-task');
+                    } else {
+                      context.go('/browse');
+                    }
+                  },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
@@ -1106,9 +1118,24 @@ class _HomeScreenState extends State<HomeScreen> {
     return Expanded(
       child: GestureDetector(
         onTap: () {
-          BrowseScreen.jumpToCategory = cat.$2.toLowerCase();
-          BrowseScreen.jumpToSubCategory = cat.$2.toLowerCase();
-          context.go('/browse');
+          final auth = context.read<AuthProvider>();
+          final catName = cat.$2.toLowerCase();
+          final isParent = catName == 'repair' ||
+              catName == 'delivery' ||
+              catName == 'delivery & transport' ||
+              catName == 'delivery and transport';
+          if (auth.isPosterMode) {
+            PostTaskScreen.jumpToCategory = catName;
+            PostTaskScreen.autoOpenCategoryPopupSignal = true;
+            PostTaskScreen.isParentCategorySignal = isParent;
+            context.push(
+              '/post-task?category=${Uri.encodeComponent(catName)}&open_popup=true&is_parent=$isParent',
+            );
+          } else {
+            BrowseScreen.jumpToCategory = catName;
+            BrowseScreen.jumpToSubCategory = catName;
+            context.go('/browse');
+          }
         },
         child: AspectRatio(
           aspectRatio: 1.04,

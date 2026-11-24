@@ -160,9 +160,20 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         ),
         GoRoute(
           path: '/post-task',
-          builder: (_, state) => PostTaskScreen(
-            initialCategory: state.uri.queryParameters['category'],
-          ),
+          builder: (_, state) {
+            final cat = state.uri.queryParameters['category'] ??
+                PostTaskScreen.jumpToCategory;
+            final isParent = state.uri.queryParameters['is_parent'] == 'true' ||
+                PostTaskScreen.isParentCategorySignal;
+            final openPopup =
+                state.uri.queryParameters['open_popup'] == 'true' ||
+                    PostTaskScreen.autoOpenCategoryPopupSignal;
+            return PostTaskScreen(
+              initialCategory: cat,
+              isParentCategory: isParent,
+              autoOpenCategoryPopup: openPopup,
+            );
+          },
         ),
         GoRoute(
           path: '/grocery-picker',

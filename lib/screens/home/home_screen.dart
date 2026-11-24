@@ -806,7 +806,22 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: double.infinity,
                       height: 44,
                       child: OutlinedButton(
-                        onPressed: () => context.go('/browse'),
+                        onPressed: () async {
+                          final auth = context.read<AuthProvider>();
+                          if (!auth.isHelperMode) {
+                            final switched = await showProfileModeSwitchDialog(
+                              context,
+                              targetMode: 'helper',
+                              title: 'Switch to Helper Profile',
+                              message:
+                                  'Finding and accepting tasks requires switching to your Helper profile. Would you like to switch to Helper mode now to find tasks?',
+                              actionLabel: 'Switch to Helper',
+                            );
+                            if (switched != true) return;
+                          }
+                          if (!mounted) return;
+                          context.go('/browse');
+                        },
                         style: OutlinedButton.styleFrom(
                           backgroundColor: Colors.white,
                           minimumSize: const Size(0, 44),

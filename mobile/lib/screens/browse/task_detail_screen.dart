@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../providers/task_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../models/task.dart';
@@ -135,6 +136,11 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
     if (!mounted) return;
     setState(() => _accepting = false);
     if (ok) {
+      try {
+        context
+            .read<NotificationProvider>()
+            .removeTaskNotifications(widget.taskId);
+      } catch (_) {}
       // Navigate directly to the in-progress screen so helper can start immediately
       context.go('/task-in-progress/${widget.taskId}');
     } else {

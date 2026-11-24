@@ -6,6 +6,7 @@ class AppNotification {
   final String body;
   final String? type;
   final String? taskId;
+  final String? taskStatus;
   final bool isRead;
   final DateTime createdAt;
 
@@ -15,6 +16,7 @@ class AppNotification {
     required this.body,
     this.type,
     this.taskId,
+    this.taskStatus,
     this.isRead = false,
     required this.createdAt,
   });
@@ -24,13 +26,15 @@ class AppNotification {
     // (which stores {"type":"skill_matched","taskId":"5",...}) so navigation
     // still works even if the DB column is unexpectedly null.
     String? taskId = json['task_id']?.toString();
-    if (taskId == null || taskId.isEmpty) {
+    String? taskStatus = json['task_status']?.toString();
+    if (taskId == null || taskId.isEmpty || taskStatus == null) {
       try {
         final raw = json['data'];
         if (raw != null) {
           final Map<String, dynamic> dataMap =
               raw is String ? (jsonDecode(raw) as Map<String, dynamic>) : Map<String, dynamic>.from(raw as Map);
-          taskId = dataMap['task_id']?.toString() ?? dataMap['taskId']?.toString();
+          taskId ??= dataMap['task_id']?.toString() ?? dataMap['taskId']?.toString();
+          taskStatus ??= dataMap['task_status']?.toString() ?? dataMap['status']?.toString();
         }
       } catch (_) {}
     }
@@ -40,6 +44,7 @@ class AppNotification {
       body: json['body'] ?? json['message'] ?? '',
       type: json['notification_type'] ?? json['type'],
       taskId: taskId,
+      taskStatus: taskStatus,
       isRead: json['status'] == 'read' || (json['is_read'] == true),
       createdAt: _parseDateTime(json['created_at']),
     );

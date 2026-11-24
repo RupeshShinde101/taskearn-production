@@ -254,6 +254,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                 _navigateForNotification(context, n);
                               }
                             },
+                            onLongPress: () {
+                              if (!_selectionMode) {
+                                setState(() {
+                                  _selectionMode = true;
+                                  _selectedIds.add(n.id);
+                                });
+                              } else {
+                                _toggleSelection(n.id);
+                              }
+                            },
                           );
                         },
                       ),
@@ -269,18 +279,21 @@ class _NotificationTile extends StatelessWidget {
   final bool selectionMode;
   final bool isSelected;
   final VoidCallback onTap;
+  final VoidCallback? onLongPress;
 
   const _NotificationTile({
     required this.notification,
     this.selectionMode = false,
     this.isSelected = false,
     required this.onTap,
+    this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       onTap: onTap,
+      onLongPress: onLongPress,
       leading: selectionMode
           ? Checkbox(
               value: isSelected,

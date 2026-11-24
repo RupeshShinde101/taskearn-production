@@ -3355,6 +3355,16 @@ def accept_task(task_id):
                 WHERE id = {PH}
             ''', (request.user_id, accepted_at, task_id))
 
+            # Remove broadcast/posted task notifications so they disappear from helpers' screens upon acceptance
+            try:
+                cursor.execute(f'''
+                    DELETE FROM notifications
+                    WHERE task_id = {PH}
+                      AND notification_type IN ('task_matched', 'matched_task', 'skill_matched', 'nearby_task', 'task_posted', 'new_task')
+                ''', (task_id,))
+            except Exception:
+                pass
+
             poster_id = task['posted_by']
             action_data = _json_acc.dumps({'type': 'task', 'label': '👁️ View Task', 'taskId': task_id})
 
@@ -3410,6 +3420,13 @@ def accept_task(task_id):
                 data={'type': 'task_assigned', 'task_id': str(task_id)},
                 channel='workmate4u_main',
             )
+        except Exception:
+            pass
+
+        # Clear in-memory deduplication set for this task so it can re-trigger if later released
+        try:
+            with _notified_events_lock:
+                _notified_task_events = {k for k in _notified_task_events if k[0] != int(task_id)}
         except Exception:
             pass
 
@@ -3547,7 +3564,7 @@ def abandon_task(task_id):
                         WHERE id = {PH}
                     ''', (daily_count, today, request.user_id))
 
-        # Notify poster that helper released their task
+        # Notify poster that helper released their task and re-broadcast task notification with updated time
         try:
             with get_db() as (cursor, conn):
                 cursor.execute(f'SELECT title, posted_by, price FROM tasks WHERE id = {PH}', (task_id,))
@@ -3565,8 +3582,39 @@ def abandon_task(task_id):
                         VALUES ({PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH}, {PH})
                     ''', (t['posted_by'], task_id, 'task_released',
                           'Task Released ⚠️',
-                          f'{h_name} has released your task "{t["title"]}". It is now available for others to accept.',
+                          f'{h_name} has released your task "{t["title"]}". It is now available for other helpers to accept.',
                           'unread', notif_data, now))
+
+                    # Send push notification + FCM to poster about the release details
+                    try:
+                        send_fcm_to_user(
+                            t['posted_by'],
+                            'Task Released ⚠️',
+                            f'{h_name} has released your task "{t["title"]}". It is now available for other helpers to accept.',
+                            data={'type': 'task_released', 'taskId': str(task_id)},
+                            channel='workmate4u_main',
+                        )
+                    except Exception:
+                        pass
+
+                    # Clear in-memory deduplication cache for this task so it can notify again
+                    try:
+                        with _notified_events_lock:
+                            _notified_task_events = {k for k in _notified_task_events if k[0] != int(task_id)}
+                    except Exception:
+                        pass
+
+                    # Re-trigger skill matched and nearby notifications in a daemon thread with the updated timestamp
+                    import threading as _notify_thread
+                    _rel_task_id = task_id
+                    _rel_poster_id = t['posted_by']
+                    _notify_thread.Thread(
+                        target=lambda: (
+                            _do_notify_skill_matched(_rel_task_id, _rel_poster_id),
+                            _do_notify_nearby(_rel_task_id, _rel_poster_id),
+                        ),
+                        daemon=True,
+                    ).start()
         except Exception as notif_err:
             print(f"⚠️ Failed to create release notification: {notif_err}")
         
@@ -8789,10 +8837,15 @@ def get_notifications():
     try:
         with get_db() as (cursor, conn):
             cursor.execute(f'''
-                SELECT n.*, t.title as task_title
+                SELECT n.*, t.title as task_title, t.status as task_status
                 FROM notifications n
                 LEFT JOIN tasks t ON n.task_id = t.id
                 WHERE n.user_id = {PH}
+                  AND NOT (
+                    n.notification_type IN ('task_matched', 'matched_task', 'skill_matched', 'nearby_task', 'task_posted', 'new_task')
+                    AND t.status IS NOT NULL
+                    AND t.status != 'active'
+                  )
                 ORDER BY n.created_at DESC
                 LIMIT 50
             ''', (request.user_id,))

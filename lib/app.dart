@@ -473,6 +473,16 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       routeInformationParser: _router.routeInformationParser,
       routerDelegate: _router.routerDelegate,
       backButtonDispatcher: _backButtonDispatcher,
+      builder: (context, child) {
+        return PopScope(
+          canPop: false,
+          onPopInvokedWithResult: (bool didPop, dynamic result) async {
+            if (didPop) return;
+            await AppNavigationHandler.handleBackPress();
+          },
+          child: child ?? const SizedBox.shrink(),
+        );
+      },
     );
   }
 }

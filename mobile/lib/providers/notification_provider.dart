@@ -62,6 +62,24 @@ class NotificationProvider extends ChangeNotifier {
         }
       }
 
+      // Filter out broadcast notifications whose task has already been accepted/is no longer active
+      const broadcastTypes = {
+        'task_matched',
+        'matched_task',
+        'skill_matched',
+        'nearby_task',
+        'task_posted',
+        'new_task',
+      };
+      list = list.where((n) {
+        if (broadcastTypes.contains(n.type) &&
+            n.taskStatus != null &&
+            n.taskStatus != 'active') {
+          return false;
+        }
+        return true;
+      }).toList();
+
       // Apply locally tracked read state so tab-switches don't revert reads.
       _notifications = list.map((n) {
         if (_locallyReadIds.contains(n.id)) {
@@ -145,12 +163,34 @@ class NotificationProvider extends ChangeNotifier {
     }
   }
 
+  /// Immediately removes broadcast/posted notifications for a given task ID
+  /// (e.g. after any helper accepts it).
+  void removeTaskNotifications(String taskId) {
+    const broadcastTypes = {
+      'task_matched',
+      'matched_task',
+      'skill_matched',
+      'nearby_task',
+      'task_posted',
+      'new_task',
+    };
+    _notifications = _notifications.where((n) {
+      if (n.taskId == taskId && broadcastTypes.contains(n.type)) {
+        return false;
+      }
+      return true;
+    }).toList();
+    _unreadCount = _notifications.where((n) => !n.isRead).length;
+    notifyListeners();
+  }
+
   Map<String, dynamic> _toJson(AppNotification n) => {
         'id': n.id,
         'title': n.title,
         'body': n.body,
         'type': n.type,
         'task_id': n.taskId,
+        'task_status': n.taskStatus,
         'is_read': n.isRead,
         // Always emit UTC so _parseDateTime doesn't re-apply the timezone offset
         'created_at': n.createdAt.toUtc().toIso8601String(),

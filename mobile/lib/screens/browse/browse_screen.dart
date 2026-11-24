@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
@@ -190,10 +191,19 @@ class _BrowseScreenState extends State<BrowseScreen> {
     if (cat != null) {
       BrowseScreen.jumpToCategory = null; // consume once
       final catLower = cat.toLowerCase();
+      final catNorm = Task.normalizeCategoryKey(catLower);
       BrowseCategoryConfig? targetConfig;
       for (final config in BrowseCategoryConfig.all) {
-        if (config.categoryIds.any((id) => id.toLowerCase() == catLower) ||
-            config.label.toLowerCase() == catLower) {
+        if (config.categoryIds.any((id) {
+              final idNorm = Task.normalizeCategoryKey(id);
+              return idNorm == catNorm ||
+                  id.toLowerCase() == catLower ||
+                  catLower.contains(id.toLowerCase()) ||
+                  id.toLowerCase().contains(catLower);
+            }) ||
+            config.label.toLowerCase() == catLower ||
+            config.label.toLowerCase().contains(catLower) ||
+            catLower.contains(config.label.toLowerCase())) {
           targetConfig = config;
           break;
         }
@@ -304,19 +314,25 @@ class _BrowseScreenState extends State<BrowseScreen> {
   /// Matches a task against a parent category configuration.
   static BrowseCategoryConfig _findCategoryForTask(Task task) {
     final taskCat = task.category.trim().toLowerCase();
+    final taskNorm = Task.normalizeCategoryKey(taskCat);
     for (final config in BrowseCategoryConfig.all) {
       if (config.isOther) continue;
       for (final id in config.categoryIds) {
         final idLower = id.toLowerCase();
-        if (taskCat == idLower ||
+        final idNorm = Task.normalizeCategoryKey(idLower);
+        if (taskNorm == idNorm ||
+            taskCat == idLower ||
             taskCat.contains(idLower) ||
-            idLower.contains(taskCat)) {
+            idLower.contains(taskCat) ||
+            taskNorm.contains(idNorm) ||
+            idNorm.contains(taskNorm)) {
           return config;
         }
       }
-      if (taskCat == config.label.toLowerCase() ||
-          config.label.toLowerCase().contains(taskCat) ||
-          taskCat.contains(config.label.toLowerCase())) {
+      final labelLower = config.label.toLowerCase();
+      if (taskCat == labelLower ||
+          labelLower.contains(taskCat) ||
+          taskCat.contains(labelLower)) {
         return config;
       }
     }
@@ -511,7 +527,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       MediaQuery.of(context).viewPadding.bottom + 16,
                     ),
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight - 28),
+                      constraints: BoxConstraints(
+                          minHeight:
+                              math.max(0.0, constraints.maxHeight - 28)),
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -715,15 +733,40 @@ class _BrowseScreenState extends State<BrowseScreen> {
   }
 
   static bool _matchesSubCategory(Task task, String subCategory) {
-    final tCat = task.category.trim().toLowerCase();
-    final target = subCategory.trim().toLowerCase();
-    if (target.isEmpty || target == 'all') return true;
-    if (target == 'repair') return true;
-    if (tCat == target) return true;
-    if (target == 'groceries' && (tCat == 'groceries' || tCat == 'grocery')) return true;
-    if (target == 'shopping' && tCat == 'shopping') return true;
-    if (target == 'delivery' && tCat == 'delivery') return true;
-    if (tCat.contains(target) || target.contains(tCat)) return true;
+    final tCat = Task.normalizeCategoryKey(task.category);
+    final target = Task.normalizeCategoryKey(subCategory);
+    if (target.isEmpty || target == 'all') {
+      return true;
+    }
+    if (target == 'repair' && Task.isRepairCategory(tCat)) {
+      return true;
+    }
+    if (tCat == target) {
+      return true;
+    }
+    if ((target == 'groceries' || target == 'grocery') &&
+        (tCat == 'groceries' || tCat == 'grocery')) {
+      return true;
+    }
+    if (target == 'shopping' &&
+        (tCat == 'shopping' || tCat == 'groceries' || tCat == 'grocery')) {
+      return true;
+    }
+    if (target == 'delivery' &&
+        (tCat == 'delivery' ||
+            tCat == 'pickup' ||
+            tCat == 'transport' ||
+            tCat == 'moving')) {
+      return true;
+    }
+    if (tCat.contains(target) || target.contains(tCat)) {
+      return true;
+    }
+    final titleLower = task.title.toLowerCase();
+    final descLower = task.description.toLowerCase();
+    if (titleLower.contains(target) || descLower.contains(target)) {
+      return true;
+    }
     return false;
   }
 
@@ -741,9 +784,18 @@ class _BrowseScreenState extends State<BrowseScreen> {
         _selectedSubCategory != 'all' &&
         _selectedSubCategory!.toLowerCase() != config.label.toLowerCase();
 
-    final List<Task> effectiveTasks = isSubCatActive
-        ? catTasks.where((t) => _matchesSubCategory(t, _selectedSubCategory!)).toList()
+    final List<Task> matchingSubTasks = isSubCatActive
+        ? catTasks
+            .where((t) => _matchesSubCategory(t, _selectedSubCategory!))
+            .toList()
         : catTasks;
+
+    // Show matching subtasks if any; otherwise fallback to showing all category tasks
+    // so tasks are never hidden when tapping from Home Screen or Browse screen.
+    final List<Task> effectiveTasks =
+        (isSubCatActive && matchingSubTasks.isNotEmpty)
+            ? matchingSubTasks
+            : catTasks;
 
     return Column(
       children: [
@@ -898,7 +950,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
                                 ],
                               ),
                             ),
-                            if (isSubCatActive)
+                            if (isSubCatActive && matchingSubTasks.isNotEmpty)
                               GestureDetector(
                                 onTap: () => setState(() => _selectedSubCategory = null),
                                 child: Container(
@@ -961,7 +1013,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
                       MediaQuery.of(context).viewPadding.bottom + 16,
                     ),
                     child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: constraints.maxHeight - 28),
+                      constraints: BoxConstraints(
+                          minHeight:
+                              math.max(0.0, constraints.maxHeight - 28)),
                       child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,

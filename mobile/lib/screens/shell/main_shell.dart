@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/profile_mode_switch_dialog.dart';
-import '../../theme/app_theme.dart';
-import '../browse/browse_screen.dart';
+import '../../navigation/app_back_button_dispatcher.dart';
 
 class MainShell extends StatefulWidget {
   final Widget child;
@@ -15,256 +13,13 @@ class MainShell extends StatefulWidget {
   State<MainShell> createState() => _MainShellState();
 }
 
-class _MainShellState extends State<MainShell> with TickerProviderStateMixin, WidgetsBindingObserver {
+class _MainShellState extends State<MainShell> with TickerProviderStateMixin {
   static const _tabs = [
     '/home',
     '/browse',
     '/my-tasks',
     '/profile',
   ];
-
-  static const _channel = MethodChannel('com.workmate4u/navigation');
-  int _currentIdx = 0;
-  bool _keyboardVisible = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _channel.setMethodCallHandler(_onNativeBack);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _channel.setMethodCallHandler(null);
-    super.dispose();
-  }
-
-  /// Fires whenever window metrics change (keyboard open/close, rotation, etc.).
-  @override
-  void didChangeMetrics() {
-    final bottom = WidgetsBinding.instance.platformDispatcher.views.first.viewInsets.bottom;
-    final visible = bottom > 0;
-    if (visible != _keyboardVisible) {
-      _keyboardVisible = visible;
-    }
-  }
-
-  /// Unified back navigation handler:
-  /// 1. Dismisses on-screen keyboard if open.
-  /// 2. Pops any pushed GoRouter sub-routes (e.g. task detail, post-task).
-  /// 3. If on any non-home tab (Browse, Tasks, Profile), redirects to Home.
-  /// 4. If on Home tab, prompts the user with the Exit confirmation dialog.
-  Future<bool> _handleBack() async {
-    if (!mounted) return false;
-
-    // If the keyboard is currently visible, dismiss it and stop here.
-    if (_keyboardVisible) {
-      FocusManager.instance.primaryFocus?.unfocus();
-      return true;
-    }
-
-    // If there is a pushed route on the stack — pop it normally
-    if (GoRouter.of(context).canPop()) {
-      GoRouter.of(context).pop();
-      return true;
-    }
-
-    if (BrowseScreen.onBackOverride?.call() == true) {
-      return true;
-    }
-
-    if (_currentIdx != 0) {
-      // Non-home tab → redirect user to Home tab
-      context.go('/home');
-      return true;
-    }
-
-    // Home tab → show popup for exit or stay
-    final shouldExit = await _showExitDialog();
-    if (shouldExit == true && mounted) {
-      SystemNavigator.pop();
-    }
-    return true;
-  }
-
-  /// Called from native Android when the back button / gesture is triggered.
-  /// Returns true  → Flutter handled it (Android does nothing).
-  /// Returns false → Android falls back to its default behaviour.
-  Future<dynamic> _onNativeBack(MethodCall call) async {
-    if (call.method != 'back_pressed' || !mounted) return false;
-    return await _handleBack();
-  }
-
-  Future<bool?> _showExitDialog() {
-    return showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      barrierColor: Colors.black.withValues(alpha: 0.5),
-      transitionDuration: const Duration(milliseconds: 280),
-      transitionBuilder: (ctx, anim, _, child) {
-        final curved = CurvedAnimation(
-          parent: anim,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween<double>(begin: 0.85, end: 1.0).animate(curved),
-            child: child,
-          ),
-        );
-      },
-      pageBuilder: (ctx, _, __) => Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 32),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.18),
-                  blurRadius: 32,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header with gradient
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: AppColors.gradient,
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: Column(
-                    children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.exit_to_app_rounded,
-                          color: Colors.white,
-                          size: 28,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      const Text(
-                        'Exit App',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                // Body
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                  child: Column(
-                    children: [
-                      const Text(
-                        'Are you sure you want to close Workmate4u?',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: Color(0xFF64748B),
-                          height: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Row(
-                        children: [
-                          // No button
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => Navigator.of(ctx).pop(false),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                side: const BorderSide(
-                                    color: AppColors.primary, width: 1.5),
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 13),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              child: const Text(
-                                'Stay',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          // Yes button
-                          Expanded(
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: AppColors.gradient,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withValues(alpha: 0.35),
-                                    blurRadius: 10,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: ElevatedButton(
-                                onPressed: () => Navigator.of(ctx).pop(true),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.transparent,
-                                  shadowColor: Colors.transparent,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 13),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Exit',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   void _onTap(int index) {
     context.go(_tabs[index]);
@@ -281,13 +36,12 @@ class _MainShellState extends State<MainShell> with TickerProviderStateMixin, Wi
   Widget build(BuildContext context) {
     final location = GoRouterState.of(context).matchedLocation;
     final idx = _indexForPath(location);
-    _currentIdx = idx;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, dynamic result) async {
         if (didPop) return;
-        await _handleBack();
+        await AppNavigationHandler.handleBackPress();
       },
       child: Scaffold(
         extendBody: true,

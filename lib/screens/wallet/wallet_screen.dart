@@ -117,7 +117,7 @@ class _WalletScreenState extends State<WalletScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => Padding(
+      builder: (ctx) => SingleChildScrollView(
         padding: EdgeInsets.fromLTRB(
             24, 24, 24, MediaQuery.of(ctx).viewInsets.bottom + 24),
         child: Column(

@@ -175,26 +175,28 @@ class _KycScreenState extends State<KycScreen> {
       barrierDismissible: false,
       builder: (dialogCtx) => AlertDialog(
         title: const Text('Verify Your Email'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Enter the 6-digit OTP sent to ${auth.user?.email ?? "your email"} to continue KYC.',
-              style: const TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: otpCtrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              decoration: const InputDecoration(
-                labelText: 'Enter OTP',
-                prefixIcon: Icon(Icons.mark_email_read_outlined),
-                counterText: '',
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Enter the 6-digit OTP sent to ${auth.user?.email ?? "your email"} to continue KYC.',
+                style: const TextStyle(color: AppColors.gray, fontSize: 13, height: 1.4),
               ),
-            ),
-          ],
+              const SizedBox(height: 16),
+              TextField(
+                controller: otpCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 6,
+                decoration: const InputDecoration(
+                  labelText: 'Enter OTP',
+                  prefixIcon: Icon(Icons.mark_email_read_outlined),
+                  counterText: '',
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(

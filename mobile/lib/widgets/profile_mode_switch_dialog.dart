@@ -54,12 +54,14 @@ Future<bool> showProfileModeSwitchDialog(
           ),
         ],
       ),
-      content: Text(
-        message ?? defaultMessage,
-        style: const TextStyle(
-          fontSize: 14,
-          color: AppColors.gray,
-          height: 1.5,
+      content: SingleChildScrollView(
+        child: Text(
+          message ?? defaultMessage,
+          style: const TextStyle(
+            fontSize: 14,
+            color: AppColors.gray,
+            height: 1.5,
+          ),
         ),
       ),
       actions: [

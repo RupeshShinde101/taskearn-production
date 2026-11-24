@@ -211,16 +211,27 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           body: notif.isLoading
               ? const Center(child: CircularProgressIndicator())
               : notifications.isEmpty
-                  ? const Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.notifications_none,
-                              size: 64, color: AppColors.grayLight),
-                          SizedBox(height: 12),
-                          Text('No notifications',
-                              style: TextStyle(color: AppColors.gray)),
-                        ],
+                  ? RefreshIndicator(
+                      onRefresh: () => notif.fetchNotifications(),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) => SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                            child: const Center(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.notifications_none,
+                                      size: 64, color: AppColors.grayLight),
+                                  SizedBox(height: 12),
+                                  Text('No notifications',
+                                      style: TextStyle(color: AppColors.gray)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     )
                   : RefreshIndicator(

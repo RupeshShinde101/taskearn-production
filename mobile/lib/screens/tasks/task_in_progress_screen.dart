@@ -217,60 +217,62 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'The task poster verified your work and released your payment. Here\'s the breakdown:',
-              style: TextStyle(
-                  color: AppColors.gray, fontSize: 13, height: 1.5),
-            ),
-            const SizedBox(height: 16),
-            // ── Earnings breakdown card ───────────────────────────────
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF4F6F9),
-                borderRadius: BorderRadius.circular(12),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The task poster verified your work and released your payment. Here\'s the breakdown:',
+                style: TextStyle(
+                    color: AppColors.gray, fontSize: 13, height: 1.5),
               ),
-              child: Column(
-                children: [
-                  _BreakdownRow(
-                    label: 'Task Total',
-                    value: '₹${taskTotal.toStringAsFixed(0)}',
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Divider(height: 1),
-                  ),
-                  _BreakdownRow(
-                    label: 'Platform Commission ($commissionPct%)',
-                    value: '− ₹${commissionAmt.toStringAsFixed(0)}',
-                    valueColor: AppColors.danger,
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Divider(height: 1),
-                  ),
-                  _BreakdownRow(
-                    label: 'You Receive',
-                    value: '₹${helperEarning.toStringAsFixed(0)}',
-                    bold: true,
-                    valueColor: AppColors.success,
-                  ),
-                ],
+              const SizedBox(height: 16),
+              // ── Earnings breakdown card ───────────────────────────────
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF4F6F9),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    _BreakdownRow(
+                      label: 'Task Total',
+                      value: '₹${taskTotal.toStringAsFixed(0)}',
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Divider(height: 1),
+                    ),
+                    _BreakdownRow(
+                      label: 'Platform Commission ($commissionPct%)',
+                      value: '− ₹${commissionAmt.toStringAsFixed(0)}',
+                      valueColor: AppColors.danger,
+                    ),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Divider(height: 1),
+                    ),
+                    _BreakdownRow(
+                      label: 'You Receive',
+                      value: '₹${helperEarning.toStringAsFixed(0)}',
+                      bold: true,
+                      valueColor: AppColors.success,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '₹${helperEarning.toStringAsFixed(0)} will be credited to your wallet after you mark the task as completed.',
-              style: const TextStyle(
-                  color: AppColors.gray, fontSize: 11, height: 1.4),
-            ),
-            const SizedBox(height: 16),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                '₹${helperEarning.toStringAsFixed(0)} will be credited to your wallet after you mark the task as completed.',
+                style: const TextStyle(
+                    color: AppColors.gray, fontSize: 11, height: 1.4),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
         actions: [
           Padding(

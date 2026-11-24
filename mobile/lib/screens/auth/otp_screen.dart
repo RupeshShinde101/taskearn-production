@@ -78,55 +78,57 @@ class _OtpScreenState extends State<OtpScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Verify OTP')),
-      body: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 32),
-            const Icon(Icons.mark_email_read_outlined,
-                size: 64, color: AppColors.primary),
-            const SizedBox(height: 16),
-            const Text('Enter the 6-digit code',
-                style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.dark)),
-            const SizedBox(height: 8),
-            Text(
-              'We sent it to $_email',
-              style: const TextStyle(color: AppColors.gray),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 32),
-            Pinput(
-              length: 6,
-              defaultPinTheme: pinTheme,
-              focusedPinTheme: pinTheme.copyWith(
-                decoration: pinTheme.decoration!.copyWith(
-                  border: Border.all(color: AppColors.primary, width: 2),
-                ),
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const SizedBox(height: 32),
+              const Icon(Icons.mark_email_read_outlined,
+                  size: 64, color: AppColors.primary),
+              const SizedBox(height: 16),
+              const Text('Enter the 6-digit code',
+                  style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.dark)),
+              const SizedBox(height: 8),
+              Text(
+                'We sent it to $_email',
+                style: const TextStyle(color: AppColors.gray),
+                textAlign: TextAlign.center,
               ),
-              onChanged: (v) => setState(() => _otp = v),
-              onCompleted: (_) => _verify(),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 12),
-              Text(_error!,
-                  style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+              const SizedBox(height: 32),
+              Pinput(
+                length: 6,
+                defaultPinTheme: pinTheme,
+                focusedPinTheme: pinTheme.copyWith(
+                  decoration: pinTheme.decoration!.copyWith(
+                    border: Border.all(color: AppColors.primary, width: 2),
+                  ),
+                ),
+                onChanged: (v) => setState(() => _otp = v),
+                onCompleted: (_) => _verify(),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!,
+                    style: const TextStyle(color: AppColors.danger, fontSize: 13)),
+              ],
+              const SizedBox(height: 28),
+              GradientButton(
+                label: 'Verify',
+                loading: _loading,
+                onPressed: _otp.length == 6 ? _verify : null,
+              ),
+              const SizedBox(height: 16),
+              TextButton(
+                onPressed: _resend,
+                child: const Text("Didn't receive? Resend OTP"),
+              ),
             ],
-            const SizedBox(height: 28),
-            GradientButton(
-              label: 'Verify',
-              loading: _loading,
-              onPressed: _otp.length == 6 ? _verify : null,
-            ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: _resend,
-              child: const Text("Didn't receive? Resend OTP"),
-            ),
-          ],
+          ),
         ),
       ),
     );

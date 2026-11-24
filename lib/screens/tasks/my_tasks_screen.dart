@@ -123,26 +123,35 @@ class _PostedTaskList extends StatelessWidget {
         tasks.where((t) => !_terminalStatuses.contains(t.status)).toList();
 
     if (visibleTasks.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.posted),
-            SizedBox(height: 12),
-            Text(
-              'No posted tasks',
-              style: TextStyle(
-                color: AppColors.dark,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewPadding.bottom + 80),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 20),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.posted),
+                  SizedBox(height: 12),
+                  Text(
+                    'No posted tasks',
+                    style: TextStyle(
+                      color: AppColors.dark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Tap + to post a new task for local helpers',
+                    style: TextStyle(color: AppColors.gray, fontSize: 13),
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 4),
-            Text(
-              'Tap + to post a new task for local helpers',
-              style: TextStyle(color: AppColors.gray, fontSize: 13),
-            ),
-          ],
+          ),
         ),
       );
     }
@@ -873,26 +882,35 @@ class _CompletedTaskList extends StatelessWidget {
     final visible = tasks;
 
     if (visible.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.completed),
-            SizedBox(height: 12),
-            Text(
-              'No completed tasks',
-              style: TextStyle(
-                color: AppColors.dark,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewPadding.bottom + 80),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 20),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.completed),
+                  SizedBox(height: 12),
+                  Text(
+                    'No completed tasks',
+                    style: TextStyle(
+                      color: AppColors.dark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Completed tasks are kept for 48 hours',
+                    style: TextStyle(color: AppColors.gray, fontSize: 13),
+                  ),
+                ],
               ),
             ),
-            SizedBox(height: 4),
-            Text(
-              'Completed tasks are kept for 48 hours',
-              style: TextStyle(color: AppColors.gray, fontSize: 13),
-            ),
-          ],
+          ),
         ),
       );
     }
@@ -1149,26 +1167,35 @@ class _TaskList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tasks.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.accepted),
-            const SizedBox(height: 12),
-            Text(
-              emptyMsg,
-              style: const TextStyle(
-                color: AppColors.dark,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+      return LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(24, 16, 24, MediaQuery.of(context).viewPadding.bottom + 80),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 20),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const EmptyTasksClipboardIllustration(type: EmptyTasksClipboardType.accepted),
+                  const SizedBox(height: 12),
+                  Text(
+                    emptyMsg,
+                    style: const TextStyle(
+                      color: AppColors.dark,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Browse available tasks and accept one to start earning',
+                    style: TextStyle(color: AppColors.gray, fontSize: 13),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 4),
-            const Text(
-              'Browse available tasks and accept one to start earning',
-              style: TextStyle(color: AppColors.gray, fontSize: 13),
-            ),
-          ],
+          ),
         ),
       );
     }

@@ -258,42 +258,44 @@ class _TaskDetailScreenState extends State<TaskDetailScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialog) => AlertDialog(
           title: Text('Rate ${rateHelper ? "Helper" : "Poster"}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'How was your experience with $name?',
-                style: const TextStyle(color: AppColors.gray, fontSize: 13),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(
-                  5,
-                  (i) => GestureDetector(
-                    onTap: () => setDialog(() => selectedRating = (i + 1).toDouble()),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Icon(
-                        i < selectedRating ? Icons.star : Icons.star_border,
-                        color: AppColors.warning,
-                        size: 36,
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'How was your experience with $name?',
+                  style: const TextStyle(color: AppColors.gray, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    5,
+                    (i) => GestureDetector(
+                      onTap: () => setDialog(() => selectedRating = (i + 1).toDouble()),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          i < selectedRating ? Icons.star : Icons.star_border,
+                          color: AppColors.warning,
+                          size: 36,
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: commentCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Comment (optional)',
-                  hintText: 'Leave a review...',
+                const SizedBox(height: 12),
+                TextField(
+                  controller: commentCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Comment (optional)',
+                    hintText: 'Leave a review...',
+                  ),
+                  maxLines: 2,
                 ),
-                maxLines: 2,
-              ),
-            ],
+              ],
+            ),
           ),
           actions: [
             TextButton(

@@ -26,9 +26,10 @@ Future<bool?> showAppExitDialog(BuildContext context) {
     pageBuilder: (ctx, _, __) => Center(
       child: Material(
         color: Colors.transparent,
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 32),
-          decoration: BoxDecoration(
+        child: SingleChildScrollView(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+            decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
@@ -166,6 +167,7 @@ Future<bool?> showAppExitDialog(BuildContext context) {
               ),
             ],
           ),
+        ),
         ),
       ),
     ),

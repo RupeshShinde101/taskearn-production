@@ -304,40 +304,42 @@ class _VehicleTaskPostingDialogState extends State<VehicleTaskPostingDialog>
     return PopScope(
       canPop: _isPosted,
       child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: 320,
-            margin: const EdgeInsets.symmetric(horizontal: 22),
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(26),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.14),
-                  blurRadius: 38,
-                  offset: const Offset(0, 16),
-                ),
-                BoxShadow(
-                  color: const Color(0xFF2563EB).withValues(alpha: 0.04),
-                  blurRadius: 18,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 380),
-              switchInCurve: Curves.easeOutBack,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, anim) => FadeTransition(
-                opacity: anim,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
-                  child: child,
-                ),
+        child: SingleChildScrollView(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              width: 320,
+              margin: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 22),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(26),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.14),
+                    blurRadius: 38,
+                    offset: const Offset(0, 16),
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.04),
+                    blurRadius: 18,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              child: _isPosted ? _buildPostedView() : _buildPostingView(),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 380),
+                switchInCurve: Curves.easeOutBack,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, anim) => FadeTransition(
+                  opacity: anim,
+                  child: ScaleTransition(
+                    scale: Tween<double>(begin: 0.95, end: 1.0).animate(anim),
+                    child: child,
+                  ),
+                ),
+                child: _isPosted ? _buildPostedView() : _buildPostingView(),
+              ),
             ),
           ),
         ),

@@ -183,7 +183,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
     if (!mounted || _task == null) return;
     final task = _task!;
     final taskTotal = task.totalTaskValue;                       // budget + service_charge
-    final commissionRate = task.commissionRate;                  // 20% across all categories
+    final commissionRate = task.commissionRate;                  // 12% across all categories
     final commissionAmt = taskTotal * commissionRate;
     final helperEarning = task.netEarning;                       // taskTotal × (1 − rate)
     final commissionPct = (commissionRate * 100).round();
@@ -246,7 +246,7 @@ class _TaskInProgressScreenState extends State<TaskInProgressScreen>
                     child: Divider(height: 1),
                   ),
                   _BreakdownRow(
-                    label: 'Platform Commission ($commissionPct%)',
+                    label: 'Platform Fee ($commissionPct%)',
                     value: '− ₹${commissionAmt.toStringAsFixed(0)}',
                     valueColor: AppColors.danger,
                   ),

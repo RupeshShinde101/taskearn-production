@@ -140,8 +140,8 @@ class TermsScreen extends StatelessWidget {
               const _SubSection(
                 '6.2 Transparent Platform Fees (Inclusive of GST)',
                 'Displayed upfront before posting or accepting every task:\n'
-                '• Poster Platform Fee: 20% of the agreed task budget (inclusive of applicable GST), plus any shown category/service charge (currently ₹0 where displayed).\n'
-                '• Helper Platform Commission: 20% of the agreed task budget (inclusive of applicable GST), deducted from the gross payout upon settlement.',
+                '• Poster Platform Fee: Flat ₹12 per task (inclusive of applicable GST), plus any shown category/service charge (currently ₹0 where displayed).\n'
+                '• Helper Platform Fee: 12% of the agreed task budget (inclusive of applicable GST), deducted from the gross payout upon settlement.',
               ),
               const _SubSection(
                 '6.3 Bank Withdrawals to KYC-Verified Users',
@@ -191,7 +191,7 @@ class TermsScreen extends StatelessWidget {
               null,
               bullets: [
                 'Deliverable Originality & Transfer: Freelancers warrant that delivered code, designs, videos, texts, and media are original (or properly licensed) and do not infringe third-party rights. Agreed copyright/usage rights transfer to the Poster only upon full verified payment settlement on Workmate4u.',
-                'User Tax Compliance: Users are solely responsible for declaring income and complying with the Income-tax Act, 1961 (including TDS if applicable) and GST laws on their own services or receipts. Workmate4u\'s 20% fee/commission includes GST chargeable on Workmate4u\'s platform fee alone.',
+                'User Tax Compliance: Users are solely responsible for declaring income and complying with the Income-tax Act, 1961 (including TDS if applicable) and GST laws on their own services or receipts. Workmate4u\'s platform fee/commission (₹12 poster fee and 12% helper fee) includes GST chargeable on Workmate4u\'s platform fee alone.',
               ],
             ),
 

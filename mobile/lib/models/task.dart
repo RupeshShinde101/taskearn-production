@@ -482,29 +482,25 @@ class Task {
     return null;
   }
 
-  /// Platform commission rate (20% inclusive of GST & platform fee).
-  static const double platformCommission = 0.20;
+  /// Helper platform fee / commission rate (12% inclusive of GST).
+  static const double platformCommission = 0.12;
 
-  /// Per-task helper commission rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
-  double get commissionRate => 0.20;
+  /// Flat poster platform fee (₹12 inclusive of GST across all categories).
+  static const double posterPlatformFeeFlat = 12.0;
 
-  /// Per-task poster commission / platform fee rate (20% for all categories including delivery, pickup, transport, moving; inclusive of GST).
-  double get posterCommissionRate => 0.20;
+  /// Per-task helper platform fee rate (12% for all categories, inclusive of GST).
+  double get commissionRate => platformCommission;
 
-  /// Poster's platform fee:
-  /// - Groceries: fixed ₹12 incl. GST
-  /// - Repair categories: fixed ₹20 incl. GST
-  /// - All other categories: 20% of budget
-  double get posterFee {
-    if (isGroceryCategory(category)) return 12.0;
-    if (isRepairCategory(category)) return 20.0;
-    return budget * posterCommissionRate;
-  }
+  /// Poster percentage commission rate (0% — replaced by flat ₹12 platform fee).
+  double get posterCommissionRate => 0.0;
+
+  /// Poster's platform fee: flat ₹12 inclusive of GST across all categories.
+  double get posterFee => posterPlatformFeeFlat;
 
   /// Total base task value before helper commission: budget + service charge.
   double get totalTaskValue => budget + (serviceCharge ?? 0);
 
-  /// Total amount the poster pays: budget + distance service charge + 20% platform fee.
+  /// Total amount the poster pays: budget + distance service charge + ₹12 platform fee.
   double get totalPosterCost => totalTaskValue + posterFee;
 
   /// Legacy alias for total poster payment amount.
@@ -774,7 +770,7 @@ class Task {
       shortUnitHint: 'From ₹800 · /page or /hr',
       separateCostsTitle: 'Domain & Hosting Separate',
       separateCostsDescription:
-          'Domain registration (~₹900/yr), Hosting/VPS & paid APIs are paid directly by you (excluded from budget & 20% fee).',
+          'Domain registration (~₹900/yr), Hosting/VPS & paid APIs are paid directly by you (excluded from budget & platform fee).',
       tiers: [
         FreelancerPackageTier(
           id: 'website_pages',

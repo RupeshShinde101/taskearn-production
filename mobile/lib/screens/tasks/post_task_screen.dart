@@ -3408,7 +3408,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     }
     final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
     final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-    final posterFee = isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
+    const posterFee = Task.posterPlatformFeeFlat;
     final total  = budget + charge + posterFee;
 
     // Confirm posting — payment is collected AFTER the helper completes the task
@@ -8725,7 +8725,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 : rawBudget);
         final isDelivery = const {'delivery', 'pickup', 'transport', 'moving'}.contains(_selectedCategory);
         final charge = isDelivery ? Task.serviceChargeForCategory(_selectedCategory).toDouble() : 0.0;
-        final posterFee = isGrocery ? 12.0 : (isRepair ? 20.0 : (budget * 0.20));
+        const posterFee = Task.posterPlatformFeeFlat;
         final total = budget + charge + posterFee;
         final isGroceryLocationsPending = isGrocery &&
             (_dropAddrCtrl.text.trim().isEmpty ||
@@ -8748,7 +8748,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 4),
                 child: Text(
-                  'Excluded from 20% fee: ${_freelancerQuote!.separateCostsTitle} (client-paid direct).',
+                  'Excluded from platform fee: ${_freelancerQuote!.separateCostsTitle} (client-paid direct).',
                   style: const TextStyle(
                     fontSize: 11,
                     color: Color(0xFF64748B),
@@ -8852,7 +8852,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Flat ₹20 platform fee incl. GST (no 20% commission on repairs).',
+                        'Flat ₹12 platform fee incl. GST.',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade700,

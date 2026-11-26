@@ -172,7 +172,7 @@ class _DeliveryPriceBreakdownScreenState extends State<DeliveryPriceBreakdownScr
     final currentBudget = (enteredBudget != null && enteredBudget > 0)
         ? enteredBudget
         : estimatedFare;
-    final posterFee = (currentBudget * 0.20).roundToDouble();
+    const posterFee = 12.0;
     final totalCost = currentBudget + posterFee;
 
     return Scaffold(

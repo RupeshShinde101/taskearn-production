@@ -111,7 +111,7 @@ class PrivacyScreen extends StatelessWidget {
               'Verify your 18+ legal age, email OTP, KYC identity, and Sensitive Skill physical onboarding;',
               'Create and maintain your Poster/Helper account and execute marketplace contracts;',
               'Match tasks using location proximity, configured Helper skills, and automated AI ranking convenience (never profiling minors);',
-              'Facilitate task chat, proof verification, wallet payments, 20% fee/commission accounting, release-limit enforcement, negative-balance holds, and ₹100+ bank payouts;',
+              'Facilitate task chat, proof verification, wallet payments, platform fee/commission accounting (₹12 poster fee & 12% helper fee), release-limit enforcement, negative-balance holds, and ₹100+ bank payouts;',
               'Prevent scam/illegal tasks, duplicate accounts, off-platform fee evasion, and fraud;',
               'Investigate safety reports, resolve payment/quality disputes, and honour user grievances;',
               'Fulfil statutory Indian legal duties (IT Act, Income Tax, GST, PMLA, RBI, and lawful court/police directions).',

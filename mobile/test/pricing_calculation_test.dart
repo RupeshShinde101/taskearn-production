@@ -87,7 +87,7 @@ void main() {
   });
 
   group('Pricing UI widgets', () {
-    testWidgets('TaskPriceBreakdownCard renders 565 + 20% fee = 678 with zero service charge',
+    testWidgets('TaskPriceBreakdownCard renders 565 + ₹12 flat fee = 577 with zero service charge',
         (WidgetTester tester) async {
       await tester.binding.setSurfaceSize(const Size(360, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -100,8 +100,8 @@ void main() {
               child: TaskPriceBreakdownCard(
                 budget: 565,
                 serviceCharge: 0,
-                posterFee: 113,
-                totalCost: 678,
+                posterFee: 12,
+                totalCost: 577,
               ),
             ),
           ),
@@ -109,8 +109,9 @@ void main() {
       );
 
       expect(find.text('₹565'), findsOneWidget);
-      expect(find.text('₹113'), findsOneWidget);
-      expect(find.text('₹678'), findsOneWidget);
+      expect(find.text('Flat ₹12'), findsOneWidget);
+      expect(find.text('₹12'), findsOneWidget);
+      expect(find.text('₹577'), findsOneWidget);
       expect(find.text('Service Charge'), findsNothing);
       expect(find.text('Distance / Service Charge'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -799,6 +800,28 @@ void main() {
       expect(taskUnder1Km.totalPosterCost, 92.0); // ₹40 + ₹40 + ₹12 = ₹92 total pay value
       expect(taskUnder1Km.commissionRate, 0.12); // Helper 12% platform fee
       expect(taskUnder1Km.netEarning, 80.0 * (1 - 0.12)); // ₹70.4 net earning
+    });
+
+    test('all categories enforce ₹12 poster platform fee and 12% helper platform fee', () {
+      for (final cat in ['cleaning', 'delivery', 'pickup', 'transport', 'moving', 'electrician', 'repair', 'web_app_tech', 'other']) {
+        final task = Task(
+          id: 't_$cat',
+          title: 'Test $cat',
+          description: 'Test description',
+          category: cat,
+          budget: 500.0,
+          status: 'posted',
+          posterId: 'p1',
+          posterName: 'Poster',
+          latitude: 0,
+          longitude: 0,
+          createdAt: DateTime.now(),
+        );
+        expect(task.posterFee, 12.0, reason: 'posterFee for $cat should be ₹12');
+        expect(task.totalPosterCost, 512.0, reason: 'totalPosterCost for $cat should be ₹512');
+        expect(task.commissionRate, 0.12, reason: 'commissionRate for $cat should be 12%');
+        expect(task.netEarning, 440.0, reason: 'netEarning for $cat should be 88% of 500 = ₹440');
+      }
     });
 
     test('grocery catalog items, custom requirements, and JSON roundtrip', () {

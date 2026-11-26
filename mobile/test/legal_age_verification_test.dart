@@ -78,7 +78,9 @@ void main() {
       expect(find.textContaining('Child and Adolescent Labour'), findsWidgets);
       expect(find.textContaining('November 12, 2026'), findsWidgets);
       expect(find.textContaining('Verify & Pay Now'), findsWidgets);
-      expect(find.textContaining('20%'), findsWidgets);
+      expect(find.textContaining('Flat ₹12'), findsWidgets);
+      expect(find.textContaining('12%'), findsWidgets);
+      expect(find.textContaining('20%'), findsNothing);
       expect(find.textContaining('Indian Majority Act, 1875'), findsWidgets);
       expect(find.textContaining('Section 79'), findsWidgets);
 

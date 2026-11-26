@@ -205,8 +205,8 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             const SizedBox(height: 10),
             const _PriceRowWithBadge(
               label: 'Platform Fee & GST',
-              badgeText: 'Flat ₹20',
-              value: '₹20',
+              badgeText: 'Flat ₹12',
+              value: '₹12',
             ),
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 14),
@@ -227,9 +227,10 @@ class TaskPriceBreakdownCard extends StatelessWidget {
               const SizedBox(height: 8),
             ],
             if (posterFee > 0) ...[
-              _PriceRow(
-                'Platform Fee & GST (20%)',
-                '₹${posterFee.toStringAsFixed(0)}',
+              _PriceRowWithBadge(
+                label: 'Platform Fee & GST',
+                badgeText: 'Flat ₹12',
+                value: '₹${posterFee.toStringAsFixed(0)}',
               ),
             ],
             const Padding(
@@ -244,7 +245,11 @@ class TaskPriceBreakdownCard extends StatelessWidget {
             ],
             if (posterFee > 0) ...[
               const SizedBox(height: 10),
-              _PriceRow('Platform Fee & GST (20%)', '₹${posterFee.toStringAsFixed(0)}'),
+              _PriceRowWithBadge(
+                label: 'Platform Fee & GST',
+                badgeText: 'Flat ₹12',
+                value: '₹${posterFee.toStringAsFixed(0)}',
+              ),
             ],
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 14),

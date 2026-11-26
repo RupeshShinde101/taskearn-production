@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element, unused_field, unnecessary_null_comparison
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -22,6 +24,7 @@ import '../../widgets/task_price_breakdown_card.dart';
 import '../../widgets/task_posted_success_dialog.dart';
 import '../../widgets/vehicle_task_posting_dialog.dart';
 import 'delivery_location_sheet.dart';
+import 'category_location_sheet.dart';
 
 class PostTaskScreen extends StatefulWidget {
   final String? initialCategory;
@@ -1341,12 +1344,38 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
       if (_budgetCtrl.text.trim().isNotEmpty) {
         _budgetFieldKey.currentState?.validate();
       }
-      if (Task.isGroceryCategory(selectedCat.id)) {
-        // Wait for showGeneralDialog exit transition (230ms) to completely finish
-        // so its ModalBarrier overlay is cleanly unmounted and destroyed before pushing the picker.
-        await Future.delayed(const Duration(milliseconds: 320));
-        if (mounted && _selectedGroceryItems.isEmpty) {
-          await _openGroceryItemPicker();
+
+      await Future.delayed(const Duration(milliseconds: 250));
+      if (mounted) {
+        await CategoryLocationSheet.show(
+          context,
+          parentGroup: group,
+          subCategory: selectedCat,
+          initialAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+          initialLocation: _dropLocation ?? _location,
+          initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+          onLocationConfirmed: (data) {
+            setState(() {
+              final addr = data['address'] as String? ?? '';
+              final loc = data['location'] as LatLng?;
+              if (addr.isNotEmpty) {
+                _dropAddrCtrl.text = addr;
+                _addressCtrl.text = addr;
+              }
+              if (loc != null) {
+                _dropLocation = loc;
+                _location = loc;
+              }
+            });
+            _checkAndEstimateDistance();
+          },
+        );
+
+        if (Task.isGroceryCategory(selectedCat.id) && mounted && _selectedGroceryItems.isEmpty) {
+          await Future.delayed(const Duration(milliseconds: 200));
+          if (mounted) {
+            await _openGroceryItemPicker();
+          }
         }
       }
     } else if (mounted && _selectedCategory.isEmpty && group.categoryIds.isNotEmpty) {
@@ -5084,11 +5113,28 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _applySelectedCategory(defaultId);
           });
           _checkAndEstimateDistance();
-          if (defaultId == 'groceries' || defaultId == 'grocery') {
-            Future.delayed(const Duration(milliseconds: 300), () {
-              if (mounted && _selectedGroceryItems.isEmpty) _openGroceryItemPicker();
-            });
-          }
+          CategoryLocationSheet.show(
+            context,
+            parentGroup: group,
+            initialAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+            initialLocation: _dropLocation ?? _location,
+            initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+            onLocationConfirmed: (data) {
+              setState(() {
+                final addr = data['address'] as String? ?? '';
+                final loc = data['location'] as LatLng?;
+                if (addr.isNotEmpty) {
+                  _dropAddrCtrl.text = addr;
+                  _addressCtrl.text = addr;
+                }
+                if (loc != null) {
+                  _dropLocation = loc;
+                  _location = loc;
+                }
+              });
+              _checkAndEstimateDistance();
+            },
+          );
         } else {
           _showSubCategorySheet(group);
         }
@@ -5340,54 +5386,84 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         const SizedBox(height: 10),
         GestureDetector(
           onTap: () {
-            if (!isOtherSelected) {
-              setState(() {
-                _applySelectedCategory('other');
-              });
-              _checkAndEstimateDistance();
-            } else {
-              _showSubCategorySheet(otherGroup);
-            }
+            setState(() {
+              _applySelectedCategory('other');
+            });
+            _checkAndEstimateDistance();
+            CategoryLocationSheet.show(
+              context,
+              parentGroup: otherGroup,
+              initialAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+              initialLocation: _dropLocation ?? _location,
+              initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+              onLocationConfirmed: (data) {
+                setState(() {
+                  final addr = data['address'] as String? ?? '';
+                  final loc = data['location'] as LatLng?;
+                  if (addr.isNotEmpty) {
+                    _dropAddrCtrl.text = addr;
+                    _addressCtrl.text = addr;
+                  }
+                  if (loc != null) {
+                    _dropLocation = loc;
+                    _location = loc;
+                  }
+                });
+                _checkAndEstimateDistance();
+              },
+            );
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            height: 52,
+            height: 82,
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              gradient: isOtherSelected
+                  ? const LinearGradient(
+                      colors: [Color(0xFF347BFA), Color(0xFF0B63F6)],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                    )
+                  : null,
+              color: isOtherSelected ? null : Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFFE5EDF7),
-                width: isOtherSelected ? 1.8 : 1.2,
-              ),
+              border: isOtherSelected
+                  ? null
+                  : Border.all(color: const Color(0xFFE5EDF7), width: 1.2),
               boxShadow: [
                 BoxShadow(
                   color: isOtherSelected
-                      ? const Color(0xFF0B63F6).withValues(alpha: 0.15)
+                      ? const Color(0xFF0B63F6).withValues(alpha: 0.28)
                       : const Color(0xFF102A56).withValues(alpha: 0.03),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
+                  blurRadius: isOtherSelected ? 10 : 6,
+                  offset: const Offset(0, 3),
                 ),
               ],
             ),
             child: Row(
               children: [
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 42,
+                  height: 42,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEAF2FF),
-                    borderRadius: BorderRadius.circular(8),
+                    color: isOtherSelected
+                        ? Colors.white.withValues(alpha: 0.2)
+                        : const Color(0xFFEAF2FF),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  child: const Icon(Icons.more_horiz_rounded, color: Color(0xFF2563EB), size: 20),
+                  child: Icon(
+                    Icons.more_horiz_rounded,
+                    color: isOtherSelected ? Colors.white : const Color(0xFF2563EB),
+                    size: 24,
+                  ),
                 ),
                 const SizedBox(width: 12),
-                const Text(
+                Text(
                   'Other',
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF102A56),
+                    color: isOtherSelected ? Colors.white : const Color(0xFF102A56),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -5396,7 +5472,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                     alignment: Alignment.bottomRight,
                     child: Image.asset(
                       'assets/images/cat_3d_other_skyline.png',
-                      height: 42,
+                      height: 58,
                       fit: BoxFit.contain,
                       alignment: Alignment.bottomRight,
                       errorBuilder: (_, __, ___) => const SizedBox.shrink(),
@@ -5407,7 +5483,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
-                  color: isOtherSelected ? const Color(0xFF0B63F6) : const Color(0xFF94A3B8),
+                  color: isOtherSelected ? Colors.white : const Color(0xFF94A3B8),
                 ),
               ],
             ),
@@ -8506,75 +8582,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                       _buildTaskTitleInput(),
                       const SizedBox(height: 18),
                       _buildCategorySection(),
-                      if (_selectedCategory == 'delivery') ...[
-                        const SizedBox(height: 16),
-                        _buildDeliveryVehicleSelector(),
-                        const SizedBox(height: 12),
-                        _buildVehicleCapacityBanner(),
-                      ] else if (_selectedCategory == 'moving') ...[
-                        const SizedBox(height: 16),
-                        _buildMovingVehicleSelector(),
-                        const SizedBox(height: 12),
-                        _buildVehicleCapacityBanner(),
-
-                      ] else if (Task.isGroceryCategory(_selectedCategory)) ...[
-                        const SizedBox(height: 16),
-                        _buildGroceryItemsBanner(),
-                        const SizedBox(height: 12),
-                        _buildVehicleCapacityBanner(),
-                        const SizedBox(height: 16),
-                        _buildGroceryItemsSelectionSection(),
-                      ] else if (_isDelivery) ...[
-                        const SizedBox(height: 16),
-                        _buildDistanceCategoryRateBanner(),
-                      ] else if (_isFreelancer) ...[
-                        const SizedBox(height: 16),
-                        _buildFreelancerPricingCard(),
-                      ],
-                      const SizedBox(height: 16),
-                      _buildDescriptionFormSection(),
-                      if (!_isFreelancer) ...[
-                        const SizedBox(height: 16),
-                        _buildLocationFieldsSection(),
-                      ] else ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          key: const Key('freelancer_remote_badge'),
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFBFDBFE)),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.public_rounded, size: 18, color: Color(0xFF2563EB)),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Remote Freelancer Service — No location needed. Price is suggested from your task details & scope.',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1E3A8A),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (!Task.isRepairCategory(_selectedCategory) && !Task.isGroceryCategory(_selectedCategory)) ...[
-                        const SizedBox(height: 16),
-                        _buildSuggestedBudgetCard(),
-                        _buildBudgetField(),
-                      ],
-                      const SizedBox(height: 16),
-                      _buildPriceBreakdownSection(),
                       const SizedBox(height: 24),
-                      _buildBottomContinueButton(),
-                      const SizedBox(height: 12),
                     ],
                   ),
                 ),

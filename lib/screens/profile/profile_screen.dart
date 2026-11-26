@@ -768,7 +768,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _MenuItem(
                     icon: Icons.help_outline_rounded,
                     title: 'Help & Support',
-                    onTap: () => _launch('https://workmate4u.com/help'),
+                    onTap: () => context.push('/help-support'),
                   ),
                   const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
                   _MenuItem(

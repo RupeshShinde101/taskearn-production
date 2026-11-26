@@ -29,6 +29,7 @@ import 'screens/notifications/notifications_screen.dart';
 import 'screens/referral/referral_screen.dart';
 import 'screens/shell/main_shell.dart';
 import 'screens/tutorial/tutorial_screen.dart';
+import 'screens/help/faq_screen.dart';
 import 'screens/legal/terms_screen.dart';
 import 'screens/legal/privacy_screen.dart';
 import 'screens/auth/auth_success_screen.dart';
@@ -215,6 +216,14 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
         GoRoute(
           path: '/tutorial',
           builder: (_, __) => const TutorialScreen(),
+        ),
+        GoRoute(
+          path: '/help-support',
+          builder: (_, __) => const FaqScreen(),
+        ),
+        GoRoute(
+          path: '/faq',
+          builder: (_, __) => const FaqScreen(),
         ),
         GoRoute(
           path: '/terms',

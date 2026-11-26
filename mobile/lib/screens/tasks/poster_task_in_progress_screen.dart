@@ -268,6 +268,7 @@ class _PosterTaskInProgressScreenState
 
     if (statusChanged || proofChanged || nameChanged || phoneChanged) {
       final wasNeedsVerify = _needsVerify;
+      final wasPaidOrDone = _isPaidOrDone;
       setState(() {
         _task = fresh;
         if (nameChanged) _helperName = fresh.helperName;
@@ -277,6 +278,10 @@ class _PosterTaskInProgressScreenState
         }
       });
       _syncProof(fresh);
+      if (!wasPaidOrDone && _paidStatuses.contains(fresh.status)) {
+        context.read<TaskProvider>().fetchMyTasks();
+        context.go('/home');
+      }
     }
   }
 
@@ -754,13 +759,14 @@ class _PosterTaskInProgressScreenState
 
     if (ok == true) {
       wallet.fetchWallet();
+      context.read<TaskProvider>().fetchMyTasks();
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Payment released to helper successfully!'),
           backgroundColor: AppColors.success,
         ),
       );
-      _loadAll();
+      context.go('/home');
     } else if (ok == false) {
       final err =
           context.read<TaskProvider>().error ?? 'Payment failed. Try again.';
@@ -985,9 +991,9 @@ class _PosterTaskInProgressScreenState
                         ),
                       )
                     : const Icon(Icons.verified_user_rounded, size: 19),
-                label: Text(
-                  'Verify & Release Payment (₹${task.totalPosterCost.toStringAsFixed(0)})',
-                  style: const TextStyle(
+                label: const Text(
+                  'Verify & Release Payment',
+                  style: TextStyle(
                     fontWeight: FontWeight.w700,
                     fontSize: 14.5,
                   ),
@@ -1194,7 +1200,7 @@ class _PosterTaskInProgressScreenState
             ),
             const SizedBox(height: 4),
             Text(
-              '${task.category} • ₹${task.budget.toStringAsFixed(0)}',
+              task.category,
               style: const TextStyle(
                 color: Color(0xFF64748B),
                 fontSize: 13,

@@ -276,17 +276,31 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       }
     });
 
-    // Show in-app popup when a task_completed event arrives while the poster
-    // is actively using the app.
-    _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) {
+    // Show in-app popup when a task_completed / verify_and_pay event arrives
+    // while the poster is actively using the app (never if already paid/done).
+    _taskCompletedSub ??= NotificationService.onTaskCompleted.stream.listen((data) async {
       final taskId = data['task_id']?.toString() ?? '';
       if (taskId.isEmpty) return;
+      try {
+        final task = await taskProvider.getTaskDetail(taskId);
+        const alreadySettled = {
+          'payment_released',
+          'paid',
+          'verified',
+          'done',
+          'finished',
+          'cancelled',
+          'poster_cancelled',
+        };
+        if (task != null && alreadySettled.contains(task.status)) {
+          return;
+        }
+      } catch (_) {}
+
       final navKey = _router.routerDelegate.navigatorKey;
       final ctx = navKey.currentContext;
-      if (ctx == null) return;
-      // ignore: use_build_context_synchronously
+      if (ctx == null || !ctx.mounted) return;
       showDialog<void>(
-        // ignore: use_build_context_synchronously
         context: ctx,
         builder: (dialogCtx) => AlertDialog(
           title: const Row(
@@ -383,6 +397,7 @@ class _Workmate4uAppState extends State<Workmate4uApp> {
       'task_cancelled_by_poster',
       'task_cancelled',
       'poster_cancelled',
+      'task_final_completed_poster',
     };
     // Shell tab routes must use go() not push() — push() on an already-mounted
     // ShellRoute child throws '!keyReservation.contains(key)'.

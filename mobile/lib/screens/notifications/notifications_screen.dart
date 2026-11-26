@@ -112,6 +112,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     // triggers '!keyReservation.contains(key)' when the tab is already mounted.
     // task_expired: notification already marked read by caller — no navigation.
     if (type == 'task_expired') return;
+    if (type == 'task_final_completed_poster') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.go('/home');
+      });
+      return;
+    }
     const noTaskTypes = {'task_cancelled_confirmation'};
     if (noTaskTypes.contains(type)) {
       // Defer until the current frame (markRead notifyListeners) is done.

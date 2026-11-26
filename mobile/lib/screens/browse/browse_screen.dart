@@ -283,9 +283,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
     _searchDebounce = Timer(const Duration(milliseconds: 500), _applyFilters);
   }
 
-  void _applyFilters({bool sortByExpiry = false}) {
+  Future<void> _applyFilters({bool sortByExpiry = false}) async {
     final useExpiry = sortByExpiry || _sortByExpiry;
-    context.read<TaskProvider>().fetchBrowseTasks(
+    await context.read<TaskProvider>().fetchBrowseTasks(
           category: _selectedCategory,
           search: _searchCtrl.text.trim().isNotEmpty
               ? _searchCtrl.text.trim()
@@ -501,62 +501,74 @@ class _BrowseScreenState extends State<BrowseScreen> {
             builder: (_) {
               // When search query matches no categories or tasks
               if (visibleCategories.isEmpty) {
-                return Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const EmptyTasksClipboardIllustration(
-                          type: EmptyTasksClipboardType.browse,
-                        ),
-                        const SizedBox(height: 18),
-                        const Text(
-                          'No categories or tasks found',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0F172A),
-                            letterSpacing: -0.2,
-                            fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Try searching with another keyword or clear search',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w400,
-                            color: Color(0xFF64748B),
-                            fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        OutlinedButton.icon(
-                          onPressed: () {
-                            _searchCtrl.clear();
-                            _applyFilters();
-                          },
-                          icon: const Icon(Icons.close_rounded, size: 18),
-                          label: const Text('Clear Search'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFF2563EB),
-                            side: const BorderSide(
-                                color: Color(0xFF2563EB), width: 1.5),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 32, vertical: 13),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24)),
-                            textStyle: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                return RefreshIndicator(
+                  onRefresh: () => _applyFilters(),
+                  child: LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const EmptyTasksClipboardIllustration(
+                                  type: EmptyTasksClipboardType.browse,
+                                ),
+                                const SizedBox(height: 18),
+                                const Text(
+                                  'No categories or tasks found',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0F172A),
+                                    letterSpacing: -0.2,
+                                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                const Text(
+                                  'Try searching with another keyword or clear search',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w400,
+                                    color: Color(0xFF64748B),
+                                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    _searchCtrl.clear();
+                                    _applyFilters();
+                                  },
+                                  icon: const Icon(Icons.close_rounded, size: 18),
+                                  label: const Text('Clear Search'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF2563EB),
+                                    side: const BorderSide(
+                                        color: Color(0xFF2563EB), width: 1.5),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 32, vertical: 13),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(24)),
+                                    textStyle: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600,
+                                      fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 );
@@ -564,8 +576,9 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
               // Display Category Cards matching reference design
               return RefreshIndicator(
-                onRefresh: () async => _applyFilters(),
+                onRefresh: () => _applyFilters(),
                 child: ListView.builder(
+                  physics: const AlwaysScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     16,
                     2,
@@ -939,49 +952,58 @@ class _BrowseScreenState extends State<BrowseScreen> {
 
         // List of Tasks in this category
         Expanded(
-          child: effectiveTasks.isEmpty
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 32),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const EmptyTasksClipboardIllustration(
-                          type: EmptyTasksClipboardType.browse,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          isSubCatActive
-                              ? 'No ${_formatSubCatName(_selectedSubCategory!)} tasks right now'
-                              : 'No tasks in this category',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF0F172A),
-                            fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+          child: RefreshIndicator(
+            onRefresh: () => _applyFilters(),
+            child: effectiveTasks.isEmpty
+                ? LayoutBuilder(
+                    builder: (_, constraints) => SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: constraints.maxHeight),
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const EmptyTasksClipboardIllustration(
+                                  type: EmptyTasksClipboardType.browse,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  isSubCatActive
+                                      ? 'No ${_formatSubCatName(_selectedSubCategory!)} tasks right now'
+                                      : 'No tasks in this category',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF0F172A),
+                                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  isSubCatActive
+                                      ? 'Tap "Only ${_formatSubCatName(_selectedSubCategory!)}" above to view all ${config.label} tasks or post one below.'
+                                      : 'New tasks posted by clients for ${config.label.toLowerCase()} will appear here.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    color: Color(0xFF64748B),
+                                    fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          isSubCatActive
-                              ? 'Tap "Only ${_formatSubCatName(_selectedSubCategory!)}" above to view all ${config.label} tasks or post one below.'
-                              : 'New tasks posted by clients for ${config.label.toLowerCase()} will appear here.',
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 13.5,
-                            color: Color(0xFF64748B),
-                            fontFamilyFallback: ['Roboto', 'Arial', 'sans-serif'],
-                          ),
-                        ),
-
-                      ],
+                      ),
                     ),
-                  ),
-                )
-              : RefreshIndicator(
-                  onRefresh: () async => _applyFilters(),
-                  child: ListView.builder(
+                  )
+                : ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: EdgeInsets.fromLTRB(
                       16,
                       4,
@@ -995,7 +1017,7 @@ class _BrowseScreenState extends State<BrowseScreen> {
                           context.push('/task/${effectiveTasks[i].id}'),
                     ),
                   ),
-                ),
+          ),
         ),
       ],
     );

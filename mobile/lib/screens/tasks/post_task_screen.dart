@@ -25,6 +25,8 @@ import '../../widgets/task_posted_success_dialog.dart';
 import '../../widgets/vehicle_task_posting_dialog.dart';
 import 'delivery_location_sheet.dart';
 import 'category_location_sheet.dart';
+import 'category_price_breakdown_screen.dart';
+import 'grocery_task_details_screen.dart';
 
 class PostTaskScreen extends StatefulWidget {
   final String? initialCategory;
@@ -381,7 +383,6 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     'photography': ['Type of shoot?', 'Duration?', 'Location?', 'Deliverables?'],
     'data_entry':  ['Type of data?', 'Volume/pages?', 'Format needed?', 'Deadline?'],
     'gardening':   ['Type of work?', 'Garden size?', 'Tools needed?'],
-    'errands':     ['What errand?', 'Location?', 'Time constraint?'],
     'event_help':  ['Event type?', 'No. of guests?', 'Duration?', 'What help needed?'],
     'tech_support':['Device type?', 'What issue?', 'OS/software?'],
     'other':       ['Describe the task clearly?', 'Skills needed?', 'Expected duration?'],
@@ -1345,9 +1346,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _budgetFieldKey.currentState?.validate();
       }
 
+      // Groceries: Revert CategoryLocationSheet, open Grocery flow directly
+      if (Task.isGroceryCategory(selectedCat.id)) {
+        await Future.delayed(const Duration(milliseconds: 250));
+        if (mounted) {
+          await _openGroceryItemPicker();
+        }
+        return;
+      }
+
       await Future.delayed(const Duration(milliseconds: 250));
       if (mounted) {
-        await CategoryLocationSheet.show(
+        final locData = await CategoryLocationSheet.show(
           context,
           parentGroup: group,
           subCategory: selectedCat,
@@ -1370,12 +1380,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _checkAndEstimateDistance();
           },
         );
-
-        if (Task.isGroceryCategory(selectedCat.id) && mounted && _selectedGroceryItems.isEmpty) {
-          await Future.delayed(const Duration(milliseconds: 200));
-          if (mounted) {
-            await _openGroceryItemPicker();
-          }
+        if (locData != null && mounted) {
+          await _navigateToCategoryPriceBreakdown(
+            parentGroup: group,
+            subCategory: selectedCat,
+            locationData: locData,
+          );
         }
       }
     } else if (mounted && _selectedCategory.isEmpty && group.categoryIds.isNotEmpty) {
@@ -1383,6 +1393,43 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         _applySelectedCategory(group.categoryIds.first);
       });
     }
+  }
+
+  Future<void> _navigateToCategoryPriceBreakdown({
+    required TaskCategoryGroup parentGroup,
+    TaskCategory? subCategory,
+    required Map<String, dynamic> locationData,
+  }) async {
+    final addr = locationData['address'] as String? ?? '';
+    final loc = locationData['location'] as LatLng?;
+    final landmark = locationData['landmark'] as String?;
+    final flat = locationData['flat'] as String?;
+    final area = locationData['area'] as String?;
+
+    if (addr.isNotEmpty) {
+      _dropAddrCtrl.text = addr;
+      _addressCtrl.text = addr;
+    }
+    if (loc != null) {
+      _dropLocation = loc;
+      _location = loc;
+    }
+
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CategoryPriceBreakdownScreen(
+          parentGroup: parentGroup,
+          subCategory: subCategory,
+          address: addr.isNotEmpty ? addr : (_locationLabel ?? 'Current Location'),
+          location: loc ?? _location,
+          landmark: landmark,
+          flat: flat,
+          area: area,
+          initialTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : null,
+        ),
+      ),
+    );
   }
 
   /// Auto-fill description with category-specific prompts/questions.
@@ -3846,7 +3893,18 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         } else {
           _initGroceryDefaults();
         }
-        _safeScrollTo(320.0);
+        if (result.isNotEmpty) {
+          await Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => GroceryTaskDetailsScreen(
+                initialItems: result,
+                taskTitle: _titleCtrl.text.isNotEmpty ? _titleCtrl.text : 'Grocery Delivery',
+                initialDropAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
+                initialDropLocation: _dropLocation ?? _location,
+              ),
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('[PostTask] _openGroceryItemPicker error: $e');
@@ -5093,7 +5151,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
     final isSelected = group.containsCategory(_selectedCategory);
 
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         if (groupName == 'Delivery and Transport' || groupName == 'Delivery & Moving') {
           setState(() {
             _applySelectedCategory('delivery');
@@ -5113,7 +5171,7 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             _applySelectedCategory(defaultId);
           });
           _checkAndEstimateDistance();
-          CategoryLocationSheet.show(
+          final locData = await CategoryLocationSheet.show(
             context,
             parentGroup: group,
             initialAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
@@ -5135,13 +5193,20 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
               _checkAndEstimateDistance();
             },
           );
+          if (locData != null && mounted) {
+            await _navigateToCategoryPriceBreakdown(
+              parentGroup: group,
+              subCategory: group.subCategories.isNotEmpty ? group.subCategories.first : null,
+              locationData: locData,
+            );
+          }
         } else {
           _showSubCategorySheet(group);
         }
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        height: 82,
+        constraints: const BoxConstraints(minHeight: 82),
         padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
         decoration: BoxDecoration(
           gradient: isSelected
@@ -5170,10 +5235,10 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
           children: [
             Image.asset(
               image,
-              width: 42,
-              height: 42,
+              width: 40,
+              height: 40,
               fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 34, color: Color(0xFF2563EB)),
+              errorBuilder: (_, __, ___) => const Icon(Icons.category_rounded, size: 32, color: Color(0xFF2563EB)),
             ),
             const SizedBox(width: 6),
             Expanded(
@@ -5215,21 +5280,26 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
             ),
             const SizedBox(width: 2),
             if (isSelected)
-              Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Container(
-                    width: 18,
-                    height: 18,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
+              Padding(
+                padding: const EdgeInsets.only(left: 2),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Container(
+                      width: 17,
+                      height: 17,
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.check, size: 11, color: Color(0xFF0B63F6)),
                     ),
-                    child: const Icon(Icons.check, size: 12, color: Color(0xFF0B63F6)),
-                  ),
-                  const Icon(Icons.chevron_right_rounded, size: 16, color: Colors.white),
-                ],
+                    const SizedBox(height: 4),
+                    const Icon(Icons.chevron_right_rounded, size: 15, color: Colors.white),
+                  ],
+                ),
               )
             else
               const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF94A3B8)),
@@ -5385,12 +5455,12 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
         ),
         const SizedBox(height: 10),
         GestureDetector(
-          onTap: () {
+          onTap: () async {
             setState(() {
               _applySelectedCategory('other');
             });
             _checkAndEstimateDistance();
-            CategoryLocationSheet.show(
+            final locData = await CategoryLocationSheet.show(
               context,
               parentGroup: otherGroup,
               initialAddress: _dropAddrCtrl.text.isNotEmpty ? _dropAddrCtrl.text : null,
@@ -5412,10 +5482,17 @@ class _PostTaskScreenState extends State<PostTaskScreen> {
                 _checkAndEstimateDistance();
               },
             );
+            if (locData != null && mounted) {
+              await _navigateToCategoryPriceBreakdown(
+                parentGroup: otherGroup,
+                subCategory: otherGroup.subCategories.isNotEmpty ? otherGroup.subCategories.first : null,
+                locationData: locData,
+              );
+            }
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            height: 82,
+            constraints: const BoxConstraints(minHeight: 76),
             padding: const EdgeInsets.symmetric(horizontal: 14),
             decoration: BoxDecoration(
               gradient: isOtherSelected

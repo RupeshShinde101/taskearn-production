@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../models/grocery_item.dart';
-import 'post_task_screen.dart';
+import 'grocery_task_details_screen.dart';
 
 class GroceryItemPickerScreen extends StatefulWidget {
   final List<SelectedGroceryItem> initialSelected;
@@ -700,9 +700,8 @@ class _GroceryItemPickerScreenState extends State<GroceryItemPickerScreen> {
     } else {
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => PostTaskScreen(
-            initialCategory: 'groceries',
-            initialGroceryItems: selectedList,
+          builder: (_) => GroceryTaskDetailsScreen(
+            initialItems: selectedList,
           ),
         ),
       );

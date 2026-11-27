@@ -423,43 +423,49 @@ class _CategoryLocationSheetState extends State<CategoryLocationSheet> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Save Address', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 17)),
           contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Wrap(
-                spacing: 8,
-                runSpacing: 6,
-                alignment: WrapAlignment.center,
-                children: ['Home', 'Work', 'Other'].map((type) {
-                  final isSel = selectedLabel == type;
-                  return ChoiceChip(
-                    label: Text(type),
-                    selected: isSel,
-                    selectedColor: const Color(0xFF2563EB),
-                    visualDensity: VisualDensity.compact,
-                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    labelStyle: TextStyle(
-                      color: isSel ? Colors.white : const Color(0xFF1E293B),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12.5,
-                    ),
-                    onSelected: (_) => setDialogState(() => selectedLabel = type),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: addrInput,
-                style: const TextStyle(fontSize: 13.5, color: Color(0xFF1E293B)),
-                decoration: InputDecoration(
-                  hintText: 'Enter complete address to save',
-                  hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
-                  isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: ['Home', 'Work', 'Other'].map((type) {
+                      final isSel = selectedLabel == type;
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: ChoiceChip(
+                          label: Text(type),
+                          selected: isSel,
+                          selectedColor: const Color(0xFF2563EB),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          labelStyle: TextStyle(
+                            color: isSel ? Colors.white : const Color(0xFF1E293B),
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
+                          ),
+                          onSelected: (_) => setDialogState(() => selectedLabel = type),
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                TextField(
+                  controller: addrInput,
+                  style: const TextStyle(fontSize: 13.5, color: Color(0xFF1E293B)),
+                  decoration: InputDecoration(
+                    hintText: 'Enter complete address to save',
+                    hintStyle: const TextStyle(fontSize: 13, color: Color(0xFF94A3B8)),
+                    isDense: true,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
@@ -727,27 +733,33 @@ class _CategoryLocationSheetState extends State<CategoryLocationSheet> {
                                 ],
                               ),
                             ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: cfg.primaryColor.withValues(alpha: 0.3)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(cfg.visitTypeIcon, size: 13, color: cfg.primaryColor),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    cfg.visitTypeLabel,
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: cfg.primaryColor,
-                                    ),
+                            const SizedBox(width: 8),
+                            Flexible(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: cfg.primaryColor.withValues(alpha: 0.3)),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(cfg.visitTypeIcon, size: 13, color: cfg.primaryColor),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        cfg.visitTypeLabel,
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: cfg.primaryColor,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ],
@@ -793,31 +805,36 @@ class _CategoryLocationSheetState extends State<CategoryLocationSheet> {
                           ),
                           const SizedBox(width: 8),
 
-                          // Save Location Button
-                          InkWell(
-                            onTap: _openQuickSaveDialog,
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: cfg.primaryColor.withValues(alpha: 0.35)),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.bookmark_outline_rounded, size: 13, color: cfg.primaryColor),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Save Location',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: cfg.primaryColor,
-                                    ),
+                          // Save Location Button (Wrapped to prevent any horizontal overflow)
+                          Flexible(
+                            child: InkWell(
+                              onTap: _openQuickSaveDialog,
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: cfg.primaryColor.withValues(alpha: 0.35)),
+                                ),
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.bookmark_outline_rounded, size: 13, color: cfg.primaryColor),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'Save Location',
+                                        style: TextStyle(
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: cfg.primaryColor,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
@@ -882,64 +899,95 @@ class _CategoryLocationSheetState extends State<CategoryLocationSheet> {
 
                       const SizedBox(height: 12),
 
-                      // 4. Address / Landmark * Input
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFCBD5E1)),
-                        ),
-                        child: Row(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(left: 12, right: 8),
-                              child: Icon(Icons.place_rounded, color: cfg.primaryColor, size: 20),
-                            ),
-                            Expanded(
-                              child: TextField(
-                                controller: _addressCtrl,
-                                focusNode: _addressFocus,
-                                onChanged: _onAddressChanged,
-                                style: const TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w500,
-                                  color: Color(0xFF1E293B),
-                                ),
-                                decoration: const InputDecoration(
-                                  hintText: 'Address / Landmark *',
-                                  hintStyle: TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w400),
-                                  border: InputBorder.none,
-                                  enabledBorder: InputBorder.none,
-                                  focusedBorder: InputBorder.none,
-                                  disabledBorder: InputBorder.none,
-                                  errorBorder: InputBorder.none,
-                                  filled: false,
-                                  fillColor: Colors.transparent,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.symmetric(vertical: 13),
-                                ),
+                      // 4. Address / Landmark * Input + GPS & Map Companion Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Row(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 12, right: 8),
+                                    child: Icon(Icons.place_rounded, color: cfg.primaryColor, size: 20),
+                                  ),
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _addressCtrl,
+                                      focusNode: _addressFocus,
+                                      onChanged: _onAddressChanged,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                      decoration: const InputDecoration(
+                                        hintText: 'Address / Landmark *',
+                                        hintStyle: TextStyle(fontSize: 13.5, color: Color(0xFF94A3B8), fontWeight: FontWeight.w400),
+                                        border: InputBorder.none,
+                                        enabledBorder: InputBorder.none,
+                                        focusedBorder: InputBorder.none,
+                                        disabledBorder: InputBorder.none,
+                                        errorBorder: InputBorder.none,
+                                        filled: false,
+                                        fillColor: Colors.transparent,
+                                        isDense: true,
+                                        contentPadding: EdgeInsets.symmetric(vertical: 14),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            // GPS Button
-                            IconButton(
-                              icon: _gettingGps
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : Icon(Icons.my_location_rounded, color: cfg.primaryColor, size: 20),
-                              tooltip: 'Use GPS',
-                              onPressed: _gettingGps ? null : _fetchCurrentGps,
+                          ),
+                          const SizedBox(width: 8),
+                          // GPS Button (Square companion button outside input)
+                          InkWell(
+                            onTap: _gettingGps ? null : _fetchCurrentGps,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Center(
+                                child: _gettingGps
+                                    ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: cfg.primaryColor),
+                                      )
+                                    : Icon(Icons.my_location_rounded, color: cfg.primaryColor, size: 20),
+                              ),
                             ),
-                            // Map Picker Button
-                            IconButton(
-                              icon: Icon(Icons.map_outlined, color: cfg.primaryColor, size: 20),
-                              tooltip: 'Pick on Map',
-                              onPressed: _pickOnMap,
+                          ),
+                          const SizedBox(width: 6),
+                          // Map Button (Square companion button outside input)
+                          InkWell(
+                            onTap: _pickOnMap,
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              width: 48,
+                              height: 48,
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: const Color(0xFFCBD5E1)),
+                              ),
+                              child: Center(
+                                child: Icon(Icons.map_outlined, color: cfg.primaryColor, size: 20),
+                              ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
 
                       // Autocomplete Suggestions Dropdown

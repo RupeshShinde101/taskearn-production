@@ -527,12 +527,8 @@ class Task {
         return 'child_care';
       case 'eldercare':
         return 'elder_care';
-      case 'errand':
-        return 'errands';
       case 'grocery':
         return 'groceries';
-      case 'queuestanding':
-        return 'queue_standing';
       case 'dataentry':
         return 'data_entry';
       case 'businessadmin':
@@ -583,15 +579,12 @@ class Task {
       case 'cleaning':
         return 300.0;
 
-      // 3. Shopping, Errands & On-Demand
+      // 3. Shopping & Groceries
       case 'groceries':
       case 'grocery':
         return 50.0;
       case 'shopping':
         return 150.0;
-      case 'errands':
-      case 'queue_standing':
-        return 200.0;
       case 'event_help':
         return 400.0;
       case 'catering':
@@ -1960,18 +1953,9 @@ class Task {
         baseSuggested = 400.0;
         baseMax = 900.0;
         break;
-      case 'groceries':
-        baseSuggested = 150.0;
-        baseMax = 250.0;
-        break;
       case 'shopping':
         baseSuggested = 200.0;
         baseMax = 400.0;
-        break;
-      case 'errands':
-      case 'queue_standing':
-        baseSuggested = 250.0;
-        baseMax = 450.0;
         break;
       case 'event_help':
         baseSuggested = 550.0;
@@ -2280,8 +2264,6 @@ class TaskCategory {
     TaskCategory(id: 'pet_care', label: 'Pet Care', icon: '🐾'),
     TaskCategory(id: 'child_care', label: 'Child Care', icon: '👶'),
     TaskCategory(id: 'elder_care', label: 'Elder Care', icon: '👴'),
-    TaskCategory(id: 'errands', label: 'Errands', icon: '🏃'),
-    TaskCategory(id: 'queue_standing', label: 'Queue Standing', icon: '🕐'),
     TaskCategory(id: 'event_help', label: 'Event Help', icon: '🎉'),
     TaskCategory(id: 'tech_support', label: 'Tech Support', icon: '💡'),
     TaskCategory(id: 'other', label: 'Other', icon: '📋'),
@@ -2300,7 +2282,6 @@ class TaskCategory {
     'drawing',
     'elder_care',
     'electrician',
-    'errands',
     'event_help',
     'freelancer',
     'gardening',
@@ -2314,7 +2295,6 @@ class TaskCategory {
     'pet_care',
     'photography',
     'plumbing',
-    'queue_standing',
     'shopping',
     'tech_support',
     'tutoring',
@@ -2523,7 +2503,7 @@ class TaskCategoryGroup {
     TaskCategoryGroup(
       label: 'Grocery & Shopping',
       icon: '🛒',
-      categoryIds: ['shopping', 'groceries', 'errands', 'queue_standing'],
+      categoryIds: ['shopping', 'groceries'],
     ),
     TaskCategoryGroup(
       label: 'Professional',

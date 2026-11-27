@@ -82,8 +82,6 @@ class BrowseCategoryConfig {
       categoryIds: [
         'shopping',
         'groceries',
-        'errands',
-        'queue_standing',
       ],
       imageAsset: 'assets/images/cat_3d_shopping.png',
       // Subtle, soft lavender purple

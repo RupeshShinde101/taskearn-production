@@ -285,20 +285,24 @@ class _DeliveryLocationSheetState extends State<DeliveryLocationSheet> {
                                 color: sel ? const Color(0xFF2563EB) : const Color(0xFFE2E8F0),
                               ),
                             ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(icon, size: 14, color: sel ? Colors.white : const Color(0xFF475569)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  t,
-                                  style: TextStyle(
-                                    fontSize: 12.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: sel ? Colors.white : const Color(0xFF334155),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(icon, size: 14, color: sel ? Colors.white : const Color(0xFF475569)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    t,
+                                    style: TextStyle(
+                                      fontSize: 12.0,
+                                      fontWeight: FontWeight.w700,
+                                      color: sel ? Colors.white : const Color(0xFF334155),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
